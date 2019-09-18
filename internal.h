@@ -1661,6 +1661,7 @@ VALUE rb_hash_rehash(VALUE hash);
 VALUE rb_hash_resurrect(VALUE hash);
 int rb_hash_add_new_element(VALUE hash, VALUE key, VALUE val);
 VALUE rb_hash_set_pair(VALUE hash, VALUE pair);
+VALUE rb_hash_fill_values(VALUE hash, const VALUE *values);
 
 int rb_hash_stlike_lookup(VALUE hash, st_data_t key, st_data_t *pval);
 int rb_hash_stlike_delete(VALUE hash, st_data_t *pkey, st_data_t *pval);

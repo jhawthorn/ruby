@@ -3249,9 +3249,13 @@ inspect_i(VALUE key, VALUE value, VALUE str)
     rb_str_buf_append(str, str2);
     OBJ_INFECT(str, str2);
     rb_str_buf_cat_ascii(str, "=>");
-    str2 = rb_inspect(value);
-    rb_str_buf_append(str, str2);
-    OBJ_INFECT(str, str2);
+    if (value == Qundef) {
+        rb_str_buf_cat_ascii(str, "undef");
+    } else {
+        str2 = rb_inspect(value);
+	rb_str_buf_append(str, str2);
+	OBJ_INFECT(str, str2);
+    }
 
     return ST_CONTINUE;
 }
@@ -4583,6 +4587,34 @@ rb_hash_bulk_insert(long argc, const VALUE *argv, VALUE hash)
             rb_hash_bulk_insert_into_st_table(argc, argv, hash);
         }
     }
+}
+
+static int
+rb_hash_fill_values_func(st_data_t key, st_data_t value, st_data_t argp, int error)
+{
+    if (value == Qundef) {
+        return ST_REPLACE;
+    } else {
+        return ST_CONTINUE;
+    }
+}
+
+static int
+rb_hash_fill_values_replace(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
+{
+    const VALUE **values = (const VALUE **)argp;
+    *value = *(*values)++;
+    return ST_CONTINUE;
+}
+
+VALUE
+rb_hash_fill_values(VALUE hash, const VALUE *values)
+{
+    VALUE newhash = rb_hash_resurrect(hash);
+
+    rb_hash_stlike_foreach_with_replace(newhash, rb_hash_fill_values_func, rb_hash_fill_values_replace, (st_data_t) &values);
+
+    return newhash;
 }
 
 static int path_tainted = -1;

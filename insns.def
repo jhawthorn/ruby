@@ -543,6 +543,19 @@ newhash
     }
 }
 
+/* put new Hash from n elements. n must be an even number. */
+DEFINE_INSN
+fillhash
+(rb_num_t num, VALUE hash)
+(...)
+(VALUE val)
+// attr bool leaf = false; /* has rb_hash_key_str() */
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
+{
+    RUBY_DTRACE_CREATE_HOOK(HASH, RHASH_SIZE(hash) << 1);
+    val = rb_hash_fill_values(hash, STACK_ADDR_FROM_TOP(num));
+}
+
 /* put new Range object.(Range.new(low, high, flag)) */
 DEFINE_INSN
 newrange

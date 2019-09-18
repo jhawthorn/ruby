@@ -4051,9 +4051,9 @@ compile_array(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int pop
 }
 
 static inline int
-static_literal_node_pair_p(const NODE *node, const rb_iseq_t *iseq)
+static_literal_node_key_p(const NODE *node, const rb_iseq_t *iseq)
 {
-    return node->nd_head && static_literal_node_p(node, iseq) && static_literal_node_p(node->nd_next, iseq);
+    return node->nd_head && static_literal_node_p(node, iseq);
 }
 
 static int
@@ -4125,21 +4125,29 @@ compile_hash(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int popp
         int count = 1;
 
         /* pre-allocation check (this branch can be omittable) */
-        if (static_literal_node_pair_p(node, iseq)) {
+        if (static_literal_node_key_p(node, iseq)) {
             /* count the elements that are optimizable */
             const NODE *node_tmp = node->nd_next->nd_next;
-            for(; node_tmp && static_literal_node_pair_p(node_tmp, iseq); node_tmp = node_tmp->nd_next->nd_next)
+            for(; node_tmp && static_literal_node_key_p(node_tmp, iseq); node_tmp = node_tmp->nd_next->nd_next)
                 count++;
 
             if ((first_chunk && stack_len == 0 && !node_tmp) || count >= min_tmp_hash_len) {
                 /* The literal contains only optimizable elements, or the subsequence is long enough */
                 VALUE ary = rb_ary_tmp_new(count);
+                int dynamic_values = 0;
+                FLUSH_CHUNK();
 
                 /* Create a hidden hash */
                 for (; count; count--, node = node->nd_next->nd_next) {
                     VALUE elem[2];
                     elem[0] = static_literal_value(node, iseq);
-                    elem[1] = static_literal_value(node->nd_next, iseq);
+                    if (static_literal_node_p(node->nd_next, iseq)) {
+                        elem[1] = static_literal_value(node->nd_next, iseq);
+                    } else {
+                        NO_CHECK(COMPILE_(ret, "hash value element", node->nd_next->nd_head, 0));
+                        elem[1] = Qundef;
+                        dynamic_values++;
+                    }
                     rb_ary_cat(ary, elem, 2);
                 }
                 VALUE hash = rb_hash_new_with_size(RARRAY_LEN(ary) / 2);
@@ -4149,8 +4157,11 @@ compile_hash(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int popp
                 iseq_add_mark_object_compile_time(iseq, hash);
 
                 /* Emit optimized code */
-                FLUSH_CHUNK();
-                if (first_chunk) {
+                if (dynamic_values) {
+                    //rb_hash_aset(hash, ID2SYM(rb_intern("nice")), Qundef);
+                    ADD_INSN2(ret, line, fillhash, INT2FIX(dynamic_values), hash);
+                    first_chunk = 0;
+                } else if (first_chunk) {
                     ADD_INSN1(ret, line, duphash, hash);
                     first_chunk = 0;
                 }
