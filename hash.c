@@ -4592,7 +4592,7 @@ rb_hash_bulk_insert(long argc, const VALUE *argv, VALUE hash)
 static int
 rb_hash_fill_values_func(st_data_t key, st_data_t value, st_data_t argp, int error)
 {
-    if (value == Qundef) {
+    if (value == RHASH_FILL_PLACEHOLDER) {
         return ST_REPLACE;
     } else {
         return ST_CONTINUE;

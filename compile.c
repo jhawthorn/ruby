@@ -4141,11 +4141,12 @@ compile_hash(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int popp
                 for (; count; count--, node = node->nd_next->nd_next) {
                     VALUE elem[2];
                     elem[0] = static_literal_value(node, iseq);
-                    if (static_literal_node_p(node->nd_next, iseq)) {
+                    if (static_literal_node_p(node->nd_next, iseq) ||
+                            static_literal_value(node->nd_next, iseq) == RHASH_FILL_PLACEHOLDER) {
                         elem[1] = static_literal_value(node->nd_next, iseq);
                     } else {
                         NO_CHECK(COMPILE_(ret, "hash value element", node->nd_next->nd_head, 0));
-                        elem[1] = Qundef;
+                        elem[1] = INT2FIX(-1);
                         dynamic_values++;
                     }
                     rb_ary_cat(ary, elem, 2);
@@ -4158,7 +4159,6 @@ compile_hash(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int popp
 
                 /* Emit optimized code */
                 if (dynamic_values) {
-                    //rb_hash_aset(hash, ID2SYM(rb_intern("nice")), Qundef);
                     ADD_INSN2(ret, line, fillhash, INT2FIX(dynamic_values), hash);
                     first_chunk = 0;
                 } else if (first_chunk) {
