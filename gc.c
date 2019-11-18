@@ -4149,7 +4149,9 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
 	}
     }
 
-    gc_setup_mark_bits(sweep_page);
+    if (!objspace->flags.during_compacting) {
+        gc_setup_mark_bits(sweep_page);
+    }
 
 #if GC_PROFILE_MORE_DETAIL
     if (gc_prof_enabled(objspace)) {
@@ -7775,6 +7777,18 @@ allocate_page_list(rb_objspace_t *objspace, page_compare_func_t *comparator)
     return page_list;
 }
 
+static void
+gc_setup_all_mark_bits(rb_objspace_t *objspace)
+{
+    struct heap_page *page = 0;
+
+    list_for_each(&heap_eden->pages, page, page_node) {
+        GC_ASSERT(page != NULL);
+
+        gc_setup_mark_bits(page);
+    }
+}
+
 static VALUE
 gc_compact_heap(rb_objspace_t *objspace, page_compare_func_t *comparator)
 {
@@ -7799,7 +7813,10 @@ gc_compact_heap(rb_objspace_t *objspace, page_compare_func_t *comparator)
         void *free_slot_poison = asan_poisoned_object_p((VALUE)free_cursor.slot);
         asan_unpoison_object((VALUE)free_cursor.slot, false);
 
-        while (BUILTIN_TYPE(free_cursor.slot) != T_NONE && not_met(&free_cursor, &scan_cursor)) {
+        while (RVALUE_PAGE_MARKED(free_cursor.page, (VALUE)free_cursor.slot) && not_met(&free_cursor, &scan_cursor)) {
+	    GC_ASSERT(RVALUE_PAGE_MARKED(free_cursor.page, (VALUE)free_cursor.slot));
+	    GC_ASSERT(BUILTIN_TYPE(free_cursor.slot) != T_NONE);
+
             /* Re-poison slot if it's not the one we want */
             if (free_slot_poison) {
                 GC_ASSERT(BUILTIN_TYPE(free_cursor.slot) == T_NONE);
@@ -8448,8 +8465,12 @@ gc_compact(rb_objspace_t *objspace, int use_toward_empty, int use_double_pages, 
     {
         /* pin objects referenced by maybe pointers */
         garbage_collect(objspace, GPR_DEFAULT_REASON);
+
         /* compact */
         gc_compact_after_gc(objspace, use_toward_empty, use_double_pages, TRUE);
+
+        /* sweep deferred resetting mark bits, we must clear them now */
+        gc_setup_all_mark_bits(objspace);
     }
     objspace->flags.during_compacting = FALSE;
 }
