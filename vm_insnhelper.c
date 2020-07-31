@@ -1178,14 +1178,27 @@ vm_setivar(VALUE obj, ID id, VALUE val, IVC ic, const struct rb_callcache *cc, i
 	    VALUE *ptr = ROBJECT_IVPTR(obj);
 	    index = !is_attr ? ic->index : vm_cc_attr_index(cc)-1;
 
-	    if (RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_oorange, index < ROBJECT_NUMIV(obj))) {
+	    if (index < ROBJECT_NUMIV(obj)) {
 		RB_OBJ_WRITE(obj, &ptr[index], val);
 		RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 		return val; /* inline cache hit */
+	    } else if (index < ROBJECT_EMBED_LEN_MAX && ROBJECT_NUMIV(obj) == 0) {
+		RBASIC(obj)->flags |= ROBJECT_EMBED;
+		ptr = ROBJECT(obj)->as.ary;
+		for (int i = 0; i < ROBJECT_EMBED_LEN_MAX; i++) {
+                    ptr[i] = Qundef;
+		}
+		RB_OBJ_WRITE(obj, &ptr[index], val);
+		RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+		return val;
 	    }
+	    RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_oorange);
 	}
 	else {
 	    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
+	    if (!iv_index_tbl && ROBJECT_NUMIV(obj) == 0) {
+		iv_index_tbl = RCLASS_IV_INDEX_TBL(klass);
+	    }
 
 	    if (iv_index_tbl && st_lookup(iv_index_tbl, (st_data_t)id, &index)) {
                 if (!is_attr) {
