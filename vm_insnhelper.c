@@ -1182,6 +1182,15 @@ vm_setivar(VALUE obj, ID id, VALUE val, IVC ic, const struct rb_callcache *cc, i
 		RB_OBJ_WRITE(obj, &ptr[index], val);
 		RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 		return val; /* inline cache hit */
+	    } else if (index < ROBJECT_EMBED_LEN_MAX && ROBJECT_NUMIV(obj) == 0) {
+		RBASIC(obj)->flags |= ROBJECT_EMBED;
+		ptr = ROBJECT(obj)->as.ary;
+		for (int i = 0; i < ROBJECT_EMBED_LEN_MAX; i++) {
+                    RB_OBJ_WRITE(obj, &ptr[i], Qundef);
+		}
+		RB_OBJ_WRITE(obj, &ptr[index], val);
+		RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+		return val;
 	    }
 	}
 	else {
