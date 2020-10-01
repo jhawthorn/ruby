@@ -778,6 +778,51 @@ opt_send_without_block
     }
 }
 
+/* optimized new/initialize */
+DEFINE_INSN
+opt_new
+(CALL_DATA cd, CALL_DATA cd_init, ISEQ blockiseq)
+(...)
+(VALUE obj)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    int argc = vm_ci_argc(cd->ci);
+    VALUE klass = TOPN(argc);
+
+    if (vm_method_cfunc_is(GET_ISEQ(), cd, klass, rb_class_new_instance_pass_kw)) {
+        obj = rb_class_alloc(klass);
+
+        /* Replace receiver with allocated object */
+        TOPN(argc) = obj;
+
+        /* Call initialize method */
+        VALUE bh = vm_caller_setup_arg_block(ec, GET_CFP(), cd_init->ci, blockiseq, false);
+        VALUE init_ret = vm_sendish(ec, GET_CFP(), cd_init, bh, mexp_search_method);
+
+        if (init_ret == Qundef) {
+		/* We must call vm_exec instead of jumping to the initialize
+		 * method, because we need to ignore the returned value in
+		 * favour of obj
+		 */
+		RESTORE_REGS();
+		VM_ENV_FLAGS_SET(GET_EP(), VM_FRAME_FLAG_FINISH);
+		vm_exec(ec, true);
+		RESTORE_REGS();
+        }
+    } else {
+        /* Overridden "new" */
+        VALUE bh = vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, blockiseq, false);
+        obj = vm_sendish(ec, GET_CFP(), cd, bh, mexp_search_method);
+
+        if (obj == Qundef) {
+            RESTORE_REGS();
+            NEXT_INSN();
+        }
+    }
+}
+
 DEFINE_INSN
 opt_str_freeze
 (VALUE str, CALL_DATA cd)
