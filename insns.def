@@ -794,6 +794,45 @@ opt_send_without_block
     }
 }
 
+/* optimized new/initialize */
+DEFINE_INSN
+opt_new
+(CALL_DATA cd, CALL_DATA cd_init, ISEQ blockiseq)
+(...)
+(VALUE val)
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    int argc = vm_ci_argc(cd->ci);
+    VALUE recv = TOPN(argc);
+
+    if (vm_method_cfunc_is(GET_ISEQ(), cd, recv, rb_class_new_instance_pass_kw)) {
+	    VALUE obj;
+	    obj = rb_class_alloc(recv);
+
+	    VALUE bh = vm_caller_setup_arg_block(ec, GET_CFP(), cd_init->ci, blockiseq, false);
+	    vm_search_method_wrap(GET_CFP(), cd_init, obj);
+	    bool kw_splat = IS_ARGS_KW_SPLAT(cd_init->ci) > 0;
+	    struct rb_calling_info calling = {
+		    .block_handler = bh,
+		    .recv = obj,
+		    .argc = argc,
+		    .kw_splat = kw_splat
+	    };
+	    vm_call_method(ec, GET_CFP(), &calling, cd_init);
+
+	    val = obj;
+    } else {
+	    VALUE bh = vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, blockiseq, false);
+	    val = vm_sendish(ec, GET_CFP(), cd, bh, vm_search_method_wrap);
+    }
+
+    if (val == Qundef) {
+        RESTORE_REGS();
+        NEXT_INSN();
+    }
+}
+
 DEFINE_INSN
 opt_str_freeze
 (VALUE str, CALL_DATA cd)
