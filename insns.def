@@ -778,6 +778,58 @@ opt_send_without_block
     }
 }
 
+/* optimized new/initialize */
+DEFINE_INSN
+opt_new
+(CALL_DATA cd, CALL_DATA cd_init, ISEQ blockiseq)
+(...)
+(VALUE init_ret, VALUE obj)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci) + 1;
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci) + 1;
+{
+    int argc = vm_ci_argc(cd->ci);
+    VALUE klass = TOPN(argc);
+
+    init_ret = Qnil;
+
+    if (vm_method_cfunc_is(GET_ISEQ(), cd, klass, rb_class_new_instance_pass_kw)) {
+        obj = rb_class_alloc(klass);
+
+        /* Replace receiver with allocated object */
+        TOPN(argc) = obj;
+
+        /* Shift all method arguments and duplicate allocated object */
+        CHECK_VM_STACK_OVERFLOW(reg_cfp, 1);
+        MEMMOVE(&TOPN(argc-1), &TOPN(argc), VALUE, argc+1);
+        INC_SP(1);
+
+        /* Call initialize method */
+        VALUE bh = vm_caller_setup_arg_block(ec, GET_CFP(), cd_init->ci, blockiseq, false);
+        init_ret = vm_sendish(ec, GET_CFP(), cd_init, bh, mexp_search_method);
+
+        if (init_ret == Qundef) {
+            RESTORE_REGS();
+            NEXT_INSN();
+        } else {
+            /* Remove extra object pushed, we did not need it */
+            DEC_SP(1);
+        }
+    } else {
+        /* Overridden "new" */
+        VALUE bh = vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, blockiseq, false);
+        obj = vm_sendish(ec, GET_CFP(), cd, bh, mexp_search_method);
+
+        if (obj == Qundef) {
+            /* HACK: Skip following pop instruction */
+            JUMP(1);
+
+            RESTORE_REGS();
+            NEXT_INSN();
+        }
+    }
+}
+
 DEFINE_INSN
 opt_str_freeze
 (VALUE str, CALL_DATA cd)
