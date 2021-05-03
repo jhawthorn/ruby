@@ -3436,7 +3436,7 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
         const struct rb_callinfo *ci = (struct rb_callinfo *)OPERAND_AT(iobj, 0);
         const rb_iseq_t *blockiseq = (rb_iseq_t *)OPERAND_AT(iobj, 1);
 
-	if (vm_ci_mid(ci) == idNew) {
+	if (vm_ci_mid(ci) == idNew && (vm_ci_flag(ci) & VM_CALL_ARGS_BLOCKARG) == 0 && blockiseq == NULL) {
 	    VALUE *old_operands = iobj->operands;
 
 	    assert(iobj->operand_size == 2);
