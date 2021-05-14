@@ -3148,13 +3148,27 @@ vm_call_symbol(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
         }
     }
 
-    calling->ci = &VM_CI_ON_STACK(mid, flags, argc, vm_ci_kwarg(ci));
-    calling->cc = &VM_CC_ON_STACK(klass,
-                                  vm_call_general,
-                                  { .method_missing_reason = missing_reason },
-                                  rb_callable_method_entry_with_refinements(klass, mid, NULL));
+    struct rb_callinfo *new_ci = &VM_CI_ON_STACK(mid, flags, argc, vm_ci_kwarg(ci));
+    const struct rb_callcache *original_cc = calling->cc;
+    const struct rb_callcache *cc = original_cc ? original_cc->aux_.v : vm_cc_empty();
 
-    return vm_call_method(ec, reg_cfp, calling);
+    if (!cc || !vm_cc_cme(cc) || vm_cc_cme(cc)->called_id != mid) {
+	    // not matching mid. use slowpath
+	    cc = rb_vm_search_method_slowpath(new_ci, klass);
+    } else {
+	    // try fastpath
+	    struct rb_call_data cd = { new_ci, cc };
+	    // fixme: cd_owner should be...??
+	    cc = vm_search_method_fastpath(klass, &cd, klass);
+    }
+
+    if (original_cc) {
+       *(VALUE *)&original_cc->aux_.v = (VALUE)cc;
+    }
+
+    calling->ci = new_ci;
+    calling->cc = cc;
+    return vm_cc_call(cc)(ec, reg_cfp, calling);
 }
 
 static VALUE
