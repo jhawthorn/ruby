@@ -6686,6 +6686,7 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             const struct rb_callcache *cc = (const struct rb_callcache *)obj;
             // should not mark klass here
             gc_mark(objspace, (VALUE)vm_cc_cme(cc));
+            gc_mark_maybe(objspace, cc->aux_.v);
         }
         return;
       case imemo_constcache:
@@ -9487,6 +9488,8 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
                     *((struct rb_callable_method_entry_struct **)(&cc->cme_)) = (struct rb_callable_method_entry_struct *)0;
                 }
             }
+
+            /* TODO: allow cc->aux_.v to move?? */
         }
         break;
       case imemo_constcache:

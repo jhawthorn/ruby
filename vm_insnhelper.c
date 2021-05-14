@@ -3151,8 +3151,12 @@ vm_call_symbol(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
     struct rb_callinfo *new_ci = &VM_CI_ON_STACK(mid, flags, argc, vm_ci_kwarg(ci));
     const struct rb_callcache *original_cc = calling->cc;
     const struct rb_callcache *cc = original_cc ? original_cc->aux_.v : vm_cc_empty();
+    const rb_callable_method_entry_t *cme;
 
-    if (!cc || !vm_cc_cme(cc) || vm_cc_cme(cc)->called_id != mid) {
+    VM_ASSERT(!cc || RB_TYPE_P(cc, T_IMEMO));
+    VM_ASSERT(!cc || IMEMO_TYPE_P(cc, imemo_callcache));
+
+    if (!cc || !(cme = vm_cc_cme(cc)) || cme->called_id != mid) {
 	    // not matching mid. use slowpath
 	    cc = rb_vm_search_method_slowpath(new_ci, klass);
     } else {
@@ -3163,7 +3167,7 @@ vm_call_symbol(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
     }
 
     if (original_cc) {
-       *(VALUE *)&original_cc->aux_.v = (VALUE)cc;
+        RB_OBJ_WRITE(original_cc, &original_cc->aux_.v, cc);
     }
 
     calling->ci = new_ci;
