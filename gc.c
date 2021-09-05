@@ -5403,22 +5403,25 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 	break;
 
       case T_OBJECT:
-        {
-            const VALUE * const ptr = ROBJECT_IVPTR(obj);
+    {
+        if (RB_FL_ANY_RAW(obj, ROBJECT_EMBED)) {
+            gc_mark(objspace, ROBJECT(obj)->as.ary[0]);
+            gc_mark(objspace, ROBJECT(obj)->as.ary[1]);
+            gc_mark(objspace, ROBJECT(obj)->as.ary[2]);
+        } else {
+            const VALUE * const ptr = ROBJECT(obj)->as.heap.ivptr;
+            uint32_t i, len = ROBJECT(obj)->as.heap.numiv;
+            for (i  = 0; i < len; i++) {
+                gc_mark(objspace, ptr[i]);
+            }
 
-            if (ptr) {
-                uint32_t i, len = ROBJECT_NUMIV(obj);
-                for (i  = 0; i < len; i++) {
-                    gc_mark(objspace, ptr[i]);
-                }
-
-                if (objspace->mark_func_data == NULL &&
+            if (objspace->mark_func_data == NULL &&
                     ROBJ_TRANSIENT_P(obj)) {
-                    rb_transient_heap_mark(obj, ptr);
-                }
+                rb_transient_heap_mark(obj, ptr);
             }
         }
-	break;
+    }
+    break;
 
       case T_FILE:
         if (any->as.file.fptr) {
