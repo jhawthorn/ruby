@@ -797,10 +797,18 @@ rb_obj_is_kind_of(VALUE obj, VALUE c)
 static VALUE
 class_search_ancestor(VALUE cl, VALUE c)
 {
-    while (cl) {
-	if (cl == c || RCLASS_M_TBL(cl) == RCLASS_M_TBL(c))
-	    return cl;
-	cl = RCLASS_SUPER(cl);
+    if (OBJ_BUILTIN_TYPE(c) == T_CLASS) {
+        while (cl) {
+            if (cl == c)
+                return cl;
+            cl = RCLASS_SUPER(cl);
+        }
+    } else {
+        while (cl) {
+            if (cl == c || RCLASS_M_TBL(cl) == RCLASS_M_TBL(c))
+                return cl;
+            cl = RCLASS_SUPER(cl);
+        }
     }
     return 0;
 }
