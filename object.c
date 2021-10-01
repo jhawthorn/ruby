@@ -791,7 +791,23 @@ rb_obj_is_kind_of(VALUE obj, VALUE c)
     VALUE cl = CLASS_OF(obj);
 
     c = class_or_module_required(c);
-    return RBOOL(class_search_ancestor(cl, RCLASS_ORIGIN(c)));
+
+    if (c == rb_cString) {
+        return RBOOL(RB_TYPE_P(obj, T_STRING));
+    } else if (c == rb_cSymbol) {
+        return RBOOL(RB_TYPE_P(obj, T_SYMBOL));
+    } else if (c == rb_cInteger) {
+        return RBOOL(RB_TYPE_P(obj, T_FIXNUM) || RB_TYPE_P(obj, T_BIGNUM));
+    } else if (c == rb_cArray) {
+        return RBOOL(RB_TYPE_P(obj, T_ARRAY));
+    } else if (c == rb_cHash) {
+        return RBOOL(RB_TYPE_P(obj, T_HASH));
+    } else if (c == rb_cRegexp) {
+        return RBOOL(RB_TYPE_P(obj, T_REGEXP));
+    } else {
+        c = RCLASS_ORIGIN(c);
+        return RBOOL(class_search_ancestor(cl, c));
+    }
 }
 
 static VALUE
