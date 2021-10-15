@@ -1491,6 +1491,8 @@ yjit_force_iv_index(VALUE klass, ID name)
 {
     ASSERT_vm_locking();
 
+    klass = rb_class_real(klass);
+
     ID id = name;
     struct rb_iv_index_tbl_entry *ent;
     struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(klass);
