@@ -1489,17 +1489,25 @@ enum {
 static uint32_t
 yjit_force_iv_index(VALUE comptime_receiver, VALUE klass, ID name)
 {
+    ASSERT_vm_locking();
+
     ID id = name;
     struct rb_iv_index_tbl_entry *ent;
-    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(comptime_receiver);
+    struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(klass);
+
+    if (!iv_index_tbl) {
+        // Same as iv_index_tbl_make
+        iv_index_tbl = RCLASS_IV_INDEX_TBL(klass) = st_init_numtable();
+    }
 
     // Make sure there is a mapping for this ivar in the index table
-    if (!iv_index_tbl || !rb_iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
-        rb_ivar_set(comptime_receiver, id, Qundef);
-        iv_index_tbl = ROBJECT_IV_INDEX_TBL(comptime_receiver);
-        RUBY_ASSERT(iv_index_tbl);
-        // Redo the lookup
-        RUBY_ASSERT_ALWAYS(rb_iv_index_tbl_lookup(iv_index_tbl, id, &ent));
+    if (!rb_iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
+        // Same as iv_index_tbl_extend
+        ent = ALLOC(struct rb_iv_index_tbl_entry);
+        ent->index = (uint32_t)iv_index_tbl->num_entries;
+        ent->class_value = klass;
+        ent->class_serial = RCLASS_SERIAL(klass);
+        st_add_direct(iv_index_tbl, (st_data_t)id, (st_data_t)ent);
     }
 
     return ent->index;
