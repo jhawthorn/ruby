@@ -2187,6 +2187,24 @@ assert_equal '[3]', %q{
   5.times.map { default_expression }.uniq
 }
 
+# complex kwargs
+assert_equal '[[1, 2, 3, 4]]', %q{
+  def foo(required:, specified: 999, simple_default: 3, complex_default: "4".to_i)
+    [required, specified, simple_default, complex_default]
+  end
+
+  5.times.map { foo(specified: 2, required: 1) }.uniq
+}
+
+# reordered required kwargs
+assert_equal '[[1, 2, 3, 4]]', %q{
+  def foo(default1: 1, required1:, default2: 3, required2:)
+    [default1, required1, default2, required2]
+  end
+
+  5.times.map { foo(required1: 2, required2: 4) }.uniq
+}
+
 # attr_reader on frozen object
 assert_equal 'false', %q{
   class Foo
