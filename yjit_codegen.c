@@ -3173,6 +3173,43 @@ jit_rb_str_bytesize(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, c
     return true;
 }
 
+static bool
+jit_call_cfunc_without_frame(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, const int32_t argc, VALUE *known_recv_klass)
+{
+    const rb_method_cfunc_t *cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
+
+    ADD_COMMENT(cb, "cfunc without frame");
+
+    if ((vm_ci_flag(ci) & VM_CALL_ARGS_SIMPLE) != 0) {
+        fprintf(stderr, "not simple :(\n");
+        // not simple, we can try a more generic send
+        return false;
+    }
+
+    if (cfunc->argc == -1) {
+        // TODO
+        return false;
+    } else {
+        RUBY_ASSERT(cfunc->argc >= 0 && argc + 1 > NUM_C_ARG_REGS);
+
+        if (cfunc->argc != 0)
+            return false;
+
+        //for (int i = 0; i < cfunc->argc; i++)
+    }
+
+    x86opnd_t recv = ctx_stack_pop(ctx, 1);
+    mov(cb, C_ARG_REGS[0], recv);
+
+    call_ptr(cb, REG0, (void*)cfunc->func);
+
+    x86opnd_t out_opnd = ctx_stack_push(ctx, TYPE_UNKNOWN);
+    mov(cb, out_opnd, RAX);
+
+    return false;
+}
+
+
 // Codegen for rb_str_to_s()
 // When String#to_s is called on a String instance, the method returns self and
 // most of the overhead comes from setting up the method call. We observed that
@@ -5061,8 +5098,10 @@ yjit_init_codegen(void)
     // rb_str_to_s() methods in string.c
     yjit_reg_method(rb_cString, "to_s", jit_rb_str_to_s);
     yjit_reg_method(rb_cString, "to_str", jit_rb_str_to_s);
-    yjit_reg_method(rb_cString, "bytesize", jit_rb_str_bytesize);
+    yjit_reg_method(rb_cString, "bytesize", jit_call_cfunc_without_frame);
 
     // Thread.current
     yjit_reg_method(rb_singleton_class(rb_cThread), "current", jit_thread_s_current);
+
+    yjit_reg_method(rb_cArray, "length", jit_call_cfunc_without_frame);
 }
