@@ -1234,6 +1234,28 @@ lock_st_insert(st_table *tab, st_data_t key, st_data_t value)
 }
 
 VALUE
+rb_class_ivar_lookup(VALUE obj, ID id, VALUE undef)
+{
+    st_data_t val;
+
+    RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
+
+    if (RCLASS_IV_TBL(obj) &&
+            lock_st_lookup(RCLASS_IV_TBL(obj), (st_data_t)id, &val)) {
+        if (rb_is_instance_id(id) &&
+                UNLIKELY(!rb_ractor_main_p()) &&
+                !rb_ractor_shareable_p(val)) {
+            rb_raise(rb_eRactorIsolationError,
+                    "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
+        }
+        return val;
+    }
+    else {
+        return undef;
+    }
+}
+
+VALUE
 rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
 {
     if (SPECIAL_CONST_P(obj)) return undef;
@@ -1256,23 +1278,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
         }
       case T_CLASS:
       case T_MODULE:
-        {
-            st_data_t val;
-
-            if (RCLASS_IV_TBL(obj) &&
-                lock_st_lookup(RCLASS_IV_TBL(obj), (st_data_t)id, &val)) {
-                if (rb_is_instance_id(id) &&
-                    UNLIKELY(!rb_ractor_main_p()) &&
-                    !rb_ractor_shareable_p(val)) {
-                    rb_raise(rb_eRactorIsolationError,
-                             "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
-                }
-                return val;
-            }
-            else {
-                break;
-            }
-        }
+        return rb_class_ivar_lookup(obj, id, undef);
       default:
 	if (FL_TEST(obj, FL_EXIVAR))
 	    return generic_ivar_get(obj, id, undef);
