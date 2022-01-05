@@ -1280,9 +1280,7 @@ gen_putspecialobject(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     enum vm_special_object_type type = (enum vm_special_object_type)jit_get_arg(jit, 0);
 
     if (type == VM_SPECIAL_OBJECT_VMCORE) {
-        x86opnd_t stack_top = ctx_stack_push(ctx, TYPE_HEAP);
-        jit_mov_gc_ptr(jit, cb, REG0, rb_mRubyVMFrozenCore);
-        mov(cb, stack_top, REG0);
+        jit_putobject(jit, ctx, rb_mRubyVMFrozenCore);
         return YJIT_KEEP_COMPILING;
     }
     else {
@@ -2643,11 +2641,7 @@ gen_opt_str_freeze(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 
     VALUE str = jit_get_arg(jit, 0);
-    jit_mov_gc_ptr(jit, cb, REG0, str);
-
-    // Push the return value onto the stack
-    x86opnd_t stack_ret = ctx_stack_push(ctx, TYPE_STRING);
-    mov(cb, stack_ret, REG0);
+    jit_putobject(jit, ctx, str);
 
     return YJIT_KEEP_COMPILING;
 }
@@ -2660,11 +2654,7 @@ gen_opt_str_uminus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 
     VALUE str = jit_get_arg(jit, 0);
-    jit_mov_gc_ptr(jit, cb, REG0, str);
-
-    // Push the return value onto the stack
-    x86opnd_t stack_ret = ctx_stack_push(ctx, TYPE_STRING);
-    mov(cb, stack_ret, REG0);
+    jit_putobject(jit, ctx, str);
 
     return YJIT_KEEP_COMPILING;
 }
@@ -3091,15 +3081,13 @@ jit_rb_obj_not(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const 
     if (recv_opnd.type == ETYPE_NIL || recv_opnd.type == ETYPE_FALSE) {
         ADD_COMMENT(cb, "rb_obj_not(nil_or_false)");
         ctx_stack_pop(ctx, 1);
-        x86opnd_t out_opnd = ctx_stack_push(ctx, TYPE_TRUE);
-        mov(cb, out_opnd, imm_opnd(Qtrue));
+        jit_putobject(jit, ctx, Qtrue);
     }
     else if (recv_opnd.is_heap || recv_opnd.type != ETYPE_UNKNOWN) {
         // Note: recv_opnd.type != ETYPE_NIL && recv_opnd.type != ETYPE_FALSE.
         ADD_COMMENT(cb, "rb_obj_not(truthy)");
         ctx_stack_pop(ctx, 1);
-        x86opnd_t out_opnd = ctx_stack_push(ctx, TYPE_FALSE);
-        mov(cb, out_opnd, imm_opnd(Qfalse));
+        jit_putobject(jit, ctx, Qfalse);
     }
     else {
         // jit_guard_known_klass() already ran on the receiver which should
@@ -3116,8 +3104,7 @@ jit_rb_true(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_
 {
     ADD_COMMENT(cb, "nil? == true");
     ctx_stack_pop(ctx, 1);
-    x86opnd_t stack_ret = ctx_stack_push(ctx, TYPE_TRUE);
-    mov(cb, stack_ret, imm_opnd(Qtrue));
+    jit_putobject(jit, ctx, Qtrue);
     return true;
 }
 
@@ -3127,8 +3114,7 @@ jit_rb_false(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb
 {
     ADD_COMMENT(cb, "nil? == false");
     ctx_stack_pop(ctx, 1);
-    x86opnd_t stack_ret = ctx_stack_push(ctx, TYPE_FALSE);
-    mov(cb, stack_ret, imm_opnd(Qfalse));
+    jit_putobject(jit, ctx, Qfalse);
     return true;
 }
 
