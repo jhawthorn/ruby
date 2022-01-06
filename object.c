@@ -4264,6 +4264,16 @@ f_sprintf(int c, const VALUE *v, VALUE _)
  *++
  */
 
+VALUE rb_obj_shape_id(VALUE self) {
+	return INT2NUM(get_shape_id(self));
+}
+
+VALUE rb_obj_set_shape_id(VALUE self, VALUE id) {
+	set_shape_id(self, NUM2INT(id));
+	return id;
+}
+
+
 void
 InitVM_Object(void)
 {
@@ -4284,6 +4294,8 @@ InitVM_Object(void)
     rb_define_method(rb_cBasicObject, "equal?", rb_obj_equal, 1);
     rb_define_method(rb_cBasicObject, "!", rb_obj_not, 0);
     rb_define_method(rb_cBasicObject, "!=", rb_obj_not_equal, 1);
+    rb_define_method(rb_cBasicObject, "shape_id", rb_obj_shape_id, 0);
+    rb_define_method(rb_cBasicObject, "shape_id=", rb_obj_set_shape_id, 1);
 
     rb_define_private_method(rb_cBasicObject, "singleton_method_added", rb_obj_singleton_method_added, 1);
     rb_define_private_method(rb_cBasicObject, "singleton_method_removed", rb_obj_singleton_method_removed, 1);

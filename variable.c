@@ -1552,6 +1552,21 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     return val;
 }
 
+uint32_t get_shape_id(VALUE obj)
+{
+	return RBASIC(obj)->flags >> 32;
+}
+
+void set_shape_id(VALUE obj, uint32_t id)
+{
+	RBASIC(obj)->flags &= (0xffffffff);
+	RBASIC(obj)->flags |= ((uint64_t)id << 32);
+}
+
+rb_shape_t get_shape(VALUE obj)
+{
+}
+
 static void
 ivar_set(VALUE obj, ID id, VALUE val)
 {
@@ -1559,6 +1574,14 @@ ivar_set(VALUE obj, ID id, VALUE val)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
+	/*
+	 * Array of existing shapes which we can index into w a shape_id
+	 * Hash (tree representation) of ivar transitions between shapes
+	rb_shape_t shape = get_shape(obj);
+	rb_shape_t next_shape = get_next_shape(shape, id);
+        obj_ivar_set(obj, id, val);
+	set_shape(obj, next_shape);
+	 */
         obj_ivar_set(obj, id, val);
         break;
       case T_CLASS:

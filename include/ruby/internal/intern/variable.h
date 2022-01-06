@@ -242,6 +242,9 @@ VALUE rb_ivar_get(VALUE obj, ID name);
  */
 VALUE rb_ivar_set(VALUE obj, ID name, VALUE val);
 
+uint32_t get_shape_id(VALUE obj);
+void set_shape_id(VALUE obj, uint32_t id);
+
 /**
  * Queries if  the instance variable  is defined  at the object.   This roughly
  * resembles `defined?(@name)` in `obj`'s context.

@@ -3879,6 +3879,10 @@ Init_vm_objects(void)
     vm->mark_object_ary = rb_ary_tmp_new(128);
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
+    rb_darray_make(&vm->shape_list, 100);
+    vm->shape_root = calloc(sizeof(rb_shape_t), 1);
+    vm->shape_root->edges = st_init_numtable();
+    rb_darray_set(*vm->shape_list, 0, vm->shape_root);
 }
 
 /* top self */
