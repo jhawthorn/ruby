@@ -358,7 +358,7 @@ struct rb_mjit_unit;
 typedef rb_darray(struct yjit_block_version *) rb_yjit_block_array_t;
 typedef rb_darray(rb_yjit_block_array_t) rb_yjit_block_array_array_t;
 
-typedef rb_darray(rb_shape_t) rb_shape_array_t;
+typedef rb_darray(rb_shape_t*) rb_shape_array_t;
 
 struct rb_iseq_constant_body {
     enum iseq_type {

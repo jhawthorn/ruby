@@ -1554,17 +1554,49 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 
 uint32_t get_shape_id(VALUE obj)
 {
-	return RBASIC(obj)->flags >> 32;
+	return RBASIC(obj)->flags >> 48;
 }
 
 void set_shape_id(VALUE obj, uint32_t id)
 {
-	RBASIC(obj)->flags &= (0xffffffff);
-	RBASIC(obj)->flags |= ((uint64_t)id << 32);
+	// Ractors are occupying the upper 32 bits of flags
+	// We're sneaking into the upper 16 bits (and hoping we don't interfere
+	// with ractors)
+	// That's why we're leftshifting 48 here and in get_shape_id
+	RBASIC(obj)->flags &= (0xffffffffffff);
+	RBASIC(obj)->flags |= ((uint64_t)id << 48);
 }
 
-rb_shape_t get_shape(VALUE obj)
+rb_shape_t* get_shape(VALUE obj)
 {
+	rb_vm_t *vm = GET_VM();
+	uint32_t shape_id = get_shape_id(obj);
+
+	return rb_darray_get(vm->shape_list, shape_id);
+}
+
+rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
+{
+	// Check to see if egdges hash exists
+	// If not, create a new edges hash
+	// Check if id is in hash
+	// If not, allocate a new shape and insert
+	// If so, return existing shape
+	if (!shape->edges) {
+		shape->edges = st_init_numtable();
+	}
+
+	st_data_t value;
+	if (st_lookup(shape->edges, (st_data_t)id, &value)) {
+		return (rb_shape_t*) value;
+	} else {
+		rb_vm_t *vm = GET_VM();
+		rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
+		st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
+		rb_darray_append(&vm->shape_list, new_shape);
+		new_shape->id = rb_darray_size(vm->shape_list) - 1;
+		return new_shape;
+	}
 }
 
 static void
@@ -1574,16 +1606,18 @@ ivar_set(VALUE obj, ID id, VALUE val)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
+      {
 	/*
 	 * Array of existing shapes which we can index into w a shape_id
 	 * Hash (tree representation) of ivar transitions between shapes
-	rb_shape_t shape = get_shape(obj);
-	rb_shape_t next_shape = get_next_shape(shape, id);
-        obj_ivar_set(obj, id, val);
-	set_shape(obj, next_shape);
 	 */
+	rb_shape_t* shape = get_shape(obj);
+	assert(shape);
+	rb_shape_t* next_shape = get_next_shape(shape, id);
         obj_ivar_set(obj, id, val);
+	set_shape_id(obj, next_shape->id);
         break;
+      }
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
