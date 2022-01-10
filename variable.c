@@ -1590,12 +1590,24 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
 	if (st_lookup(shape->edges, (st_data_t)id, &value)) {
 		return (rb_shape_t*) value;
 	} else {
-		rb_vm_t *vm = GET_VM();
-		rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
-		st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
-		rb_darray_append(&vm->shape_list, new_shape);
-		new_shape->id = rb_darray_size(vm->shape_list) - 1;
-		return new_shape;
+		// Is the ivar alreaddy in the set
+		if (shape->iv_table && st_lookup(shape->iv_table, (st_data_t)id, &value)) {
+			return shape;
+		} else {
+			// else
+			rb_vm_t *vm = GET_VM();
+			rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
+			st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
+			if (shape->iv_table) {
+				new_shape->iv_table = st_copy(shape->iv_table);
+			} else {
+				new_shape->iv_table = st_init_numtable();
+			}
+			st_insert(new_shape->iv_table, (st_data_t)id, (st_data_t)Qtrue);
+			rb_darray_append(&vm->shape_list, new_shape);
+			new_shape->id = rb_darray_size(vm->shape_list) - 1;
+			return new_shape;
+		}
 	}
 }
 

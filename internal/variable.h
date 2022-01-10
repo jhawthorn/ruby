@@ -13,6 +13,7 @@
 #include "constant.h"           /* for rb_const_entry_t */
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for VALUE */
+#include "vm_core.h"            /* for rb_shape_t */
 
 /* global variable */
 
@@ -36,6 +37,10 @@ static inline bool ROBJ_TRANSIENT_P(VALUE obj);
 static inline void ROBJ_TRANSIENT_SET(VALUE obj);
 static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
+uint32_t get_shape_id(VALUE obj);
+rb_shape_t* get_shape(VALUE obj);
+rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
+void set_shape_id(VALUE obj, uint32_t id);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */

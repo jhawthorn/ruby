@@ -4860,6 +4860,10 @@ count_objects(int argc, VALUE *argv, VALUE os)
     return hash;
 }
 
+VALUE rb_obj_shape_id(VALUE self, VALUE obj) {
+    return INT2NUM(get_shape_id(obj));
+}
+
 /*
   ------------------------ Garbage Collection ------------------------
 */
@@ -13830,6 +13834,7 @@ Init_GC(void)
     rb_define_method(rb_mKernel, "object_id", rb_obj_id, 0);
 
     rb_define_module_function(rb_mObjSpace, "count_objects", count_objects, -1);
+    rb_define_module_function(rb_mObjSpace, "shape_id", rb_obj_shape_id, 1);
 
     {
 	VALUE rb_cWeakMap = rb_define_class_under(rb_mObjSpace, "WeakMap", rb_cObject);
