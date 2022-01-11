@@ -4864,6 +4864,58 @@ VALUE rb_obj_shape_id(VALUE self, VALUE obj) {
     return INT2NUM(get_shape_id(obj));
 }
 
+static int collect_keys(st_data_t key, st_data_t value, st_data_t ref)
+{
+    rb_ary_push((VALUE)ref, ID2SYM((ID)key));
+    return ST_CONTINUE;
+}
+
+
+static VALUE seen_ivars(st_table* ivars)
+{
+    VALUE array = rb_ary_new();
+    if (ivars)
+    {
+        st_foreach(ivars, collect_keys, array);
+    }
+    return array;
+}
+
+VALUE rb_obj_shape(rb_shape_t* shape);
+
+static int collect_keys_and_values(st_data_t key, st_data_t value, st_data_t ref)
+{
+    rb_hash_aset((VALUE)ref, ID2SYM((ID)key), rb_obj_shape((rb_shape_t*)value));
+    return ST_CONTINUE;
+}
+
+static VALUE edges(st_table* edges)
+{
+    VALUE hash = rb_hash_new();
+    if (edges)
+    {
+        st_foreach(edges, collect_keys_and_values, hash);
+    }
+    return hash;
+}
+
+VALUE rb_obj_shape(rb_shape_t* shape) {
+    VALUE rb_shape = rb_hash_new();
+
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(shape->id));
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("seen_ivars")), seen_ivars(shape->iv_table));
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
+    return rb_shape;
+}
+
+static VALUE shape_transition_tree(VALUE self) {
+    // Might want to extract this into a get_root_shape
+    rb_vm_t *vm = GET_VM();
+    rb_shape_t* root_shape = vm->shape_root;
+
+    return rb_obj_shape(root_shape);
+}
+
 /*
   ------------------------ Garbage Collection ------------------------
 */
@@ -13835,6 +13887,7 @@ Init_GC(void)
 
     rb_define_module_function(rb_mObjSpace, "count_objects", count_objects, -1);
     rb_define_module_function(rb_mObjSpace, "shape_id", rb_obj_shape_id, 1);
+    rb_define_module_function(rb_mObjSpace, "shape_transition_tree", shape_transition_tree, 0);
 
     {
 	VALUE rb_cWeakMap = rb_define_class_under(rb_mObjSpace, "WeakMap", rb_cObject);
