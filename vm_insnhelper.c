@@ -1229,8 +1229,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
 	    rb_shape_t* shape = get_shape(obj);
 	    rb_shape_t* next_shape = get_next_shape(shape, id);
-	    // JEM: change to a set_shape and don't expose the id part
-	    set_shape_id(obj, next_shape->id);
+	    set_shape(obj, next_shape);
 
             return val;
         }
@@ -1274,8 +1273,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 
 	    rb_shape_t* shape = get_shape(obj);
 	    rb_shape_t* next_shape = get_next_shape(shape, id);
-	    // JEM: change to a set_shape and don't expose the id part
-	    set_shape_id(obj, next_shape->id);
+	    set_shape(obj, next_shape);
 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
             return val; /* inline cache hit */

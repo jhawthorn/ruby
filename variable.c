@@ -1557,14 +1557,14 @@ uint32_t get_shape_id(VALUE obj)
 	return RBASIC(obj)->flags >> 48;
 }
 
-void set_shape_id(VALUE obj, uint32_t id)
+void set_shape(VALUE obj, rb_shape_t* shape)
 {
 	// Ractors are occupying the upper 32 bits of flags
 	// We're sneaking into the upper 16 bits (and hoping we don't interfere
 	// with ractors)
 	// That's why we're leftshifting 48 here and in get_shape_id
 	RBASIC(obj)->flags &= (0xffffffffffff);
-	RBASIC(obj)->flags |= ((uint64_t)id << 48);
+	RBASIC(obj)->flags |= ((uint64_t)(shape->id) << 48);
 }
 
 rb_shape_t* get_shape(VALUE obj)
@@ -1627,7 +1627,7 @@ ivar_set(VALUE obj, ID id, VALUE val)
 	assert(shape);
 	rb_shape_t* next_shape = get_next_shape(shape, id);
         obj_ivar_set(obj, id, val);
-	set_shape_id(obj, next_shape->id);
+	set_shape(obj, next_shape);
         break;
       }
       case T_CLASS:
