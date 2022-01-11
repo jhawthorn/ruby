@@ -315,7 +315,7 @@ rb_ractor_belonging(VALUE obj)
         return 0;
     }
     else {
-	// TODO: Confirm max number of ractors fits within this threshold
+        // TODO: Confirm max number of ractors fits within this threshold
         return (RBASIC(obj)->flags >> 32) & 0xffff;
     }
 }

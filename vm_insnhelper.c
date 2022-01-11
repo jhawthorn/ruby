@@ -1227,9 +1227,9 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             RB_OBJ_WRITE(obj, &ptr[index], val);
             RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
 
-	    rb_shape_t* shape = get_shape(obj);
-	    rb_shape_t* next_shape = get_next_shape(shape, id);
-	    set_shape(obj, next_shape);
+            rb_shape_t* shape = get_shape(obj);
+            rb_shape_t* next_shape = get_next_shape(shape, id);
+            set_shape(obj, next_shape);
 
             return val;
         }
@@ -1271,9 +1271,9 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             VALUE *ptr = ROBJECT_IVPTR(obj);
             RB_OBJ_WRITE(obj, &ptr[index], val);
 
-	    rb_shape_t* shape = get_shape(obj);
-	    rb_shape_t* next_shape = get_next_shape(shape, id);
-	    set_shape(obj, next_shape);
+            rb_shape_t* shape = get_shape(obj);
+            rb_shape_t* next_shape = get_next_shape(shape, id);
+            set_shape(obj, next_shape);
 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
             return val; /* inline cache hit */

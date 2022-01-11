@@ -346,11 +346,11 @@ pathobj_realpath(VALUE pathobj)
 }
 
 typedef struct {
-	// id -> st_table;
-	st_table * edges;
-	// Store all previously seen ivars
-	st_table * iv_table;
-	uint32_t id;
+    // id -> st_table;
+    st_table * edges;
+    // Store all previously seen ivars
+    st_table * iv_table;
+    uint32_t id;
 } rb_shape_t;
 
 /* Forward declarations */
