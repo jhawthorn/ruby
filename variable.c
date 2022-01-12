@@ -59,6 +59,7 @@ struct ivar_update {
 	struct gen_ivtbl *ivtbl;
     } u;
     st_data_t index;
+    rb_shape_t* shape;
     int iv_extended;
 };
 
@@ -1382,6 +1383,10 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
     set_iv_index_for_cache(ent, (uint32_t)ivup->index);
     ent->class_value = klass;
     ent->class_serial = RCLASS_SERIAL(klass);
+    rb_shape_t* current_shape = ivup->shape;
+    ent->shape_source_id = current_shape->id;
+    rb_shape_t* next_shape = get_next_shape(current_shape, id);
+    ent->shape_dest_id = next_shape->id;
     st_add_direct(ivup->u.iv_index_tbl, (st_data_t)id, (st_data_t)ent);
     ivup->iv_extended = 1;
 }
@@ -1391,6 +1396,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     VALUE klass = rb_obj_class(obj);
     struct ivar_update ivup;
+    ivup.shape = get_shape(obj);
     ivup.iv_extended = 0;
     ivup.u.iv_index_tbl = iv_index_tbl_make(obj, klass);
 
@@ -1509,9 +1515,11 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
     struct ivar_update ivup;
     ivup.iv_extended = 0;
     ivup.u.iv_index_tbl = iv_index_tbl_make(obj, klass);
+    ivup.shape = get_shape(obj);
 
     RB_VM_LOCK_ENTER();
     {
+        // TODO: Figure out what to do with shapes here??
         iv_index_tbl_extend(&ivup, id, klass);
     }
     RB_VM_LOCK_LEAVE();
@@ -1557,14 +1565,19 @@ uint32_t get_shape_id(VALUE obj)
     return RBASIC(obj)->flags >> 48;
 }
 
-void set_shape(VALUE obj, rb_shape_t* shape)
+void set_shape_id(VALUE obj, uint16_t shape_id)
 {
     // Ractors are occupying the upper 32 bits of flags
     // We're sneaking into the upper 16 bits (and hoping we don't interfere
     // with ractors)
     // That's why we're leftshifting 48 here and in get_shape_id
     RBASIC(obj)->flags &= (0xffffffffffff);
-    RBASIC(obj)->flags |= ((uint64_t)(shape->id) << 48);
+    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
+}
+
+void set_shape(VALUE obj, rb_shape_t* shape)
+{
+    set_shape_id(obj, shape->id);
 }
 
 rb_shape_t* get_shape(VALUE obj)
@@ -1767,9 +1780,11 @@ gen_ivar_copy(ID id, VALUE val, st_data_t arg)
 
     ivup.iv_extended = 0;
     ivup.u.iv_index_tbl = c->iv_index_tbl;
+    ivup.shape = get_shape(c->obj);
 
     RB_VM_LOCK_ENTER();
     {
+        // TODO: Figure out what to do with shapes here??
         iv_index_tbl_extend(&ivup, id, c->klass);
     }
     RB_VM_LOCK_LEAVE();
