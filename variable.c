@@ -1383,10 +1383,6 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
     set_iv_index_for_cache(ent, (uint32_t)ivup->index);
     ent->class_value = klass;
     ent->class_serial = RCLASS_SERIAL(klass);
-    rb_shape_t* current_shape = ivup->shape;
-    ent->shape_source_id = current_shape->id;
-    rb_shape_t* next_shape = get_next_shape(current_shape, id);
-    ent->shape_dest_id = next_shape->id;
     st_add_direct(ivup->u.iv_index_tbl, (st_data_t)id, (st_data_t)ent);
     ivup->iv_extended = 1;
 }
@@ -1624,6 +1620,15 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
     }
 }
 
+void transition_shape(VALUE obj, ID id, VALUE val)
+{
+    rb_shape_t* shape = get_shape(obj);
+    assert(shape);
+    rb_shape_t* next_shape = get_next_shape(shape, id);
+    obj_ivar_set(obj, id, val);
+    set_shape(obj, next_shape);
+}
+
 static void
 ivar_set(VALUE obj, ID id, VALUE val)
 {
@@ -1636,11 +1641,7 @@ ivar_set(VALUE obj, ID id, VALUE val)
            * Array of existing shapes which we can index into w a shape_id
            * Hash (tree representation) of ivar transitions between shapes
            */
-          rb_shape_t* shape = get_shape(obj);
-          assert(shape);
-          rb_shape_t* next_shape = get_next_shape(shape, id);
-          obj_ivar_set(obj, id, val);
-          set_shape(obj, next_shape);
+          transition_shape(obj, id, val);
           break;
       }
       case T_CLASS:

@@ -19,6 +19,13 @@ class TestShapes < Test::Unit::TestCase
     end
   end
 
+  class Example2
+    def e2meth
+      @c = 1
+      self
+    end
+  end
+
   def test_initial_shape
     assert_equal(0, ObjectSpace.shape_id(Example.new))
   end
@@ -30,5 +37,10 @@ class TestShapes < Test::Unit::TestCase
   def test_transition_same_ivar_twice
     e = Example.new
     assert_equal(ObjectSpace.shape_id(e.meth), ObjectSpace.shape_id(e.meth2))
+  end
+
+  def test_inheritance
+    # TODO around Example2 in here
+
   end
 end

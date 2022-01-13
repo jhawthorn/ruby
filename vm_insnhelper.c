@@ -1207,6 +1207,10 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
         struct rb_iv_index_tbl_entry *ent;
 
         if (iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
+            rb_shape_t* shape = get_shape(obj);
+            rb_shape_t* next_shape = get_next_shape(shape, id);
+            set_shape(obj, next_shape);
+
             if (!is_attr) {
                 ic->entry = ent;
                 RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
@@ -1216,6 +1220,8 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             }
             else {
                 vm_cc_attr_index_set(cc, (int)(get_iv_index_for_cache(ent)));
+                vm_cc_attr_shape_source_id_set(cc, shape->id);
+                vm_cc_attr_shape_dest_id_set(cc, next_shape->id);
             }
 
             uint32_t index = get_iv_index_for_cache(ent);
@@ -1226,10 +1232,6 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             VALUE *ptr = ROBJECT_IVPTR(obj);
             RB_OBJ_WRITE(obj, &ptr[index], val);
             RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
-
-            rb_shape_t* shape = get_shape(obj);
-            rb_shape_t* next_shape = get_next_shape(shape, id);
-            set_shape(obj, next_shape);
 
             return val;
         }
@@ -1255,8 +1257,7 @@ static inline VALUE
 vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr)
 {
 #if OPT_IC_FOR_IVAR
-    if (LIKELY(RB_TYPE_P(obj, T_OBJECT)) &&
-        LIKELY(!RB_OBJ_FROZEN_RAW(obj))) {
+    if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
 
         VM_ASSERT(!rb_ractor_shareable_p(obj));
 
@@ -1264,10 +1265,25 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // transition and write the ivar
         // If object's shape id is the same as the dest, then just write the
         // ivar
+    uint16_t shape_id = get_shape_id(obj);
+    uint32_t shape_source_id;
+    if (is_attr) {
+        shape_source_id = vm_cc_attr_index_shape_source_id(cc);
+    } else {
+        if (ic->entry) {
+            shape_source_id = ic->entry->shape_source_id;
+        }
+    }
 	if (LIKELY(
 	    (!is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_serial, iv_index_for_cache_set_p(ic->entry) && ic->entry->class_serial  == RCLASS_SERIAL(RBASIC(obj)->klass))) ||
             ( is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_unset, vm_cc_attr_index_p(cc))))) {
             uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry) : vm_cc_attr_index(cc);
+            uint32_t shape_dest_id;
+            if (is_attr) {
+                shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+            } else {
+                shape_dest_id = ic->entry->shape_dest_id;
+            }
 
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);
@@ -1275,7 +1291,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             VALUE *ptr = ROBJECT_IVPTR(obj);
             RB_OBJ_WRITE(obj, &ptr[index], val);
 
-            set_shape_id(obj, ic->entry->shape_dest_id);
+            set_shape_id(obj, shape_dest_id);
 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
             return val; /* inline cache hit */

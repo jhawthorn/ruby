@@ -283,7 +283,14 @@ struct rb_callcache {
     const vm_call_handler call_;
 
     union {
-        const unsigned int attr_index;
+        /*
+         * attr_index is also storing shape_source_id and shape_dest_id in the
+         * following way:
+         *
+         * ---16 bits-------|---16 bits-----|-----32 bits-----
+         * shape_source_id  | shape_dest_id | attr_index
+         */
+        const uint64_t attr_index;
         const enum method_missing_reason method_missing_reason; /* used by method_missing */
         VALUE v;
     } aux_;
@@ -363,6 +370,20 @@ vm_cc_attr_index_p(const struct rb_callcache *cc)
     return cc->aux_.attr_index > 0;
 }
 
+static inline uint16_t
+vm_cc_attr_index_shape_source_id(const struct rb_callcache *cc)
+{
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    return cc->aux_.attr_index >> 48;
+}
+
+static inline uint16_t
+vm_cc_attr_index_shape_dest_id(const struct rb_callcache *cc)
+{
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    return (cc->aux_.attr_index >> 32) & 0xFFFF;
+}
+
 static inline unsigned int
 vm_cc_cmethod_missing_reason(const struct rb_callcache *cc)
 {
@@ -422,6 +443,26 @@ vm_cc_attr_index_initialize(const struct rb_callcache *cc)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
     *(int *)&cc->aux_.attr_index = 0;
+}
+
+static inline void
+vm_cc_attr_shape_source_id_set(const struct rb_callcache *cc, uint16_t index)
+{
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    VM_ASSERT(cc != vm_cc_empty());
+    int attr_index = vm_cc_attr_index(cc);
+    int dest_id = vm_cc_attr_index_shape_dest_id(cc);
+    *(uint64_t *)&cc->aux_.attr_index = (uint64_t)index << 48 | dest_id | attr_index;
+}
+
+static inline void
+vm_cc_attr_shape_dest_id_set(const struct rb_callcache *cc, uint16_t index)
+{
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    VM_ASSERT(cc != vm_cc_empty());
+    int attr_index = vm_cc_attr_index(cc);
+    int source_id = vm_cc_attr_index_shape_source_id(cc);
+    *(uint64_t *)&cc->aux_.attr_index = source_id | ((uint64_t)index << 32) | attr_index;
 }
 
 static inline void
