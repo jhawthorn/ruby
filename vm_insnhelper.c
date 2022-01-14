@@ -1259,33 +1259,35 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 #if OPT_IC_FOR_IVAR
     if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
 
-        // This assertion fails when we try call a method on something that was previously frozen
-        VM_ASSERT(!rb_ractor_shareable_p(obj));
-
         // If object's shape id is the same as the source, then just do the
         // transition and write the ivar
         // If object's shape id is the same as the dest, then just write the
         // ivar
-    uint16_t shape_id = get_shape_id(obj);
-    uint32_t shape_source_id;
-    if (is_attr) {
-        shape_source_id = vm_cc_attr_index_shape_source_id(cc);
-    } else {
-        if (ic->entry) {
-            shape_source_id = ic->entry->shape_source_id;
+        uint16_t shape_id = get_shape_id(obj);
+        uint32_t shape_source_id;
+        if (is_attr) {
+            shape_source_id = vm_cc_attr_index_shape_source_id(cc);
         }
-    }
-	if (LIKELY(
-	    (!is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_serial, iv_index_for_cache_set_p(ic->entry) && ic->entry->class_serial  == RCLASS_SERIAL(RBASIC(obj)->klass))) ||
-            ( is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_unset, vm_cc_attr_index_p(cc))))) {
+        else {
+            if (ic->entry) {
+                shape_source_id = ic->entry->shape_source_id;
+            }
+            else {
+                RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_serial);
+            }
+        }
+        // Do we have a cache hit *and* is the CC intitialized
+        if (shape_id && shape_id == shape_source_id) {
             uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry) : vm_cc_attr_index(cc);
             uint32_t shape_dest_id;
             if (is_attr) {
                 shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
-            } else {
+            }
+            else {
                 shape_dest_id = ic->entry->shape_dest_id;
             }
 
+            VM_ASSERT(!rb_ractor_shareable_p(obj));
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);
             }
@@ -1296,7 +1298,12 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
             return val; /* inline cache hit */
-	}
+        }
+        else {
+            if (is_attr) {
+                RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_unset);
+            }
+        }
     }
     else {
 	RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
