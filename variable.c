@@ -1302,6 +1302,18 @@ rb_attr_get(VALUE obj, ID id)
 }
 
 static VALUE
+rb_class_ivar_delete(VALUE obj, ID id, VALUE undef)
+{
+    if (RCLASS_IV_TBL(obj)) {
+        st_data_t id_data = (st_data_t)id, val;
+        if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
+            return (VALUE)val;
+        }
+    }
+    return undef;
+}
+
+static VALUE
 rb_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
     VALUE *ptr;
@@ -1327,12 +1339,7 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-	if (RCLASS_IV_TBL(obj)) {
-            st_data_t id_data = (st_data_t)id, val;
-            if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
-                return (VALUE)val;
-            }
-        }
+        return rb_class_ivar_delete(obj, id, undef);
 	break;
       default:
 	if (FL_TEST(obj, FL_EXIVAR))
@@ -1594,6 +1601,14 @@ rb_ivar_set_internal(VALUE obj, ID id, VALUE val)
     ivar_set(obj, id, val);
 }
 
+static VALUE
+rb_class_ivar_defined(VALUE obj, ID id)
+{
+    return RBOOL(
+            RCLASS_IV_TBL(obj) &&
+            lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id));
+}
+
 VALUE
 rb_ivar_defined(VALUE obj, ID id)
 {
@@ -1613,8 +1628,7 @@ rb_ivar_defined(VALUE obj, ID id)
 	break;
       case T_CLASS:
       case T_MODULE:
-        if (RCLASS_IV_TBL(obj) && lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id))
-	    return Qtrue;
+        return rb_class_ivar_defined(obj, id);
 	break;
       default:
 	if (FL_TEST(obj, FL_EXIVAR))
