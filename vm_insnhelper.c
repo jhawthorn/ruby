@@ -1259,6 +1259,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 #if OPT_IC_FOR_IVAR
     if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
 
+        // This assertion fails when we try call a method on something that was previously frozen
         VM_ASSERT(!rb_ractor_shareable_p(obj));
 
         // If object's shape id is the same as the source, then just do the
