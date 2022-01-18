@@ -1122,62 +1122,97 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     if (SPECIAL_CONST_P(obj)) {
         // frozen?
     }
-    else if (LIKELY(is_attr ?
+    else {
+        if (LIKELY(is_attr ?
                     RB_DEBUG_COUNTER_INC_UNLESS(ivar_get_ic_miss_unset, vm_cc_attr_index_p(cc)) :
                     RB_DEBUG_COUNTER_INC_UNLESS(ivar_get_ic_miss_serial,
-                                                iv_index_for_cache_set_p(ic->entry) && ic->entry->class_serial == RCLASS_SERIAL(RBASIC(obj)->klass)))) {
-        uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry): (vm_cc_attr_index(cc));
+                        iv_index_for_cache_set_p(ic->entry) && (ic->entry->shape_dest_id)))) {
 
-        RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
+            uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry): (vm_cc_attr_index(cc));
 
-        if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
-            LIKELY(index < ROBJECT_NUMIV(obj))) {
-            val = ROBJECT_IVPTR(obj)[index];
+            RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
 
-            VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+            if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
+                    LIKELY(index < ROBJECT_NUMIV(obj))) {
+                val = ROBJECT_IVPTR(obj)[index];
+
+                VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+            }
+            else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
+                val = rb_ivar_generic_lookup_with_index(obj, id, index);
+            }
+
+            goto ret;
         }
-        else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-            val = rb_ivar_generic_lookup_with_index(obj, id, index);
-        }
+        else { // cache miss case
+            struct rb_iv_index_tbl_entry *ent;
+            // Get the shape
+            rb_shape_t* shape = get_shape(obj);
+            st_data_t value;
+            if (shape->iv_table && st_lookup(shape->iv_table, id, &value)) // Does this shape have the ivar in seen ivars?
+            {
+            //   If yes, great cache the shape id along with index
+                printf("seen ivar\n");
+            }
+            else //   If no,  it's not defined, cache shape id along with something to indicate it's undefined, and return nil
+            {
+            }
 
-        goto ret;
-    }
-    else {
-        struct rb_iv_index_tbl_entry *ent;
+            if (BUILTIN_TYPE(obj) == T_OBJECT) {
+                // This is the "lookup" from the diagram
+                struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
 
-        if (BUILTIN_TYPE(obj) == T_OBJECT) {
-            struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
+                // IVAR read cache object must contain:
+                // 1. the ivar index
+                // 2. the shape id
+                //
+                // Get the shape
+                // Get the ivar read cache from seen_ivars hash
+                // Set the read cache to that value
+                // Do the read on that cache
 
-            if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
-                fill_ivar_cache(iseq, ic, cc, is_attr, ent);
+                /*
+                 * 1. Look at how we allocate ent
+                 *    - gsub ent / writer_ent
+                 * 2. Figure out how to allocate a reader_ent
+                 *
+                 */
+                /*
+                 * TODO: make a cache that looks just like the ent, based on
+                 * however the ent shenanigans are working
+                 */
+                if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
+                    // This fills in the cache with the shared cache object.
+                    // "ent" is the shared cache object
+                    fill_ivar_cache(iseq, ic, cc, is_attr, ent);
 
-                // get value
-                if (get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj)) {
-                    val = ROBJECT_IVPTR(obj)[get_iv_index_for_cache(ent)];
+                    if (get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj)) {
+                        val = ROBJECT_IVPTR(obj)[get_iv_index_for_cache(ent)];
 
-                    VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+                        VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+                    }
                 }
             }
-        }
-        else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-            struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+            else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
+                struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
 
-            if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
-                fill_ivar_cache(iseq, ic, cc, is_attr, ent);
-                val = rb_ivar_generic_lookup_with_index(obj, id, get_iv_index_for_cache(ent));
+                if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
+                    fill_ivar_cache(iseq, ic, cc, is_attr, ent);
+                    val = rb_ivar_generic_lookup_with_index(obj, id, get_iv_index_for_cache(ent));
+                }
             }
-        }
-        else {
-            // T_CLASS / T_MODULE
-            goto general_path;
-        }
+            else {
+                // T_CLASS / T_MODULE
+                goto general_path;
+            }
 
-      ret:
-        if (LIKELY(val != Qundef)) {
-            return val;
-        }
-        else {
-            return Qnil;
+ret:
+            if (LIKELY(val != Qundef)) {
+                return val;
+            }
+            else {
+                return Qnil;
+            }
         }
     }
   general_path:
