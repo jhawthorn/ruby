@@ -1,0 +1,8 @@
+- test against actual codebase to get prelim numbers on # of shapes (65k limit
+  currently)
+- make btest pass (current failing case is in test.rb)
+- move data out of objects and into the shapes (minimize lookups)
+   - iv_index_table
+- start thinking about other data structures to use
+- think about documentation
+
