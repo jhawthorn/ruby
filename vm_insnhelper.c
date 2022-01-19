@@ -1516,6 +1516,8 @@ vm_getclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *reg_cfp, ID
         VALUE v = Qundef;
         RB_DEBUG_COUNTER_INC(cvar_read_inline_hit);
 
+        RUBY_ASSERT(!RB_TYPE_P(ic->entry->class_value, T_ICLASS));
+
         if (st_lookup(RCLASS_IV_TBL(ic->entry->class_value), (st_data_t)id, &v) &&
             LIKELY(rb_ractor_main_p())) {
 
