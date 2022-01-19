@@ -1134,11 +1134,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             cached_id = ic->shape_id;
         }
 
-        // JEM: Added the check for if it's an object here, prob a better way to
-        // do this though? Can we remove this when (if?) we fold in the class to
-        // the object shape - or is there any other way to disambiguate an
-        // object with no ivars from the root object?
-        if (LIKELY(cached_id == shape_id) && BUILTIN_TYPE(obj) == T_OBJECT) {
+        if (LIKELY(cached_id == shape_id)) {
             RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
 
             uint32_t index;
@@ -1176,52 +1172,60 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         }
         else { // cache miss case
             struct rb_iv_index_tbl_entry *ent;
+            uint32_t iv_index;
 
-            if (BUILTIN_TYPE(obj) == T_OBJECT) {
-                if (is_attr) {
-                    RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
-                    // call a function to write to cc
-                    vm_cc_attr_shape_id_set(cc, shape_id);
-                }
-                else {
-                    RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_serial);
-                    ic->shape_id = shape_id;
-                }
-                // This is the "lookup" from the diagram
-                struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-                // cast to an rb_classext_t * and then -> iv_index_tbl
+            if (is_attr) {
+                RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
+                // call a function to write to cc
+                vm_cc_attr_shape_id_set(cc, shape_id);
+            }
+            else {
+                RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_serial);
+                ic->shape_id = shape_id;
+            }
+            // This is the "lookup" from the diagram
+            // cast to an rb_classext_t * and then -> iv_index_tbl
+            struct st_table *iv_index_tbl;
 
-                if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
-                    // This fills in the cache with the shared cache object.
-                    // "ent" is the shared cache object
-                    fill_ivar_cache(iseq, ic, cc, is_attr, ent);
-
-                    if (get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj)) {
-                        val = ROBJECT_IVPTR(obj)[get_iv_index_for_cache(ent)];
-
-                        VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
-                    }
-                }
-                else {
-                    if (is_attr) {
-                        vm_cc_attr_index_set(cc, 0);
-                    }
-                    else {
-                        ic->entry = NULL;
-                    }
-                }
+            if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT)) {
+                iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
             }
             else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-                struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+                iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+            }
+            else {
+                goto general_path;
+            }
 
-                if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
-                    fill_ivar_cache(iseq, ic, cc, is_attr, ent);
+            if (get_iv_index_from_shape(get_shape(obj), id, &iv_index)) {
+                iv_index_tbl_lookup(iv_index_tbl, id, &ent);
+                assert(iv_index == ent->index);
+
+                // This fills in the cache with the shared cache object.
+                // "ent" is the shared cache object
+                fill_ivar_cache(iseq, ic, cc, is_attr, ent);
+
+                // get value
+                if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
+                        LIKELY(get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj))) {
+                    val = ROBJECT_IVPTR(obj)[get_iv_index_for_cache(ent)];
+
+                    VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+                }
+                else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
                     val = rb_ivar_generic_lookup_with_index(obj, id, get_iv_index_for_cache(ent));
+                }
+                else {
+                    goto general_path;
                 }
             }
             else {
-                // T_CLASS / T_MODULE
-                goto general_path;
+                if (is_attr) {
+                    vm_cc_attr_index_set(cc, 0);
+                }
+                else {
+                    ic->entry = NULL;
+                }
             }
 
 ret:

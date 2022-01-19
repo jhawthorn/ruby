@@ -1612,11 +1612,20 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
             } else {
                 new_shape->iv_table = st_init_numtable();
             }
-            st_insert(new_shape->iv_table, (st_data_t)id, (st_data_t)Qtrue);
+            st_insert(new_shape->iv_table, (st_data_t)id, (st_data_t)new_shape->iv_table->num_entries);
             rb_darray_append(&vm->shape_list, new_shape);
             new_shape->id = rb_darray_size(vm->shape_list) - 1;
             return new_shape;
         }
+    }
+}
+
+int get_iv_index_from_shape(rb_shape_t * shape, ID id, uint32_t * value) {
+    if (shape->iv_table) {
+        return st_lookup(shape->iv_table, (st_data_t)id, (st_data_t *)value);
+    }
+    else {
+        return 0;
     }
 }
 
@@ -1625,7 +1634,6 @@ void transition_shape(VALUE obj, ID id, VALUE val)
     rb_shape_t* shape = get_shape(obj);
     assert(shape);
     rb_shape_t* next_shape = get_next_shape(shape, id);
-    obj_ivar_set(obj, id, val);
     set_shape(obj, next_shape);
 }
 
@@ -1634,6 +1642,7 @@ ivar_set(VALUE obj, ID id, VALUE val)
 {
     RB_DEBUG_COUNTER_INC(ivar_set_base);
 
+    transition_shape(obj, id, val);
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       {
@@ -1641,7 +1650,7 @@ ivar_set(VALUE obj, ID id, VALUE val)
            * Array of existing shapes which we can index into w a shape_id
            * Hash (tree representation) of ivar transitions between shapes
            */
-          transition_shape(obj, id, val);
+          obj_ivar_set(obj, id, val);
           break;
       }
       case T_CLASS:

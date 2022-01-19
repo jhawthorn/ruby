@@ -1,7 +1,13 @@
 - test against actual codebase to get prelim numbers on # of shapes (65k limit
   currently)
+     - Status: Chris S said he would relay info from Truffle
+     - Optcarrot currently has 241 shapes (seems incredibly low??)
 - make btest pass (current failing case is in test.rb)
+     - Status: Currently passing, maybe hacky, could we fold BUILTIN_TYPE into
+       the object shape?
 - move data out of objects and into the shapes (minimize lookups)
    - iv_index_table
 - start thinking about other data structures to use
 - think about documentation
+- ensure writes are atomic so that it works with ractors - can do this by
+  writing iv_index and shape_id to the same location

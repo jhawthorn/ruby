@@ -42,6 +42,7 @@ rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 void set_shape(VALUE obj, rb_shape_t* shape);
 void set_shape_id(VALUE obj, shape_id_t shape_id);
+int get_iv_index_from_shape(rb_shape_t * shape, ID id, uint32_t * value);
 # define MAX_SHAPE_ID 0xFFFE
 
 RUBY_SYMBOL_EXPORT_BEGIN
