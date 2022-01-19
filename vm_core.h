@@ -276,7 +276,7 @@ struct iseq_inline_constant_cache {
 
 struct iseq_inline_iv_cache_entry {
     struct rb_iv_index_tbl_entry *entry;
-    uint16_t shape_id;
+    shape_id_t shape_id;
 };
 
 struct iseq_inline_cvar_cache_entry {
@@ -351,7 +351,7 @@ typedef struct {
     st_table * edges;
     // Store all previously seen ivars
     st_table * iv_table;
-    uint32_t id;
+    shape_id_t id;
 } rb_shape_t;
 
 /* Forward declarations */

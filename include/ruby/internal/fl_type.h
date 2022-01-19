@@ -941,8 +941,9 @@ RB_OBJ_FREEZE_RAW(VALUE obj)
     RB_FL_SET_RAW(obj, RUBY_FL_FREEZE);
 }
 
+typedef uint16_t shape_id_t;
 void transition_shape(VALUE obj, ID id, VALUE val);
-uint32_t get_shape_id(VALUE obj);
+shape_id_t get_shape_id(VALUE obj);
 ID rb_intern(const char *name);
 /**
  * Prevents further modifications to the given object.  ::rb_eFrozenError shall

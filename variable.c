@@ -1556,12 +1556,12 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     return val;
 }
 
-uint32_t get_shape_id(VALUE obj)
+shape_id_t get_shape_id(VALUE obj)
 {
     return RBASIC(obj)->flags >> 48;
 }
 
-void set_shape_id(VALUE obj, uint16_t shape_id)
+void set_shape_id(VALUE obj, shape_id_t shape_id)
 {
     // Ractors are occupying the upper 32 bits of flags
     // We're sneaking into the upper 16 bits (and hoping we don't interfere
@@ -1579,7 +1579,7 @@ void set_shape(VALUE obj, rb_shape_t* shape)
 rb_shape_t* get_shape(VALUE obj)
 {
     rb_vm_t *vm = GET_VM();
-    uint32_t shape_id = get_shape_id(obj);
+    shape_id_t shape_id = get_shape_id(obj);
 
     return rb_darray_get(vm->shape_list, shape_id);
 }

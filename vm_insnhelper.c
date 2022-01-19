@@ -1124,8 +1124,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     }
     else {
         // Put shape_id into the inline cache
-        uint16_t shape_id = get_shape_id(obj);
-        uint16_t cached_id;
+        shape_id_t shape_id = get_shape_id(obj);
+        shape_id_t cached_id;
 
         if (is_attr) {
             cached_id = vm_cc_attr_shape_id(cc);
@@ -1134,7 +1134,11 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             cached_id = ic->shape_id;
         }
 
-        if (LIKELY(cached_id == shape_id)) {
+        // JEM: Added the check for if it's an object here, prob a better way to
+        // do this though? Can we remove this when (if?) we fold in the class to
+        // the object shape - or is there any other way to disambiguate an
+        // object with no ivars from the root object?
+        if (LIKELY(cached_id == shape_id) && BUILTIN_TYPE(obj) == T_OBJECT) {
             RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
 
             uint32_t index;
@@ -1312,8 +1316,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // transition and write the ivar
         // If object's shape id is the same as the dest, then just write the
         // ivar
-        uint16_t shape_id = get_shape_id(obj);
-        uint32_t shape_source_id;
+        shape_id_t shape_id = get_shape_id(obj);
+        shape_id_t shape_source_id;
         if (is_attr) {
             shape_source_id = vm_cc_attr_index_shape_source_id(cc);
         }
@@ -1328,7 +1332,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // Do we have a cache hit *and* is the CC intitialized
         if (shape_id && shape_id == shape_source_id) {
             uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry) : vm_cc_attr_index(cc);
-            uint32_t shape_dest_id;
+            shape_id_t shape_dest_id;
             if (is_attr) {
                 shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
             }

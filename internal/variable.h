@@ -37,11 +37,11 @@ static inline bool ROBJ_TRANSIENT_P(VALUE obj);
 static inline void ROBJ_TRANSIENT_SET(VALUE obj);
 static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
-uint32_t get_shape_id(VALUE obj);
+shape_id_t get_shape_id(VALUE obj);
 rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 void set_shape(VALUE obj, rb_shape_t* shape);
-void set_shape_id(VALUE obj, uint16_t shape_id);
+void set_shape_id(VALUE obj, shape_id_t shape_id);
 # define MAX_SHAPE_ID 0xFFFE
 
 RUBY_SYMBOL_EXPORT_BEGIN

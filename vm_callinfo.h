@@ -456,7 +456,7 @@ vm_cc_attr_index_initialize(const struct rb_callcache *cc)
 }
 
 static inline void
-vm_cc_attr_shape_id_set(const struct rb_callcache *cc, uint16_t shape_id)
+vm_cc_attr_shape_id_set(const struct rb_callcache *cc, shape_id_t shape_id)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
