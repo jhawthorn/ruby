@@ -1404,7 +1404,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     }
     RB_VM_LOCK_LEAVE();
 
-    ivup.u.ivtbl->ivptr[ivup.index] = val;
+    ivup.u.ivtbl->ivptr[ivup.index - 1] = val;
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
@@ -1547,11 +1547,11 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
 
     len = ROBJECT_NUMIV(obj);
-    if (len <= ivup.index) {
+    if (len <= (ivup.index - 1)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         init_iv_list(obj, len, newsize, ivup.u.iv_index_tbl);
     }
-    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[ivup.index], val);
+    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[(ivup.index - 1)], val);
 
     return val;
 }
@@ -3872,6 +3872,7 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
         RCLASS_IV_TBL(obj) = st_init_numtable();
     }
 
+    // TODO JEM anchor here maybe ???
     st_table *tbl = RCLASS_IV_TBL(obj);
     int result = lock_st_insert(tbl, (st_data_t)key, (st_data_t)value);
     RB_OBJ_WRITTEN(obj, Qundef, value);

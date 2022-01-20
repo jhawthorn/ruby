@@ -1119,7 +1119,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 #if OPT_IC_FOR_IVAR
     VALUE val = Qundef;
 
-    if (SPECIAL_CONST_P(obj)) {
+    if (SPECIAL_CONST_P(obj) || BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE) {
         // frozen?
     }
     else {
@@ -1146,9 +1146,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                     val = Qnil;
                     goto ret;
                 }
-                else {
-                    index--;
-                }
             }
             else {
                 if (!iv_index_for_cache_set_p(ic->entry)) {
@@ -1157,6 +1154,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 }
                 index = get_iv_index_for_cache(ic->entry);
             }
+
+            index--;
 
             if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
                     LIKELY(index < ROBJECT_NUMIV(obj))) {
@@ -1199,7 +1198,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
             if (get_iv_index_from_shape(get_shape(obj), id, &iv_index)) {
                 iv_index_tbl_lookup(iv_index_tbl, id, &ent);
-                assert(iv_index == ent->index);
+                assert(iv_index == (ent->index - 1));
 
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object
@@ -1315,7 +1314,6 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 {
 #if OPT_IC_FOR_IVAR
     if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
-
         // If object's shape id is the same as the source, then just do the
         // transition and write the ivar
         // If object's shape id is the same as the dest, then just write the
