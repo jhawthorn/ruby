@@ -1137,25 +1137,32 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         if (LIKELY(cached_id == shape_id)) {
             RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
 
+            // Things we need to know
+            // Has the cache been set?
+            //   2 ways to answer:
+            //      *if* it's an attr_reader, is the index 0
+            //      *if* it's an ivar, is the entry set
             uint32_t index;
 
             if (is_attr) {
-                index = vm_cc_attr_index(cc);
-
-                if (!index) {
+                if (vm_cc_attr_index_set_p(cc)) {
+                    index = vm_cc_attr_index(cc);
+                }
+                else {
                     val = Qnil;
                     goto ret;
                 }
             }
             else {
-                if (!iv_index_for_cache_set_p(ic->entry)) {
+                // Has the cache been filled?
+                if (iv_index_for_cache_set_p(ic->entry)) {
+                    index = get_iv_index_for_cache(ic->entry);
+                }
+                else {
                     val = Qnil;
                     goto ret;
                 }
-                index = get_iv_index_for_cache(ic->entry);
             }
-
-            index--;
 
             if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
                     LIKELY(index < ROBJECT_NUMIV(obj))) {
@@ -1198,7 +1205,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
             if (get_iv_index_from_shape(get_shape(obj), id, &iv_index)) {
                 iv_index_tbl_lookup(iv_index_tbl, id, &ent);
-                assert(iv_index == (ent->index - 1));
 
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object

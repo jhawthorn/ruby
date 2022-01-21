@@ -445,6 +445,7 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index)
     // JEM: It was the below on the shapes branch
     // uint64_t shape_id = (uint64_t)vm_cc_attr_shape_id(cc);
     // *(uint64_t *)&cc->aux_.attr_index = (shape_id << 32) | index;
+    // *(uint64_t *)&cc->aux_.attr_index = (shape_id << 32) | (index + 1);
 }
 
 static inline void
@@ -461,7 +462,8 @@ vm_cc_attr_shape_id_set(const struct rb_callcache *cc, shape_id_t shape_id)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
     unsigned int attr_index = vm_cc_attr_index(cc);
-    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)shape_id << 32) | attr_index;
+    uint64_t existing = cc->aux_.attr_index;
+    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)shape_id << 32) | existing;
 }
 
 static inline void
