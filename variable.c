@@ -1547,11 +1547,11 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
 
     len = ROBJECT_NUMIV(obj);
-    if (len <= (ivup.index - 1)) {
+    if (len <= (ivup.index)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         init_iv_list(obj, len, newsize, ivup.u.iv_index_tbl);
     }
-    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[(ivup.index - 1)], val);
+    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[ivup.index], val);
 
     return val;
 }
