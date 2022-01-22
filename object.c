@@ -797,6 +797,34 @@ rb_obj_is_kind_of(VALUE obj, VALUE c)
     return RBOOL(class_search_ancestor(cl, RCLASS_ORIGIN(c)));
 }
 
+struct st_table *
+class_get_ancestor_table(VALUE c) {
+    struct st_table *tbl;
+    if ((tbl = RCLASS_ANCESTOR_TBL(c)))
+        return tbl;
+
+    //RB_VM_LOCK();
+
+    // double check the ancestor table
+    if ((tbl = RCLASS_ANCESTOR_TBL(c))) {
+        goto done;
+    }
+
+    RCLASS_ANCESTOR_TBL(c) = tbl = rb_st_init_numtable();
+
+    int depth = 0;
+    while (c) {
+        VALUE origin = RCLASS_ORIGIN(c);
+        st_insert(tbl, rb_obj_id(origin), depth);
+        c = RCLASS_SUPER(c);
+        depth++;
+    }
+
+done:
+    //RB_VM_UNLOCK();
+    return tbl;
+}
+
 static VALUE
 class_search_ancestor(VALUE cl, VALUE c)
 {
