@@ -815,7 +815,7 @@ class_get_ancestor_table(VALUE c) {
     int depth = 0;
     while (c) {
         VALUE origin = RCLASS_ORIGIN(c);
-        st_insert(tbl, rb_obj_id(origin), depth);
+        st_insert(tbl, origin, depth);
         c = RCLASS_SUPER(c);
         depth++;
     }
@@ -828,11 +828,13 @@ done:
 static VALUE
 class_search_ancestor(VALUE cl, VALUE c)
 {
-    while (cl) {
-	if (cl == c || RCLASS_M_TBL(cl) == RCLASS_M_TBL(c))
-	    return cl;
-	cl = RCLASS_SUPER(cl);
-    }
+    struct st_table *tbl = class_get_ancestor_table(cl);
+    return RBOOL(st_lookup(tbl, c, NULL));
+    //while (cl) {
+	//if (cl == c || RCLASS_M_TBL(cl) == RCLASS_M_TBL(c))
+	//    return cl;
+	//cl = RCLASS_SUPER(cl);
+    //}
     return 0;
 }
 
