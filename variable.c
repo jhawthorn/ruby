@@ -895,7 +895,7 @@ iv_index_tbl_lookup(struct st_table *tbl, ID id, uint32_t *indexp)
 
     if (r) {
         struct rb_iv_index_tbl_entry *ent = (void *)ent_data;
-        *indexp = ent->index;
+        *indexp = get_iv_index_for_cache(ent);
         return true;
     }
     else {
@@ -1371,14 +1371,15 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
 
     if (st_lookup(ivup->u.iv_index_tbl, (st_data_t)id, &ent_data)) {
         ent = (void *)ent_data;
-        ivup->index = ent->index;
+        ivup->index = get_iv_index_for_cache(ent);
 	return;
     }
     if (ivup->u.iv_index_tbl->num_entries >= INT_MAX) {
 	rb_raise(rb_eArgError, "too many instance variables");
     }
     ent = ALLOC(struct rb_iv_index_tbl_entry);
-    ent->index = ivup->index = (uint32_t)ivup->u.iv_index_tbl->num_entries;
+    ivup->index = (uint32_t)ivup->u.iv_index_tbl->num_entries;
+    set_iv_index_for_cache(ent, (uint32_t)ivup->index);
     ent->class_value = klass;
     ent->class_serial = RCLASS_SERIAL(klass);
     st_add_direct(ivup->u.iv_index_tbl, (st_data_t)id, (st_data_t)ent);

@@ -1108,7 +1108,7 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
         RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
     }
     else {
-        vm_cc_attr_index_set(cc, ent->index);
+        vm_cc_attr_index_set(cc, get_iv_index_for_cache(ent));
     }
 }
 
@@ -1125,8 +1125,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     else if (LIKELY(is_attr ?
                     RB_DEBUG_COUNTER_INC_UNLESS(ivar_get_ic_miss_unset, vm_cc_attr_index_p(cc)) :
                     RB_DEBUG_COUNTER_INC_UNLESS(ivar_get_ic_miss_serial,
-                                                ic->entry && ic->entry->class_serial == RCLASS_SERIAL(RBASIC(obj)->klass)))) {
-        uint32_t index = !is_attr ? ic->entry->index: (vm_cc_attr_index(cc));
+                                                iv_index_for_cache_set_p(ic->entry) && ic->entry->class_serial == RCLASS_SERIAL(RBASIC(obj)->klass)))) {
+        uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry): (vm_cc_attr_index(cc));
 
         RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
 
@@ -1152,8 +1152,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 fill_ivar_cache(iseq, ic, cc, is_attr, ent);
 
                 // get value
-                if (ent->index < ROBJECT_NUMIV(obj)) {
-                    val = ROBJECT_IVPTR(obj)[ent->index];
+                if (get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj)) {
+                    val = ROBJECT_IVPTR(obj)[get_iv_index_for_cache(ent)];
 
                     VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
                 }
@@ -1164,7 +1164,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
             if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
                 fill_ivar_cache(iseq, ic, cc, is_attr, ent);
-                val = rb_ivar_generic_lookup_with_index(obj, id, ent->index);
+                val = rb_ivar_generic_lookup_with_index(obj, id, get_iv_index_for_cache(ent));
             }
         }
         else {
@@ -1211,14 +1211,14 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 ic->entry = ent;
                 RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
             }
-            else if (ent->index >= INT_MAX) {
+            else if (get_iv_index_for_cache(ent) >= INT_MAX) {
                 rb_raise(rb_eArgError, "too many instance variables");
             }
             else {
-                vm_cc_attr_index_set(cc, (int)(ent->index));
+                vm_cc_attr_index_set(cc, (int)(get_iv_index_for_cache(ent)));
             }
 
-            uint32_t index = ent->index;
+            uint32_t index = get_iv_index_for_cache(ent);
 
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);
@@ -1257,9 +1257,9 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         VM_ASSERT(!rb_ractor_shareable_p(obj));
 
 	if (LIKELY(
-	    (!is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_serial, ic->entry && ic->entry->class_serial  == RCLASS_SERIAL(RBASIC(obj)->klass))) ||
+	    (!is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_serial, iv_index_for_cache_set_p(ic->entry) && ic->entry->class_serial  == RCLASS_SERIAL(RBASIC(obj)->klass))) ||
             ( is_attr && RB_DEBUG_COUNTER_INC_UNLESS(ivar_set_ic_miss_unset, vm_cc_attr_index_p(cc))))) {
-            uint32_t index = !is_attr ? ic->entry->index : vm_cc_attr_index(cc);
+            uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry) : vm_cc_attr_index(cc);
 
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);

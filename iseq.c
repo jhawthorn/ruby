@@ -199,9 +199,9 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
           case TS_ICVARC:
             {
                 IVC ivc = (IVC)code[pos + op_no + 1];
-                if (ivc->entry) {
+                if (iv_index_for_cache_set_p(ivc->entry)) {
                     if (RB_TYPE_P(ivc->entry->class_value, T_NONE)) {
-                        rb_bug("!! %u", ivc->entry->index);
+                        rb_bug("!! %u", get_iv_index_for_cache(ivc->entry));
                     }
                     VALUE nv = func(data, ivc->entry->class_value);
                     if (ivc->entry->class_value != nv) {

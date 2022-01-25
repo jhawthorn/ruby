@@ -464,11 +464,11 @@ init_ivar_compile_status(const struct rb_iseq_constant_body *body, struct compil
         if (insn == BIN(getinstancevariable) || insn == BIN(setinstancevariable)) {
             IVC ic = (IVC)body->iseq_encoded[pos+2];
             IVC ic_copy = &(status->is_entries + ((union iseq_inline_storage_entry *)ic - body->is_entries))->iv_cache;
-            if (ic_copy->entry) { // Only initialized (ic_serial > 0) IVCs are optimized
+            if (iv_index_for_cache_set_p(ic_copy->entry)) { // Only initialized (ic_serial > 0) IVCs are optimized
                 num_ivars++;
 
-                if (status->max_ivar_index < ic_copy->entry->index) {
-                    status->max_ivar_index = ic_copy->entry->index;
+                if (status->max_ivar_index < get_iv_index_for_cache(ic_copy->entry)) {
+                    status->max_ivar_index = get_iv_index_for_cache(ic_copy->entry);
                 }
 
                 if (status->ivar_serial == 0) {
