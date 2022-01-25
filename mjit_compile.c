@@ -467,6 +467,7 @@ init_ivar_compile_status(const struct rb_iseq_constant_body *body, struct compil
             if (iv_index_for_cache_set_p(ic_copy->entry)) { // Only initialized (ic_serial > 0) IVCs are optimized
                 num_ivars++;
 
+                printf("475\n");
                 if (status->max_ivar_index < get_iv_index_for_cache(ic_copy->entry)) {
                     status->max_ivar_index = get_iv_index_for_cache(ic_copy->entry);
                 }

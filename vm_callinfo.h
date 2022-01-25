@@ -361,6 +361,7 @@ vm_cc_attr_index(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     return cc->aux_.attr_index - 1;
+//    return (cc->aux_.attr_index & 0xFFFFFFFF) - 1;
 }
 
 static inline bool

@@ -1404,7 +1404,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     }
     RB_VM_LOCK_LEAVE();
 
-    ivup.u.ivtbl->ivptr[ivup.index - 1] = val;
+    ivup.u.ivtbl->ivptr[ivup.index] = val;
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
