@@ -6969,9 +6969,12 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:
-        if (RCLASS_SUPER(obj)) {
-            gc_mark(objspace, RCLASS_SUPER(obj));
-        }
+          if (RCLASS_ANCESTOR_ARY(obj)) {
+              gc_mark(objspace, RCLASS_ANCESTOR_ARY(obj));
+          }
+          if (RCLASS_SUPER(obj)) {
+              gc_mark(objspace, RCLASS_SUPER(obj));
+          }
 	if (!RCLASS_EXT(obj)) break;
 
         mark_m_tbl(objspace, RCLASS_M_TBL(obj));

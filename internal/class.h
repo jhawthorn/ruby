@@ -37,6 +37,11 @@ struct rb_cvar_class_tbl_entry {
     VALUE class_value;
 };
 
+struct rb_superclass_tbl {
+    uint32_t num;
+    VALUE classes[FLEX_ARY_LEN];
+};
+
 struct rb_classext_struct {
     struct st_table *iv_index_tbl; // ID -> struct rb_iv_index_tbl_entry
     struct st_table *iv_tbl;
@@ -47,9 +52,9 @@ struct rb_classext_struct {
     struct rb_id_table *callable_m_tbl;
     struct rb_id_table *cc_tbl; /* ID -> [[ci, cc1], cc2, ...] */
     struct rb_id_table *cvc_tbl;
-    struct st_table *ancestor_tbl; /* ancestor class -> depth */
     struct rb_subclass_entry *subclasses;
     struct rb_subclass_entry *subclass_entry;
+    struct rb_superclass_tbl *superclass_tbl;
     /**
      * In the case that this is an `ICLASS`, `module_subclasses` points to the link
      * in the module's `subclasses` list that indicates that the klass has been
@@ -63,6 +68,7 @@ struct rb_classext_struct {
     const VALUE refined_class;
     rb_alloc_func_t allocator;
     const VALUE includer;
+    VALUE ancestor_ary;
 };
 
 struct RClass {
@@ -98,7 +104,7 @@ typedef struct rb_classext_struct rb_classext_t;
 #else
 # define RCLASS_M_TBL(c) (RCLASS(c)->m_tbl)
 #endif
-#define RCLASS_ANCESTOR_TBL(c) (RCLASS_EXT(c)->ancestor_tbl)
+#define RCLASS_ANCESTOR_ARY(c) (RCLASS_EXT(c)->ancestor_ary)
 #define RCLASS_CALLABLE_M_TBL(c) (RCLASS_EXT(c)->callable_m_tbl)
 #define RCLASS_CC_TBL(c) (RCLASS_EXT(c)->cc_tbl)
 #define RCLASS_CVC_TBL(c) (RCLASS_EXT(c)->cvc_tbl)
@@ -119,6 +125,7 @@ typedef struct rb_classext_struct rb_classext_t;
 #define RCLASS_MODULE_SUBCLASS_ENTRY(c) (RCLASS_EXT(c)->module_subclass_entry)
 #define RCLASS_ALLOCATOR(c) (RCLASS_EXT(c)->allocator)
 #define RCLASS_SUBCLASSES(c) (RCLASS_EXT(c)->subclasses)
+#define RCLASS_SUPERCLASS_TBL(c) (RCLASS_EXT(c)->superclass_tbl)
 
 #define RICLASS_IS_ORIGIN FL_USER5
 #define RCLASS_CLONED     FL_USER6

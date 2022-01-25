@@ -797,44 +797,40 @@ rb_obj_is_kind_of(VALUE obj, VALUE c)
     return RBOOL(class_search_ancestor(cl, RCLASS_ORIGIN(c)));
 }
 
-struct st_table *
-class_get_ancestor_table(VALUE c) {
-    struct st_table *tbl;
-    if ((tbl = RCLASS_ANCESTOR_TBL(c)))
-        return tbl;
+VALUE
+class_get_ancestor_ary(VALUE c) {
+    VALUE ary;
+    if ((ary = RCLASS_ANCESTOR_ARY(c)))
+        return ary;
 
-    //RB_VM_LOCK();
+    RCLASS_ANCESTOR_ARY(c) = ary = rb_ary_tmp_new(8);
 
-    // double check the ancestor table
-    if ((tbl = RCLASS_ANCESTOR_TBL(c))) {
-        goto done;
+    for (VALUE cl = c; cl; cl = RCLASS_SUPER(cl)) {
+        VALUE origin = RCLASS_ORIGIN(cl);
+        rb_obj_info_dump(origin);
+        RUBY_ASSERT(origin);
+        rb_ary_push(ary, origin);
     }
 
-    RCLASS_ANCESTOR_TBL(c) = tbl = rb_st_init_numtable();
-
-    int depth = 0;
-    while (c) {
-        VALUE origin = RCLASS_ORIGIN(c);
-        st_insert(tbl, origin, depth);
-        c = RCLASS_SUPER(c);
-        depth++;
-    }
-
-done:
-    //RB_VM_UNLOCK();
-    return tbl;
+    return ary;
 }
 
 static VALUE
 class_search_ancestor(VALUE cl, VALUE c)
 {
-    struct st_table *tbl = class_get_ancestor_table(cl);
-    return RBOOL(st_lookup(tbl, c, NULL));
-    //while (cl) {
-	//if (cl == c || RCLASS_M_TBL(cl) == RCLASS_M_TBL(c))
-	//    return cl;
-	//cl = RCLASS_SUPER(cl);
-    //}
+    VALUE ary = class_get_ancestor_ary(cl);
+    while (cl) {
+        if (cl == c || RCLASS_M_TBL(cl) == RCLASS_M_TBL(c))
+            return cl;
+        cl = RCLASS_SUPER(cl);
+    }
+    return 0;
+
+    for (int i = 0; i < RARRAY_LEN(ary); i++) {
+        if (RARRAY_AREF(ary, i) == c) {
+            return cl;
+        }
+    }
     return 0;
 }
 

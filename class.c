@@ -229,6 +229,7 @@ class_alloc(VALUE flags, VALUE klass)
     RCLASS_SERIAL(obj) = rb_next_class_serial();
     RB_OBJ_WRITE(obj, &RCLASS_REFINED_CLASS(obj), Qnil);
     RCLASS_ALLOCATOR(obj) = 0;
+    RCLASS_SUPERCLASS_TBL(c) = ;
 
     return (VALUE)obj;
 }
