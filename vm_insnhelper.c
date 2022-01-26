@@ -1097,18 +1097,19 @@ iv_index_tbl_lookup(struct st_table *iv_index_tbl, ID id, struct rb_iv_index_tbl
     return found ? true : false;
 }
 
-ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, struct rb_iv_index_tbl_entry *ent));
+ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, struct rb_iv_index_tbl_entry *ent, shape_id_t shape_id));
 
 static inline void
-fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, struct rb_iv_index_tbl_entry *ent)
+fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, struct rb_iv_index_tbl_entry *ent, shape_id_t shape_id)
 {
     // fill cache
     if (!is_attr) {
         ic->entry = ent;
+        ic->shape_id = shape_id;
         RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
     }
     else {
-        vm_cc_attr_index_set(cc, get_iv_index_for_cache(ent));
+        vm_cc_attr_index_set(cc, get_iv_index_for_cache(ent), shape_id, shape_id);
     }
 }
 
@@ -1182,13 +1183,11 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
             if (is_attr) {
                 RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
-                // call a function to write to cc
-                vm_cc_attr_shape_id_set(cc, shape_id);
             }
             else {
                 RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_serial);
-                ic->shape_id = shape_id;
             }
+
             // This is the "lookup" from the diagram
             // cast to an rb_classext_t * and then -> iv_index_tbl
             struct st_table *iv_index_tbl;
@@ -1208,7 +1207,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object
-                fill_ivar_cache(iseq, ic, cc, is_attr, ent);
+                fill_ivar_cache(iseq, ic, cc, is_attr, ent, shape_id);
 
                 // get value
                 if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
@@ -1226,10 +1225,11 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             }
             else {
                 if (is_attr) {
-                    vm_cc_attr_index_set(cc, -1);
+                    vm_cc_attr_index_initialize(cc, shape_id);
                 }
                 else {
                     ic->entry = NULL;
+                    ic->shape_id = shape_id;
                 }
             }
 
@@ -1283,9 +1283,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 rb_raise(rb_eArgError, "too many instance variables");
             }
             else {
-                vm_cc_attr_index_set(cc, (int)(index));
-                vm_cc_attr_shape_source_id_set(cc, shape->id);
-                vm_cc_attr_shape_dest_id_set(cc, next_shape->id);
+                vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
             }
 
 
@@ -3740,7 +3738,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 
 	rb_check_arity(calling->argc, 1, 1);
-	vm_cc_attr_index_initialize(cc);
+	vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
         const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
         VM_CALL_METHOD_ATTR(v,
                             vm_call_attrset(ec, cfp, calling),
@@ -3751,8 +3749,7 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_SETUP_ARG(cfp, calling, ci);
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 	rb_check_arity(calling->argc, 0, 0);
-    vm_cc_attr_index_initialize(cc);
-    vm_cc_attr_shape_id_set(cc, MAX_SHAPE_ID + 1);
+    vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
         const unsigned int ivar_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT);
         VM_CALL_METHOD_ATTR(v,
                             vm_call_ivar(ec, cfp, calling),

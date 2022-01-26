@@ -2404,7 +2404,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 		      case TS_IVC: /* inline ivar cache */
             {
 			    unsigned int ic_index = FIX2UINT(operands[j]);
-                ((IVC)&body->is_entries[ic_index])->shape_id = MAX_SHAPE_ID + 1;
+                ((IVC)&body->is_entries[ic_index])->shape_id = INVALID_SHAPE_ID;
             }
 		      case TS_ISE: /* inline storage entry */
 			{

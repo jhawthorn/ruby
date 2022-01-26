@@ -9,6 +9,7 @@
  */
 
 #include "debug_counter.h"
+#include "internal/variable.h"
 
 enum vm_call_flag_bits {
     VM_CALL_ARGS_SPLAT_bit,     /* m(*args) */
@@ -367,9 +368,7 @@ static inline bool
 vm_cc_attr_index_p(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    return cc->aux_.attr_index > 0;
-    // JEM it was the below, that also passes
-    // return (cc->aux_.attr_index & 0xFFFFFFFF) != 0;
+    return (cc->aux_.attr_index & 0xFFFFFFFF) != 0;
 }
 
 static inline uint16_t
@@ -439,22 +438,19 @@ vm_cc_call_set(const struct rb_callcache *cc, vm_call_handler call)
 }
 
 static inline void
-vm_cc_attr_index_set(const struct rb_callcache *cc, int index)
+vm_cc_attr_index_set(const struct rb_callcache *cc, int index, shape_id_t source_shape_id, shape_id_t dest_shape_id)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *(int *)&cc->aux_.attr_index = index + 1;
-    // JEM: It was the below on the shapes branch, both ways pass tests
-    // uint64_t shape_id = (uint64_t)vm_cc_attr_shape_id(cc);
-    // *(uint64_t *)&cc->aux_.attr_index = (shape_id << 32) | (index + 1);
+    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
 }
 
 static inline void
-vm_cc_attr_index_initialize(const struct rb_callcache *cc)
+vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *(int *)&cc->aux_.attr_index = 0;
+    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)(shape_id) << 48) | ((uint64_t)(shape_id) << 32) | 0;
 }
 
 static inline void
@@ -464,26 +460,6 @@ vm_cc_attr_shape_id_set(const struct rb_callcache *cc, shape_id_t shape_id)
     VM_ASSERT(cc != vm_cc_empty());
     uint64_t existing = cc->aux_.attr_index;
     *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)shape_id << 32) | existing;
-}
-
-static inline void
-vm_cc_attr_shape_source_id_set(const struct rb_callcache *cc, uint16_t index)
-{
-    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    VM_ASSERT(cc != vm_cc_empty());
-    int attr_index = vm_cc_attr_index(cc) + 1;
-    int dest_id = vm_cc_attr_index_shape_dest_id(cc);
-    *(uint64_t *)&cc->aux_.attr_index = (uint64_t)index << 48 | dest_id | attr_index;
-}
-
-static inline void
-vm_cc_attr_shape_dest_id_set(const struct rb_callcache *cc, uint16_t index)
-{
-    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    VM_ASSERT(cc != vm_cc_empty());
-    int attr_index = vm_cc_attr_index(cc) + 1;
-    int source_id = vm_cc_attr_index_shape_source_id(cc);
-    *(uint64_t *)&cc->aux_.attr_index = source_id | ((uint64_t)index << 32) | attr_index;
 }
 
 static inline void

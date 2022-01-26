@@ -2,9 +2,6 @@
   currently)
      - Status: Chris S said he would relay info from Truffle
      - Optcarrot currently has 241 shapes (seems incredibly low??)
-- make btest pass (current failing case is in test.rb)
-     - Status: Currently passing, maybe hacky, could we fold BUILTIN_TYPE into
-       the object shape?
 - move data out of objects and into the shapes (minimize lookups)
    - iv_index_table
 - start thinking about other data structures to use
