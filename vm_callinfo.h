@@ -360,8 +360,7 @@ static inline unsigned int
 vm_cc_attr_index(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    return cc->aux_.attr_index - 1;
-//    return (cc->aux_.attr_index & 0xFFFFFFFF) - 1;
+    return (int)(cc->aux_.attr_index - 1);
 }
 
 static inline bool
@@ -369,7 +368,7 @@ vm_cc_attr_index_p(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     return cc->aux_.attr_index > 0;
-    // JEM the below ??
+    // JEM it was the below, that also passes
     // return (cc->aux_.attr_index & 0xFFFFFFFF) != 0;
 }
 
@@ -445,9 +444,8 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
     *(int *)&cc->aux_.attr_index = index + 1;
-    // JEM: It was the below on the shapes branch
+    // JEM: It was the below on the shapes branch, both ways pass tests
     // uint64_t shape_id = (uint64_t)vm_cc_attr_shape_id(cc);
-    // *(uint64_t *)&cc->aux_.attr_index = (shape_id << 32) | index;
     // *(uint64_t *)&cc->aux_.attr_index = (shape_id << 32) | (index + 1);
 }
 

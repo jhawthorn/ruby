@@ -1108,7 +1108,6 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
         RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
     }
     else {
-        printf("1111\n");
         vm_cc_attr_index_set(cc, get_iv_index_for_cache(ent));
     }
 }
@@ -1146,7 +1145,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             uint32_t index;
 
             if (is_attr) {
-                if (vm_cc_attr_index_set_p(cc)) {
+                if (vm_cc_attr_index_p(cc)) {
                     index = vm_cc_attr_index(cc);
                 }
                 else {
@@ -1157,7 +1156,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             else {
                 // Has the cache been filled?
                 if (iv_index_for_cache_set_p(ic->entry)) {
-                    printf("1160\n");
                     index = get_iv_index_for_cache(ic->entry);
                 }
                 else {
@@ -1212,7 +1210,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 // "ent" is the shared cache object
                 fill_ivar_cache(iseq, ic, cc, is_attr, ent);
 
-                printf("1217\n");
                 // get value
                 if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
                         LIKELY(get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj))) {
@@ -1221,7 +1218,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                     VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
                 }
                 else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-                    printf("1226\n");
                     val = rb_ivar_generic_lookup_with_index(obj, id, get_iv_index_for_cache(ent));
                 }
                 else {
@@ -1277,7 +1273,6 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             rb_shape_t* next_shape = get_next_shape(shape, id);
             set_shape(obj, next_shape);
 
-            printf("1282\n");
             uint32_t index = get_iv_index_for_cache(ent);
 
             if (!is_attr) {
@@ -1293,14 +1288,9 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 vm_cc_attr_shape_dest_id_set(cc, next_shape->id);
             }
 
-            puts("1296");
 
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);
-            }
-            if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                puts("1296");
-                abort();
             }
             VALUE *ptr = ROBJECT_IVPTR(obj);
             RB_OBJ_WRITE(obj, &ptr[index], val);
