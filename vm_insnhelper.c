@@ -1106,7 +1106,6 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
     if (!is_attr) {
         ic->entry = ent;
         ic->shape_id = shape_id;
-        RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
     }
     else {
         vm_cc_attr_index_set(cc, get_iv_index_for_cache(ent), shape_id, shape_id);
@@ -1277,7 +1276,6 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
             if (!is_attr) {
                 ic->entry = ent;
-                RB_OBJ_WRITTEN(iseq, Qundef, ent->class_value);
             }
             else if (index >= INT_MAX) {
                 rb_raise(rb_eArgError, "too many instance variables");

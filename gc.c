@@ -10050,7 +10050,6 @@ update_iv_index_tbl_i(st_data_t key, st_data_t value, st_data_t arg)
 {
     rb_objspace_t *objspace = (rb_objspace_t *)arg;
     struct rb_iv_index_tbl_entry *ent = (struct rb_iv_index_tbl_entry *)value;
-    UPDATE_IF_MOVED(objspace, ent->class_value);
     return ST_CONTINUE;
 }
 

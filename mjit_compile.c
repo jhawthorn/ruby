@@ -467,15 +467,14 @@ init_ivar_compile_status(const struct rb_iseq_constant_body *body, struct compil
             if (iv_index_for_cache_set_p(ic_copy->entry)) { // Only initialized (ic_serial > 0) IVCs are optimized
                 num_ivars++;
 
-                printf("475\n");
                 if (status->max_ivar_index < get_iv_index_for_cache(ic_copy->entry)) {
                     status->max_ivar_index = get_iv_index_for_cache(ic_copy->entry);
                 }
 
                 if (status->ivar_serial == 0) {
-                    status->ivar_serial = ic_copy->entry->class_serial;
+                    status->ivar_serial = ic_copy->entry->shape_source_id;
                 }
-                else if (status->ivar_serial != ic_copy->entry->class_serial) {
+                else if (status->ivar_serial != ic_copy->entry->shape_source_id) {
                     // Multiple classes have used this ISeq. Give up assuming one serial.
                     status->merge_ivar_guards_p = false;
                     return;

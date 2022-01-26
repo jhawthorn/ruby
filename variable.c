@@ -1381,8 +1381,6 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
     ent = ALLOC(struct rb_iv_index_tbl_entry);
     ivup->index = (uint32_t)ivup->u.iv_index_tbl->num_entries;
     set_iv_index_for_cache(ent, (uint32_t)ivup->index);
-    ent->class_value = klass;
-    ent->class_serial = RCLASS_SERIAL(klass);
     st_add_direct(ivup->u.iv_index_tbl, (st_data_t)id, (st_data_t)ent);
     ivup->iv_extended = 1;
 }
