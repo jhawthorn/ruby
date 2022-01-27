@@ -881,22 +881,21 @@ rb_alias_variable(ID name1, ID name2)
 }
 
 static bool
-iv_index_tbl_lookup(struct st_table *tbl, ID id, uint32_t *indexp)
+iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
     st_data_t ent_data;
     int r;
 
-    if (tbl == NULL) return false;
+    rb_shape_t* shape = get_shape(obj);
 
     RB_VM_LOCK_ENTER();
     {
-        r = st_lookup(tbl, (st_data_t)id, &ent_data);
+        r = st_lookup(shape->iv_table, (st_data_t)id, &ent_data);
     }
     RB_VM_LOCK_LEAVE();
 
     if (r) {
-        struct rb_iv_index_tbl_entry *ent = (void *)ent_data;
-        *indexp = get_iv_index_for_cache(ent);
+        *indexp = (uint32_t)ent_data;
         return true;
     }
     else {
@@ -988,7 +987,7 @@ generic_ivar_delete(VALUE obj, ID id, VALUE undef)
 	st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
         uint32_t index;
 
-        if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &index)) {
+        if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
 	    if (index < ivtbl->numiv) {
 		VALUE ret = ivtbl->ivptr[index];
 
@@ -1009,7 +1008,7 @@ generic_ivar_get(VALUE obj, ID id, VALUE undef)
 	st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
         uint32_t index;
 
-	if (iv_index_tbl && iv_index_tbl_lookup(iv_index_tbl, id, &index)) {
+	if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
 	    if (index < ivtbl->numiv) {
 		VALUE ret = ivtbl->ivptr[index];
 
@@ -1092,10 +1091,9 @@ static VALUE
 generic_ivar_defined(VALUE obj, ID id)
 {
     struct gen_ivtbl *ivtbl;
-    st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
     uint32_t index;
 
-    if (!iv_index_tbl_lookup(iv_index_tbl, id, &index)) return Qfalse;
+    if (!iv_index_tbl_lookup(obj, id, &index)) return Qfalse;
     if (!gen_ivtbl_get(obj, id, &ivtbl)) return Qfalse;
 
     return RBOOL((index < ivtbl->numiv) && (ivtbl->ivptr[index] != Qundef));
@@ -1109,7 +1107,7 @@ generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
     st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
 
     if (!iv_index_tbl) return 0;
-    if (!iv_index_tbl_lookup(iv_index_tbl, id, &index)) return 0;
+    if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
     if (!gen_ivtbl_get(obj, id, &ivtbl)) return 0;
 
     if (index < ivtbl->numiv) {
@@ -1246,7 +1244,7 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             VALUE *ptr = ROBJECT_IVPTR(obj);
             VALUE val;
 
-            if (iv_index_tbl_lookup(ROBJECT_IV_INDEX_TBL(obj), id, &index) &&
+            if (iv_index_tbl_lookup(obj, id, &index) &&
                 index < len &&
                 (val = ptr[index]) != Qundef) {
                 return val;
@@ -1309,7 +1307,8 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
         len = ROBJECT_NUMIV(obj);
         ptr = ROBJECT_IVPTR(obj);
         iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-        if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
+
+        if (iv_index_tbl_lookup(obj, id, &index) &&
             index < len) {
             VALUE val = ptr[index];
             ptr[index] = Qundef;
@@ -1690,7 +1689,7 @@ rb_ivar_defined(VALUE obj, ID id)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
         iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-        if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
+        if (iv_index_tbl_lookup(obj, id, &index) &&
             index < ROBJECT_NUMIV(obj) &&
             (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
             return Qtrue;
@@ -2047,7 +2046,7 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
         iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-        if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
+        if (iv_index_tbl_lookup(obj, id, &index) &&
             index < ROBJECT_NUMIV(obj) &&
             (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
             ROBJECT_IVPTR(obj)[index] = Qundef;

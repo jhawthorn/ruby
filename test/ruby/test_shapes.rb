@@ -39,6 +39,11 @@ class TestShapes < Test::Unit::TestCase
     assert_equal(ObjectSpace.shape_id(e.meth), ObjectSpace.shape_id(e.meth2))
   end
 
+  def test_object_duplication
+    o = Object.new
+    assert_equal(ObjectSpace.shape_id(o), ObjectSpace.shape_id(o.dup))
+  end
+
   def test_inheritance
     # TODO around Example2 in here
 

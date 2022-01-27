@@ -10045,25 +10045,12 @@ update_subclass_entries(rb_objspace_t *objspace, rb_subclass_entry_t *entry)
     }
 }
 
-static int
-update_iv_index_tbl_i(st_data_t key, st_data_t value, st_data_t arg)
-{
-    rb_objspace_t *objspace = (rb_objspace_t *)arg;
-    struct rb_iv_index_tbl_entry *ent = (struct rb_iv_index_tbl_entry *)value;
-    return ST_CONTINUE;
-}
-
 static void
 update_class_ext(rb_objspace_t *objspace, rb_classext_t *ext)
 {
     UPDATE_IF_MOVED(objspace, ext->origin_);
     UPDATE_IF_MOVED(objspace, ext->refined_class);
     update_subclass_entries(objspace, ext->subclasses);
-
-    // ext->iv_index_tbl
-    if (ext->iv_index_tbl) {
-        st_foreach(ext->iv_index_tbl, update_iv_index_tbl_i, (st_data_t)objspace);
-    }
 }
 
 static void
