@@ -890,7 +890,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 
     RB_VM_LOCK_ENTER();
     {
-        r = st_lookup(shape->iv_table, (st_data_t)id, &ent_data);
+        r = shape->iv_table && st_lookup(shape->iv_table, (st_data_t)id, &ent_data);
     }
     RB_VM_LOCK_LEAVE();
 
