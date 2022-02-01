@@ -275,8 +275,8 @@ struct iseq_inline_constant_cache {
 };
 
 struct iseq_inline_iv_cache_entry {
-    struct rb_iv_index_tbl_entry *entry;
-    shape_id_t shape_id;
+    // struct rb_iv_index_tbl_entry *entry;
+    uint64_t entry;
 };
 
 struct iseq_inline_cvar_cache_entry {

@@ -155,10 +155,9 @@ static inline void RCLASS_SET_INCLUDER(VALUE iclass, VALUE klass);
 MJIT_SYMBOL_EXPORT_BEGIN
 VALUE rb_class_inherited(VALUE, VALUE);
 VALUE rb_keyword_error_new(const char *, VALUE);
-
 uint32_t get_iv_index_for_cache(struct rb_iv_index_tbl_entry* entry);
 void set_iv_index_for_cache(struct rb_iv_index_tbl_entry* entry, uint32_t index);
-bool iv_index_for_cache_set_p(struct rb_iv_index_tbl_entry *entry);
+
 MJIT_SYMBOL_EXPORT_END
 
 static inline void

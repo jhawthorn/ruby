@@ -2399,14 +2399,14 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			    }
 			    break;
 			}
-		      case TS_IC: /* inline cache */
-              case TS_ICVARC: /* inline cvar cache */
 		      case TS_IVC: /* inline ivar cache */
             {
 			    unsigned int ic_index = FIX2UINT(operands[j]);
-                ((IVC)&body->is_entries[ic_index])->shape_id = INVALID_SHAPE_ID;
+                vm_ic_attr_index_initialize(((IVC)&body->is_entries[ic_index]), INVALID_SHAPE_ID);
             }
+		      case TS_IC: /* inline cache */
 		      case TS_ISE: /* inline storage entry */
+		      case TS_ICVARC: /* inline storage entry */
 			{
 			    unsigned int ic_index = FIX2UINT(operands[j]);
 			    IC ic = (IC)&body->is_entries[ic_index];

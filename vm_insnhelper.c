@@ -1080,35 +1080,40 @@ vm_search_const_defined_class(const VALUE cbase, ID id)
 }
 
 static bool
-iv_index_tbl_lookup(struct st_table *iv_index_tbl, ID id, struct rb_iv_index_tbl_entry **ent)
+iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
-    int found;
     st_data_t ent_data;
+    int r;
 
-    if (iv_index_tbl == NULL) return false;
+    rb_shape_t* shape = get_shape(obj);
 
     RB_VM_LOCK_ENTER();
     {
-        found = st_lookup(iv_index_tbl, (st_data_t)id, &ent_data);
+        r = shape->iv_table && st_lookup(shape->iv_table, (st_data_t)id, &ent_data);
     }
     RB_VM_LOCK_LEAVE();
-    if (found) *ent = (struct rb_iv_index_tbl_entry *)ent_data;
 
-    return found ? true : false;
+    if (r) {
+        *indexp = (uint32_t)ent_data;
+        return true;
+    }
+    else {
+        return false;
+    }
 }
 
-ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, struct rb_iv_index_tbl_entry *ent, shape_id_t shape_id));
+
+ALWAYS_INLINE(static void fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, uint32_t index, shape_id_t shape_id));
 
 static inline void
-fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, struct rb_iv_index_tbl_entry *ent, shape_id_t shape_id)
+fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, uint32_t index, shape_id_t shape_id)
 {
     // fill cache
     if (!is_attr) {
-        ic->entry = ent;
-        ic->shape_id = shape_id;
+        vm_ic_attr_index_set(ic, index, shape_id, shape_id);
     }
     else {
-        vm_cc_attr_index_set(cc, get_iv_index_for_cache(ent), shape_id, shape_id);
+        vm_cc_attr_index_set(cc, index, shape_id, shape_id);
     }
 }
 
@@ -1131,7 +1136,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             cached_id = vm_cc_attr_shape_id(cc);
         }
         else {
-            cached_id = ic->shape_id;
+            cached_id = vm_ic_attr_shape_id(ic);
         }
 
         if (LIKELY(cached_id == shape_id)) {
@@ -1155,8 +1160,8 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             }
             else {
                 // Has the cache been filled?
-                if (iv_index_for_cache_set_p(ic->entry)) {
-                    index = get_iv_index_for_cache(ic->entry);
+                if (vm_ic_attr_index_p(ic)) {
+                    index = vm_ic_attr_index(ic);
                 }
                 else {
                     val = Qnil;
@@ -1177,7 +1182,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             goto ret;
         }
         else { // cache miss case
-            struct rb_iv_index_tbl_entry *ent;
             uint32_t iv_index;
 
             if (is_attr) {
@@ -1201,22 +1205,22 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 goto general_path;
             }
 
-            if (get_iv_index_from_shape(get_shape(obj), id, &iv_index)) {
-                iv_index_tbl_lookup(iv_index_tbl, id, &ent);
-
+            st_data_t index_st;
+            if (get_iv_index_from_shape(get_shape(obj), id, &index_st)) {
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object
-                fill_ivar_cache(iseq, ic, cc, is_attr, ent, shape_id);
+                iv_index = (uint32_t) index_st;
+                fill_ivar_cache(iseq, ic, cc, is_attr, iv_index, shape_id);
 
                 // get value
                 if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
-                        LIKELY(get_iv_index_for_cache(ent) < ROBJECT_NUMIV(obj))) {
-                    val = ROBJECT_IVPTR(obj)[get_iv_index_for_cache(ent)];
+                        LIKELY(iv_index < ROBJECT_NUMIV(obj))) {
+                    val = ROBJECT_IVPTR(obj)[iv_index];
 
                     VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
                 }
                 else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-                    val = rb_ivar_generic_lookup_with_index(obj, id, get_iv_index_for_cache(ent));
+                    val = rb_ivar_generic_lookup_with_index(obj, id, iv_index);
                 }
                 else {
                     goto general_path;
@@ -1227,8 +1231,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                     vm_cc_attr_index_initialize(cc, shape_id);
                 }
                 else {
-                    ic->entry = NULL;
-                    ic->shape_id = shape_id;
+                    vm_ic_attr_index_initialize(ic, shape_id);
                 }
             }
 
@@ -1264,18 +1267,15 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
 #if OPT_IC_FOR_IVAR
     if (RB_TYPE_P(obj, T_OBJECT)) {
-        struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-        struct rb_iv_index_tbl_entry *ent;
+        uint32_t index;
 
-        if (iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
+        if (iv_index_tbl_lookup(obj, id, &index)) {
             rb_shape_t* shape = get_shape(obj);
             rb_shape_t* next_shape = get_next_shape(shape, id);
             set_shape(obj, next_shape);
 
-            uint32_t index = get_iv_index_for_cache(ent);
-
             if (!is_attr) {
-                ic->entry = ent;
+                vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
             }
             else if (index >= INT_MAX) {
                 rb_raise(rb_eArgError, "too many instance variables");
@@ -1328,7 +1328,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         }
         else {
             if (ic->entry) {
-                shape_source_id = ic->entry->shape_source_id;
+                shape_source_id = vm_ic_attr_index_shape_source_id(ic);
             }
             else {
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_serial);
@@ -1336,13 +1336,13 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         }
         // Do we have a cache hit *and* is the CC intitialized
         if (shape_id && shape_id == shape_source_id) {
-            uint32_t index = !is_attr ? get_iv_index_for_cache(ic->entry) : vm_cc_attr_index(cc);
+            uint32_t index = !is_attr ? vm_ic_attr_index(ic) : vm_cc_attr_index(cc);
             shape_id_t shape_dest_id;
             if (is_attr) {
                 shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
             }
             else {
-                shape_dest_id = ic->entry->shape_dest_id;
+                shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
             }
 
             VM_ASSERT(!rb_ractor_shareable_p(obj));
@@ -3157,7 +3157,8 @@ vm_call_ivar(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_call
     const struct rb_callcache *cc = calling->cc;
     RB_DEBUG_COUNTER_INC(ccf_ivar);
     cfp->sp -= 1;
-    return vm_getivar(calling->recv, vm_cc_cme(cc)->def->body.attr.id, NULL, NULL, cc, TRUE);
+    VALUE ivar = vm_getivar(calling->recv, vm_cc_cme(cc)->def->body.attr.id, NULL, NULL, cc, TRUE);
+    return ivar;
 }
 
 static VALUE

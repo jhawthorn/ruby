@@ -1956,10 +1956,6 @@ void set_iv_index_for_cache(struct rb_iv_index_tbl_entry* entry, uint32_t index)
     entry->idx = index + 1;
 }
 
-bool iv_index_for_cache_set_p(struct rb_iv_index_tbl_entry* entry) {
-    return entry && entry->idx;
-}
-
 /*!
  * \}
  */

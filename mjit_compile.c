@@ -464,17 +464,17 @@ init_ivar_compile_status(const struct rb_iseq_constant_body *body, struct compil
         if (insn == BIN(getinstancevariable) || insn == BIN(setinstancevariable)) {
             IVC ic = (IVC)body->iseq_encoded[pos+2];
             IVC ic_copy = &(status->is_entries + ((union iseq_inline_storage_entry *)ic - body->is_entries))->iv_cache;
-            if (iv_index_for_cache_set_p(ic_copy->entry)) { // Only initialized (ic_serial > 0) IVCs are optimized
+            if (vm_ic_attr_index_p(ic_copy)) { // Only initialized (ic_serial > 0) IVCs are optimized
                 num_ivars++;
 
-                if (status->max_ivar_index < get_iv_index_for_cache(ic_copy->entry)) {
-                    status->max_ivar_index = get_iv_index_for_cache(ic_copy->entry);
+                if (status->max_ivar_index < vm_ic_attr_index(ic_copy)) {
+                    status->max_ivar_index = vm_ic_attr_index(ic_copy);
                 }
 
                 if (status->ivar_serial == 0) {
-                    status->ivar_serial = ic_copy->entry->shape_source_id;
+                    status->ivar_serial = vm_ic_attr_index_shape_source_id(ic_copy);
                 }
-                else if (status->ivar_serial != ic_copy->entry->shape_source_id) {
+                else if (status->ivar_serial != vm_ic_attr_index_shape_source_id(ic_copy)) {
                     // Multiple classes have used this ISeq. Give up assuming one serial.
                     status->merge_ivar_guards_p = false;
                     return;

@@ -1371,6 +1371,7 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
 
     if (st_lookup(ivup->u.iv_index_tbl, (st_data_t)id, &ent_data)) {
         ent = (void *)ent_data;
+        // TODO: JEM FIgure out the one below
         ivup->index = get_iv_index_for_cache(ent);
 	return;
     }
@@ -1379,6 +1380,7 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
     }
     ent = ALLOC(struct rb_iv_index_tbl_entry);
     ivup->index = (uint32_t)ivup->u.iv_index_tbl->num_entries;
+    // TODO: JEM figure out this one too
     set_iv_index_for_cache(ent, (uint32_t)ivup->index);
     st_add_direct(ivup->u.iv_index_tbl, (st_data_t)id, (st_data_t)ent);
     ivup->iv_extended = 1;
@@ -1617,9 +1619,9 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
     }
 }
 
-int get_iv_index_from_shape(rb_shape_t * shape, ID id, uint32_t * value) {
+int get_iv_index_from_shape(rb_shape_t * shape, ID id, st_data_t* value) {
     if (shape->iv_table) {
-        return st_lookup(shape->iv_table, (st_data_t)id, (st_data_t *)value);
+        return st_lookup(shape->iv_table, (st_data_t)id, value);
     }
     else {
         return 0;
@@ -3869,7 +3871,6 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
         RCLASS_IV_TBL(obj) = st_init_numtable();
     }
 
-    // TODO JEM anchor here maybe ???
     st_table *tbl = RCLASS_IV_TBL(obj);
     int result = lock_st_insert(tbl, (st_data_t)key, (st_data_t)value);
     RB_OBJ_WRITTEN(obj, Qundef, value);
