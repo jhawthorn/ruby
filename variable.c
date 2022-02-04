@@ -1363,7 +1363,7 @@ iv_index_tbl_make(VALUE obj, VALUE klass)
 }
 
 static void
-iv_index_tbl_extend(struct ivar_update *ivup, ID id, VALUE klass)
+iv_index_tbl_extend(struct ivar_update *ivup, ID id)
 {
     ASSERT_vm_locking();
     st_data_t ent_data;
@@ -1397,7 +1397,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 
     RB_VM_LOCK_ENTER();
     {
-        iv_index_tbl_extend(&ivup, id, klass);
+        iv_index_tbl_extend(&ivup, id);
         st_update(generic_ivtbl(obj, id, false), (st_data_t)obj, generic_ivar_update,
                   (st_data_t)&ivup);
     }
@@ -1515,7 +1515,7 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
     RB_VM_LOCK_ENTER();
     {
         // TODO: Figure out what to do with shapes here??
-        iv_index_tbl_extend(&ivup, id, klass);
+        iv_index_tbl_extend(&ivup, id);
     }
     RB_VM_LOCK_LEAVE();
 
@@ -1794,7 +1794,7 @@ gen_ivar_copy(ID id, VALUE val, st_data_t arg)
     RB_VM_LOCK_ENTER();
     {
         // TODO: Figure out what to do with shapes here??
-        iv_index_tbl_extend(&ivup, id, c->klass);
+        iv_index_tbl_extend(&ivup, id);
     }
     RB_VM_LOCK_LEAVE();
 
