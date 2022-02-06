@@ -2117,11 +2117,12 @@ autoload_data(VALUE mod, ID id)
 
     if (BUILTIN_TYPE(mod) == T_ICLASS) mod = RBASIC(mod)->klass;
 
-    if (!st_lookup(RCLASS_IV_TBL(mod), autoload, &val) ||
-	    !(tbl = check_autoload_table((VALUE)val)) ||
-	    !st_lookup(tbl, (st_data_t)id, &val)) {
-	return 0;
-    }
+    if (!(tbl = check_autoload_table(rb_attr_get(mod, autoload))))
+        return Qfalse;
+
+    if (!st_lookup(tbl, (st_data_t)id, &val))
+        return Qfalse;
+
     return (VALUE)val;
 }
 
