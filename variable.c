@@ -2334,14 +2334,14 @@ rb_autoload_str(VALUE mod, ID id, VALUE file)
 static void
 autoload_delete(VALUE mod, ID id)
 {
-    st_data_t val, load = 0, n = id;
+    st_data_t load = 0, n = id;
 
-    if (st_lookup(RCLASS_IV_TBL(mod), (st_data_t)autoload, &val)) {
-	struct st_table *tbl = check_autoload_table((VALUE)val);
-	struct autoload_data_i *ele;
-	struct autoload_const *ac;
+	struct st_table *tbl = get_autoload_table(mod);
+    if (tbl) {
+        struct autoload_data_i *ele;
+        struct autoload_const *ac;
 
-	st_delete(tbl, &n, &load);
+        st_delete(tbl, &n, &load);
         /* Qfalse can indicate already deleted */
         if (load != Qfalse) {
             ele = get_autoload_data((VALUE)load, &ac);
@@ -2358,8 +2358,7 @@ autoload_delete(VALUE mod, ID id)
             list_del_init(&ac->cnode);
 
             if (tbl->num_entries == 0) {
-                n = autoload;
-                st_delete(RCLASS_IV_TBL(mod), &n, &val);
+                rb_ivar_delete(mod, autoload, 0);
             }
         }
     }
@@ -3096,10 +3095,7 @@ set_namespace_path_i(ID id, VALUE v, void *payload)
         return ID_TABLE_CONTINUE;
     }
     set_namespace_path(value, build_const_path(parental_path, id));
-    if (RCLASS_IV_TBL(value)) {
-        st_data_t tmp = tmp_classpath;
-        st_delete(RCLASS_IV_TBL(value), &tmp, 0);
-    }
+    rb_ivar_delete(value, tmp_classpath, 0);
 
     return ID_TABLE_CONTINUE;
 }
