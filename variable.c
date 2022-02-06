@@ -1962,7 +1962,6 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
 {
     VALUE val = Qnil;
     const ID id = id_for_var(obj, name, an, instance);
-    st_data_t n, v;
     struct st_table *iv_index_tbl;
     uint32_t index;
 
@@ -1984,10 +1983,9 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-	n = id;
-	if (RCLASS_IV_TBL(obj) && lock_st_delete(RCLASS_IV_TBL(obj), &n, &v)) {
-	    return (VALUE)v;
-	}
+        if ((val = rb_class_ivar_delete(obj, id, Qundef)) != Qundef) {
+            return val;
+        }
 	break;
       default:
 	if (FL_TEST(obj, FL_EXIVAR)) {
