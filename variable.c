@@ -3431,8 +3431,14 @@ original_module(VALUE c)
 static int
 cvar_lookup_at(VALUE klass, ID id, st_data_t *v)
 {
-    if (!RCLASS_IV_TBL(klass)) return 0;
-    return st_lookup(RCLASS_IV_TBL(klass), (st_data_t)id, v);
+    VALUE val = rb_ivar_lookup(klass, id, Qundef);
+    if (val == Qundef)
+        return 0;
+
+    if (v)
+        *v = val;
+
+    return 1;
 }
 
 static VALUE
