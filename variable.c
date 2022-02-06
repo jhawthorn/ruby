@@ -3457,17 +3457,15 @@ static void
 cvar_overtaken(VALUE front, VALUE target, ID id)
 {
     if (front && target != front) {
-	st_data_t did = (st_data_t)id;
-
         if (original_module(front) != original_module(target)) {
             rb_raise(rb_eRuntimeError,
-                     "class variable % "PRIsVALUE" of %"PRIsVALUE" is overtaken by %"PRIsVALUE"",
-		       ID2SYM(id), rb_class_name(original_module(front)),
-		       rb_class_name(original_module(target)));
-	}
-	if (BUILTIN_TYPE(front) == T_CLASS) {
-	    st_delete(RCLASS_IV_TBL(front), &did, 0);
-	}
+                    "class variable % "PRIsVALUE" of %"PRIsVALUE" is overtaken by %"PRIsVALUE"",
+                    ID2SYM(id), rb_class_name(original_module(front)),
+                    rb_class_name(original_module(target)));
+        }
+        if (BUILTIN_TYPE(front) == T_CLASS) {
+            rb_ivar_delete(front, id, 0);
+        }
     }
 }
 
