@@ -3426,7 +3426,15 @@ original_module(VALUE c)
 static int
 cvar_lookup_at(VALUE klass, ID id, st_data_t *v)
 {
-    VALUE val = rb_ivar_lookup(klass, id, Qundef);
+    if (RB_TYPE_P(klass, T_ICLASS)) {
+        if (RB_FL_TEST_RAW(klass, RICLASS_IS_ORIGIN))
+            return 0;
+
+        // Use the included module
+        klass = RBASIC(klass)->klass;
+    }
+
+    VALUE val = rb_class_ivar_lookup(klass, id, Qundef);
     if (val == Qundef)
         return 0;
 
