@@ -2107,15 +2107,21 @@ static const rb_data_type_t autoload_data_type = {
 #define check_autoload_table(av) \
     (struct st_table *)rb_check_typeddata((av), &autoload_data_type)
 
+static struct st_table *
+get_autoload_table(VALUE mod) {
+    VALUE val = rb_attr_get(mod, autoload);
+    if (!RTEST(val)) return NULL;
+    return check_autoload_table(val);
+}
+
 static VALUE
 autoload_data(VALUE mod, ID id)
 {
-    struct st_table *tbl;
     st_data_t val;
 
-    if (BUILTIN_TYPE(mod) == T_ICLASS) mod = RBASIC(mod)->klass;
+    struct st_table *tbl = get_autoload_table(mod);
 
-    if (!(tbl = check_autoload_table(rb_attr_get(mod, autoload))))
+    if (!tbl)
         return Qfalse;
 
     if (!st_lookup(tbl, (st_data_t)id, &val))
@@ -2285,16 +2291,11 @@ rb_autoload_str(VALUE mod, ID id, VALUE file)
     }
 
     rb_const_set(mod, id, Qundef);
-    tbl = RCLASS_IV_TBL(mod);
-    if (tbl && st_lookup(tbl, (st_data_t)autoload, &av)) {
-	tbl = check_autoload_table((VALUE)av);
-    }
-    else {
-	if (!tbl) tbl = RCLASS_IV_TBL(mod) = st_init_numtable();
-	av = (st_data_t)TypedData_Wrap_Struct(0, &autoload_data_type, 0);
-	st_add_direct(tbl, (st_data_t)autoload, av);
-	RB_OBJ_WRITTEN(mod, Qnil, av);
-	DATA_PTR(av) = tbl = st_init_numtable();
+    tbl = get_autoload_table(mod);
+    if (!tbl) {
+        av = (st_data_t)TypedData_Wrap_Struct(0, &autoload_data_type, 0);
+        rb_ivar_set_internal(mod, autoload, av);
+        DATA_PTR(av) = tbl = st_init_numtable();
     }
 
     file = rb_fstring(file);
