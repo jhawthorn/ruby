@@ -141,9 +141,29 @@ RCLASS_SHAPE_ID(VALUE obj)
 #define RCLASS_IV_TBL_any(c) (RCLASS_EXT(c)->iv_tbl)
 
 static inline st_table **RCLASS_IV_TBL_inline(VALUE c) {
-    RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS));
+    //RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS));
     if (RB_TYPE_P(c, T_ICLASS)) {
+        // origins don't have this case
+        if (FL_TEST_RAW(c, RICLASS_IS_ORIGIN)) {
+            return &(RCLASS_EXT(c)->iv_tbl);
+        }
+
         VALUE original_module = RBASIC(c)->klass;
+        if (!RB_TYPE_P(original_module, T_MODULE)) {
+            fprintf(stderr, "c: ");
+            rb_obj_info_dump(c);
+            fprintf(stderr, "c->klass: ");
+            rb_obj_info_dump(original_module);
+            fprintf(stderr, "c->origin: ");
+            rb_obj_info_dump(RCLASS_ORIGIN(c));
+            fprintf(stderr, "c->iv_tbl: %p\n", RCLASS_EXT(c)->iv_tbl);
+        }
+        if (RCLASS_ORIGIN(c) != c) {
+            original_module = RCLASS_ORIGIN(c);
+        } else {
+            RUBY_ASSERT(RB_TYPE_P(original_module, T_MODULE));
+        }
+
         if (RB_TYPE_P(original_module, T_MODULE) && RCLASS_EXT(c)->iv_tbl != RCLASS_EXT(original_module)->iv_tbl) {
             fprintf(stderr, "iv_tables don't match:\n");
             rb_obj_info_dump(c);

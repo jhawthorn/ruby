@@ -4083,7 +4083,7 @@ original_module(VALUE c)
 static int
 cvar_lookup_at(VALUE klass, ID id, st_data_t *v)
 {
-    st_table *tbl = RCLASS_IV_TBL_any(klass);
+    st_table *tbl = RCLASS_IV_TBL(klass);
     if (!tbl) return 0;
     return st_lookup(tbl, (st_data_t)id, v);
 }
