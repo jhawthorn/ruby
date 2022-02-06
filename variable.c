@@ -2109,6 +2109,10 @@ static const rb_data_type_t autoload_data_type = {
 
 static struct st_table *
 get_autoload_table(VALUE mod) {
+    if (RB_TYPE_P(mod, T_ICLASS)) {
+        mod = RBASIC(mod)->klass;
+    }
+
     VALUE val = rb_attr_get(mod, autoload);
     if (!RTEST(val)) return NULL;
     return check_autoload_table(val);
