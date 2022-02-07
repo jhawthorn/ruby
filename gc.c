@@ -2650,13 +2650,8 @@ VALUE
 rb_newobj_of(VALUE klass, VALUE flags)
 {
     if ((flags & RUBY_T_MASK) == T_OBJECT) {
-        st_table *index_tbl = RCLASS_IV_INDEX_TBL(klass);
-
         VALUE obj = newobj_of(klass, (flags | ROBJECT_EMBED) & ~FL_WB_PROTECTED , Qundef, Qundef, Qundef, flags & FL_WB_PROTECTED, sizeof(RVALUE));
 
-        if (index_tbl && index_tbl->num_entries > ROBJECT_EMBED_LEN_MAX) {
-            rb_init_iv_list(obj);
-        }
         return obj;
     }
     else {
@@ -2770,15 +2765,9 @@ rb_imemo_new_debug(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0,
 VALUE
 rb_class_allocate_instance(VALUE klass)
 {
-    st_table *index_tbl = RCLASS_IV_INDEX_TBL(klass);
-
     VALUE flags = T_OBJECT | ROBJECT_EMBED;
 
     VALUE obj = newobj_of(klass, flags, Qundef, Qundef, Qundef, RGENGC_WB_PROTECTED_OBJECT, sizeof(RVALUE));
-
-    if (index_tbl && index_tbl->num_entries > ROBJECT_EMBED_LEN_MAX) {
-        rb_init_iv_list(obj);
-    }
 
     return obj;
 }
@@ -2930,20 +2919,6 @@ rb_free_const_table(struct rb_id_table *tbl)
 {
     rb_id_table_foreach_values(tbl, free_const_entry_i, 0);
     rb_id_table_free(tbl);
-}
-
-static int
-free_iv_index_tbl_free_i(st_data_t key, st_data_t value, st_data_t data)
-{
-    xfree((void *)value);
-    return ST_CONTINUE;
-}
-
-static void
-iv_index_tbl_free(struct st_table *tbl)
-{
-    st_foreach(tbl, free_iv_index_tbl_free_i, 0);
-    st_free_table(tbl);
 }
 
 // alive: if false, target pointers can be freed already.
@@ -3172,9 +3147,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 	}
 	if (RCLASS_CONST_TBL(obj)) {
 	    rb_free_const_table(RCLASS_CONST_TBL(obj));
-	}
-	if (RCLASS_IV_INDEX_TBL(obj)) {
-            iv_index_tbl_free(RCLASS_IV_INDEX_TBL(obj));
 	}
 	if (RCLASS_CVC_TBL(obj)) {
             rb_id_table_foreach_values(RCLASS_CVC_TBL(obj), cvar_table_free_i, NULL);
@@ -4601,10 +4573,6 @@ obj_memsize_of(VALUE obj, int use_all_types)
 	    }
 	    if (RCLASS_CVC_TBL(obj)) {
 		size += rb_id_table_memsize(RCLASS_CVC_TBL(obj));
-	    }
-	    if (RCLASS_IV_INDEX_TBL(obj)) {
-                // TODO: more correct value
-		size += st_memsize(RCLASS_IV_INDEX_TBL(obj));
 	    }
             if (RCLASS_EXT(obj)->iv_tbl) {
                 size += st_memsize(RCLASS_EXT(obj)->iv_tbl);

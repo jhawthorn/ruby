@@ -346,14 +346,6 @@ pathobj_realpath(VALUE pathobj)
     }
 }
 
-typedef struct {
-    // id -> st_table;
-    st_table * edges;
-    // Store all previously seen ivars
-    st_table * iv_table;
-    shape_id_t id;
-} rb_shape_t;
-
 /* Forward declarations */
 struct rb_mjit_unit;
 
@@ -361,7 +353,13 @@ struct rb_mjit_unit;
 typedef rb_darray(struct yjit_block_version *) rb_yjit_block_array_t;
 typedef rb_darray(rb_yjit_block_array_t) rb_yjit_block_array_array_t;
 
-typedef rb_darray(rb_shape_t*) rb_shape_array_t;
+struct rb_shape;
+
+#ifndef rb_shape_t
+typedef struct rb_shape rb_shape_t;
+#define rb_shape_t rb_shape_t
+#endif
+typedef rb_darray(rb_shape_t *)rb_shape_array_t;
 
 struct rb_iseq_constant_body {
     enum iseq_type {
@@ -684,7 +682,7 @@ typedef struct rb_vm_struct {
     const VALUE special_exceptions[ruby_special_error_count];
 
     rb_shape_array_t shape_list;
-    rb_shape_t* shape_root;
+    rb_shape_t *shape_root;
 
     /* load */
     VALUE top_self;

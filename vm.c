@@ -3881,6 +3881,7 @@ Init_vm_objects(void)
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
     rb_darray_make(&vm->shape_list, 0);
     vm->shape_root = calloc(sizeof(rb_shape_t), 1);
+    vm->shape_root->iv_table = st_init_numtable();
     rb_darray_append(&vm->shape_list, vm->shape_root);
 }
 

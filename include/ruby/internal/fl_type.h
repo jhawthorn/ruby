@@ -941,32 +941,8 @@ RB_OBJ_FREEZE_RAW(VALUE obj)
     RB_FL_SET_RAW(obj, RUBY_FL_FREEZE);
 }
 
-typedef uint16_t shape_id_t;
-void transition_shape(VALUE obj, ID id, VALUE val);
-shape_id_t get_shape_id(VALUE obj);
-ID rb_intern(const char *name);
-/**
- * Prevents further modifications to the given object.  ::rb_eFrozenError shall
- * be raised if modification is attempted.
- *
- * @param[out]  x  Object in question.
- */
-static inline void
-rb_obj_freeze_inline(VALUE x)
-{
-    if (RB_FL_ABLE(x)) {
-        RB_OBJ_FREEZE_RAW(x);
-
-        // TODO: Do we need to compute root shape ID here or is 0 sufficient?
-        if (get_shape_id(x))
-        {
-            transition_shape(x, (ID)rb_intern("__frozen__"), 1);
-        }
-
-        if (RBASIC_CLASS(x) && !(RBASIC(x)->flags & RUBY_FL_SINGLETON)) {
-            rb_freeze_singleton_class(x);
-        }
-    }
-}
+RUBY_SYMBOL_EXPORT_BEGIN
+void rb_obj_freeze_inline(VALUE obj);
+RUBY_SYMBOL_EXPORT_END
 
 #endif /* RBIMPL_FL_TYPE_H */

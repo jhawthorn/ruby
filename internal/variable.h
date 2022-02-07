@@ -37,12 +37,30 @@ static inline bool ROBJ_TRANSIENT_P(VALUE obj);
 static inline void ROBJ_TRANSIENT_SET(VALUE obj);
 static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
+
+typedef uint16_t shape_id_t;
+
+struct rb_shape {
+    // id -> st_table;
+    st_table * edges;
+    // Store all previously seen ivars
+    st_table * iv_table;
+    shape_id_t id;
+};
+
+#ifndef rb_shape_t
+typedef struct rb_shape rb_shape_t;
+#define rb_shape_t rb_shape_t
+#endif
+
 shape_id_t get_shape_id(VALUE obj);
 rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 void set_shape(VALUE obj, rb_shape_t* shape);
 void set_shape_id(VALUE obj, shape_id_t shape_id);
 int get_iv_index_from_shape(rb_shape_t * shape, ID id, st_data_t * value);
+void transition_shape(VALUE obj, ID id, VALUE val);
+
 # define MAX_SHAPE_ID 0xFFFE
 # define INVALID_SHAPE_ID (MAX_SHAPE_ID + 1)
 

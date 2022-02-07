@@ -307,7 +307,9 @@ init_copy(VALUE dest, VALUE obj)
     rb_copy_wb_protected_attribute(dest, obj);
     rb_copy_generic_ivar(dest, obj);
     rb_gc_copy_finalizer(dest, obj);
+
     if (RB_TYPE_P(obj, T_OBJECT)) {
+        rb_init_iv_list(dest);
 	rb_obj_copy_ivar(dest, obj);
     }
 }

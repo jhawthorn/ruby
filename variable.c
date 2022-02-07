@@ -984,7 +984,7 @@ generic_ivar_delete(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, id, &ivtbl)) {
-	st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+        st_table *iv_index_tbl = get_shape(obj)->iv_table;
         uint32_t index;
 
         if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
@@ -1005,7 +1005,7 @@ generic_ivar_get(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, id, &ivtbl)) {
-	st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+        st_table *iv_index_tbl = get_shape(obj)->iv_table;
         uint32_t index;
 
 	if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
@@ -1064,9 +1064,14 @@ iv_index_tbl_newsize(struct ivar_update *ivup)
     }
 }
 
+// global_hash = {
+//   object => { num_iv, buffer_of_ivs }
+// }
 static int
 generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
 {
+    // k == string
+    // u == ivup
     ASSERT_vm_locking();
 
     struct ivar_update *ivup = (struct ivar_update *)u;
@@ -1104,7 +1109,7 @@ generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
 {
     struct gen_ivtbl *ivtbl;
     uint32_t index;
-    st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+    st_table *iv_index_tbl = get_shape(obj)->iv_table;
 
     if (!iv_index_tbl) return 0;
     if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
@@ -1342,58 +1347,26 @@ rb_attr_delete(VALUE obj, ID id)
     return rb_ivar_delete(obj, id, Qnil);
 }
 
-static st_table *
-iv_index_tbl_make(VALUE obj, VALUE klass)
-{
-    st_table *iv_index_tbl;
-
-    if (UNLIKELY(!klass)) {
-        rb_raise(rb_eTypeError, "hidden object cannot have instance variables");
-    }
-
-    if ((iv_index_tbl = RCLASS_IV_INDEX_TBL(klass)) == NULL) {
-        RB_VM_LOCK_ENTER();
-        if ((iv_index_tbl = RCLASS_IV_INDEX_TBL(klass)) == NULL) {
-            iv_index_tbl = RCLASS_IV_INDEX_TBL(klass) = st_init_numtable();
-        }
-        RB_VM_LOCK_LEAVE();
-    }
-
-    return iv_index_tbl;
-}
-
 static void
 iv_index_tbl_extend(struct ivar_update *ivup, ID id)
 {
     ASSERT_vm_locking();
     st_data_t ent_data;
-    struct rb_iv_index_tbl_entry *ent;
 
-    if (st_lookup(ivup->u.iv_index_tbl, (st_data_t)id, &ent_data)) {
-        ent = (void *)ent_data;
+    if (st_lookup(ivup->shape->iv_table, (st_data_t)id, &ent_data)) {
         // TODO: JEM FIgure out the one below
-        ivup->index = get_iv_index_for_cache(ent);
+        ivup->index = (uint32_t) ent_data;
+        ivup->iv_extended = 1;
 	return;
     }
-    if (ivup->u.iv_index_tbl->num_entries >= INT_MAX) {
-	rb_raise(rb_eArgError, "too many instance variables");
-    }
-    ent = ALLOC(struct rb_iv_index_tbl_entry);
-    ivup->index = (uint32_t)ivup->u.iv_index_tbl->num_entries;
-    // TODO: JEM figure out this one too
-    set_iv_index_for_cache(ent, (uint32_t)ivup->index);
-    st_add_direct(ivup->u.iv_index_tbl, (st_data_t)id, (st_data_t)ent);
-    ivup->iv_extended = 1;
 }
 
 static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
-    VALUE klass = rb_obj_class(obj);
     struct ivar_update ivup;
     ivup.shape = get_shape(obj);
     ivup.iv_extended = 0;
-    ivup.u.iv_index_tbl = iv_index_tbl_make(obj, klass);
 
     RB_VM_LOCK_ENTER();
     {
@@ -1506,10 +1479,8 @@ rb_init_iv_list(VALUE obj)
 static struct ivar_update
 obj_ensure_iv_index_mapping(VALUE obj, ID id)
 {
-    VALUE klass = rb_obj_class(obj);
     struct ivar_update ivup;
     ivup.iv_extended = 0;
-    ivup.u.iv_index_tbl = iv_index_tbl_make(obj, klass);
     ivup.shape = get_shape(obj);
 
     RB_VM_LOCK_ENTER();
@@ -1544,6 +1515,8 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 {
     uint32_t len;
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
+    rb_shape_t* shape = get_shape(obj);
+    ivup.u.iv_index_tbl = shape->iv_table;
 
     len = ROBJECT_NUMIV(obj);
     if (len <= (ivup.index)) {
@@ -1634,6 +1607,29 @@ void transition_shape(VALUE obj, ID id, VALUE val)
     assert(shape);
     rb_shape_t* next_shape = get_next_shape(shape, id);
     set_shape(obj, next_shape);
+}
+
+/**
+ * Prevents further modifications to the given object.  ::rb_eFrozenError shall
+ * be raised if modification is attempted.
+ *
+ * @param[out]  x  Object in question.
+ */
+void rb_obj_freeze_inline(VALUE x)
+{
+    if (RB_FL_ABLE(x)) {
+        RB_OBJ_FREEZE_RAW(x);
+
+        // TODO: Do we need to compute root shape ID here or is 0 sufficient?
+        if (get_shape_id(x))
+        {
+            transition_shape(x, (ID)rb_intern("__frozen__"), 1);
+        }
+
+        if (RBASIC_CLASS(x) && !(RBASIC(x)->flags & RUBY_FL_SINGLETON)) {
+            rb_freeze_singleton_class(x);
+        }
+    }
 }
 
 static void
@@ -1746,7 +1742,7 @@ ivar_each_i(st_table *iv_index_tbl, VALUE val, uint32_t i, rb_ivar_foreach_callb
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
+    st_table *iv_index_tbl = get_shape(obj)->iv_table;
     if (!iv_index_tbl) return;
     uint32_t i=0;
 
@@ -1762,7 +1758,7 @@ static void
 gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     struct gen_ivtbl *ivtbl;
-    st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(rb_obj_class(obj));
+    st_table *iv_index_tbl = get_shape(obj)->iv_table;
     if (!iv_index_tbl) return;
     if (!gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
@@ -1836,7 +1832,6 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
 	}
 
         VALUE klass = rb_obj_class(clone);
-	c.iv_index_tbl = iv_index_tbl_make(clone, klass);
         c.obj = clone;
         c.klass = klass;
 	gen_ivar_each(obj, gen_ivar_copy, (st_data_t)&c);
