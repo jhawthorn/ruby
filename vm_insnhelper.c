@@ -1317,15 +1317,13 @@ vm_getclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *reg_cfp, ID
     const rb_cref_t *cref;
 
     if (ic->entry && ic->entry->global_cvar_state == GET_GLOBAL_CVAR_STATE()) {
-        VALUE v = Qundef;
         RB_DEBUG_COUNTER_INC(cvar_read_inline_hit);
 
         VALUE class_value = ic->entry->class_value;
         RUBY_ASSERT(RB_TYPE_P(class_value, T_CLASS) || RB_TYPE_P(class_value, T_MODULE));
 
-        if (st_lookup(RCLASS_IV_TBL(ic->entry->class_value), (st_data_t)id, &v) &&
-            LIKELY(rb_ractor_main_p())) {
-
+        VALUE v = rb_ivar_lookup(class_value, id, Qundef);
+        if (v != Qundef && LIKELY(rb_ractor_main_p())) {
             return v;
         }
     }
