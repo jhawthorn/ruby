@@ -3518,9 +3518,7 @@ find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
 static void
 check_for_cvar_table(VALUE subclass, VALUE key)
 {
-    st_table *tbl = RCLASS_IV_TBL(subclass);
-
-    if (tbl && st_lookup(tbl, key, NULL)) {
+    if (cvar_lookup_at(subclass, key, NULL)) {
         RB_DEBUG_COUNTER_INC(cvar_class_invalidate);
         ruby_vm_global_cvar_state++;
         return;
