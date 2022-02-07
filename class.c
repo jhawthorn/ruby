@@ -416,15 +416,10 @@ copy_tables(VALUE clone, VALUE orig)
     }
     RCLASS_M_TBL(clone) = 0;
     if (RCLASS_IV_TBL(orig)) {
-	st_data_t id;
-
-	rb_iv_tbl_copy(clone, orig);
-	CONST_ID(id, "__tmp_classpath__");
-	st_delete(RCLASS_IV_TBL(clone), &id, 0);
-	CONST_ID(id, "__classpath__");
-	st_delete(RCLASS_IV_TBL(clone), &id, 0);
-	CONST_ID(id, "__classid__");
-	st_delete(RCLASS_IV_TBL(clone), &id, 0);
+        rb_iv_tbl_copy(clone, orig);
+        rb_attr_delete(clone, rb_intern_const("__tmp_classpath__"));
+        rb_attr_delete(clone, rb_intern_const("__classpath__"));
+        rb_attr_delete(clone, rb_intern_const("__classid__"));
     }
     if (RCLASS_CONST_TBL(orig)) {
 	struct clone_const_arg arg;
