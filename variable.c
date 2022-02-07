@@ -3769,14 +3769,14 @@ VALUE
 rb_mod_remove_cvar(VALUE mod, VALUE name)
 {
     const ID id = id_for_var_message(mod, name, class, "wrong class variable name %1$s");
-    st_data_t val, n = id;
 
     if (!id) {
         goto not_defined;
     }
     rb_check_frozen(mod);
-    if (RCLASS_IV_TBL(mod) && st_delete(RCLASS_IV_TBL(mod), &n, &val)) {
-	return (VALUE)val;
+    VALUE val = rb_class_ivar_delete(mod, id, Qundef);
+    if (val != Qundef) {
+        return val;
     }
     if (rb_cvar_defined(mod, id)) {
 	rb_name_err_raise("cannot remove %1$s for %2$s", mod, ID2SYM(id));
