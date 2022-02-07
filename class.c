@@ -521,7 +521,6 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
             prev_clone_p = clone_p;
             RCLASS_M_TBL(clone_p) = RCLASS_M_TBL(p);
             RCLASS_CONST_TBL(clone_p) = RCLASS_CONST_TBL(p);
-            RCLASS_IV_TBL(clone_p) = RCLASS_IV_TBL(p);
             RCLASS_ALLOCATOR(clone_p) = RCLASS_ALLOCATOR(p);
             if (RB_TYPE_P(clone, T_CLASS)) {
                 RCLASS_SET_INCLUDER(clone_p, clone);
@@ -1061,13 +1060,9 @@ rb_include_class_new(VALUE module, VALUE super)
 	module = METACLASS_OF(module);
     }
     RUBY_ASSERT(!RB_TYPE_P(module, T_ICLASS));
-    if (!RCLASS_IV_TBL(module)) {
-	RCLASS_IV_TBL(module) = st_init_numtable();
-    }
     if (!RCLASS_CONST_TBL(module)) {
 	RCLASS_CONST_TBL(module) = rb_id_table_create(0);
     }
-    RCLASS_IV_TBL(klass) = RCLASS_IV_TBL(module);
     RCLASS_CVC_TBL(klass) = RCLASS_CVC_TBL(module);
     RCLASS_CONST_TBL(klass) = RCLASS_CONST_TBL(module);
 
