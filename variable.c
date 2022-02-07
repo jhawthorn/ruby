@@ -3438,6 +3438,8 @@ cvar_lookup_at(VALUE klass, ID id, st_data_t *v)
         klass = RBASIC(klass)->klass;
     }
 
+    RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_MODULE));
+
     VALUE val = rb_class_ivar_lookup(klass, id, Qundef);
     if (val == Qundef)
         return 0;
