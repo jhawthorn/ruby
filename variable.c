@@ -3661,9 +3661,12 @@ mod_cvar_at(VALUE mod, void *data)
     if (!tbl) {
 	tbl = st_init_numtable();
     }
-    if (RCLASS_IV_TBL(mod)) {
-	st_foreach_safe(RCLASS_IV_TBL(mod), cv_i, (st_data_t)tbl);
+
+    if (RB_TYPE_P(mod, T_ICLASS)) {
+        mod = RBASIC(mod)->klass;
     }
+
+    rb_ivar_foreach(mod, cv_i, (st_data_t)tbl);
     return tbl;
 }
 
