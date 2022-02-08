@@ -1354,7 +1354,6 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id)
     st_data_t ent_data;
 
     if (st_lookup(ivup->shape->iv_table, (st_data_t)id, &ent_data)) {
-        // TODO: JEM FIgure out the one below
         ivup->index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
 	return;
