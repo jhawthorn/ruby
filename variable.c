@@ -1586,6 +1586,9 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
             st_insert(new_shape->iv_table, (st_data_t)id, (st_data_t)new_shape->iv_table->num_entries);
             rb_darray_append(&vm->shape_list, new_shape);
             new_shape->id = rb_darray_size(vm->shape_list) - 1;
+            if (new_shape->id > MAX_SHAPE_ID) {
+                rb_bug("Too many shapes");
+            }
             return new_shape;
         }
     }
@@ -1831,6 +1834,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
 	}
 
         VALUE klass = rb_obj_class(clone);
+        set_shape_id(clone, get_shape_id(obj));
         c.obj = clone;
         c.klass = klass;
 	gen_ivar_each(obj, gen_ivar_copy, (st_data_t)&c);
