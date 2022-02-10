@@ -13,7 +13,6 @@
 #include "constant.h"           /* for rb_const_entry_t */
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for VALUE */
-#include "vm_core.h"            /* for rb_shape_t */
 
 /* global variable */
 

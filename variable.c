@@ -1468,9 +1468,11 @@ void
 rb_init_iv_list(VALUE obj)
 {
     st_table *index_tbl = ROBJECT_IV_INDEX_TBL(obj);
+    // { :foo } -> num_entries == 1
     uint32_t newsize = (uint32_t)index_tbl->num_entries;
+    // len is 3?
     uint32_t len = ROBJECT_NUMIV(obj);
-    init_iv_list(obj, len, newsize, index_tbl);
+    init_iv_list(obj, len, newsize < len ? len : newsize, index_tbl);
 }
 
 // Retrieve or create the id-to-index mapping for a given object and an
@@ -1586,8 +1588,10 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
             st_insert(new_shape->iv_table, (st_data_t)id, (st_data_t)new_shape->iv_table->num_entries);
             rb_darray_append(&vm->shape_list, new_shape);
             new_shape->id = rb_darray_size(vm->shape_list) - 1;
+
             if (new_shape->id > MAX_SHAPE_ID) {
-                rb_bug("Too many shapes");
+                fprintf(stderr, "Too many shapes\n");
+                abort();
             }
             return new_shape;
         }
