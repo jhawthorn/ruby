@@ -4887,6 +4887,7 @@ VALUE rb_obj_shape(rb_shape_t* shape) {
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(shape->id));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("seen_ivars")), seen_ivars(shape->iv_table));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("transition_count")), INT2NUM(shape->transition_count));
     return rb_shape;
 }
 

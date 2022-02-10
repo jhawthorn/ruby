@@ -1570,15 +1570,19 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
 
     st_data_t value;
     if (st_lookup(shape->edges, (st_data_t)id, &value)) {
-        return (rb_shape_t*) value;
+        rb_shape_t* shape = (rb_shape_t*) value;
+        shape->transition_count += 1;
+        return shape;
     } else {
-        // Is the ivar alreaddy in the set
+        // Is the ivar already in the set
         if (shape->iv_table && st_lookup(shape->iv_table, (st_data_t)id, &value)) {
+            shape->transition_count += 1;
             return shape;
         } else {
             // else
             rb_vm_t *vm = GET_VM();
             rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
+            new_shape->transition_count = 1;
             st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
             if (shape->iv_table) {
                 new_shape->iv_table = st_copy(shape->iv_table);

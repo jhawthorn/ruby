@@ -45,6 +45,7 @@ struct rb_shape {
     // Store all previously seen ivars
     st_table * iv_table;
     shape_id_t id;
+    uint16_t transition_count;
 };
 
 #ifndef rb_shape_t
