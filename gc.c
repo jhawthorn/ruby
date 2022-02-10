@@ -4899,6 +4899,12 @@ static VALUE shape_transition_tree(VALUE self) {
     return rb_obj_shape(root_shape);
 }
 
+static VALUE shape_count(VALUE self) {
+    // Might want to extract this into a get_root_shape
+    rb_vm_t *vm = GET_VM();
+    return INT2NUM(rb_darray_size(vm->shape_list));
+}
+
 /*
   ------------------------ Garbage Collection ------------------------
 */
@@ -13857,6 +13863,7 @@ Init_GC(void)
     rb_define_module_function(rb_mObjSpace, "count_objects", count_objects, -1);
     rb_define_module_function(rb_mObjSpace, "shape_id", rb_obj_shape_id, 1);
     rb_define_module_function(rb_mObjSpace, "shape_transition_tree", shape_transition_tree, 0);
+    rb_define_module_function(rb_mObjSpace, "shape_count", shape_count, 0);
 
     {
 	VALUE rb_cWeakMap = rb_define_class_under(rb_mObjSpace, "WeakMap", rb_cObject);
