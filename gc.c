@@ -4832,16 +4832,18 @@ VALUE rb_obj_shape_id(VALUE self, VALUE obj) {
     return INT2NUM(get_shape_id(obj));
 }
 
-static int collect_keys(st_data_t _key, st_data_t value, st_data_t ref)
-{
+static VALUE parse_key(st_data_t _key) {
     ID key = (ID)_key;
-    VALUE rb_key;
     if ((key & RUBY_ID_INTERNAL) == RUBY_ID_INTERNAL) {
-        rb_key = LONG2NUM(key);
+        return LONG2NUM(key);
     } else {
-        rb_key = ID2SYM(key);
+        return ID2SYM(key);
     }
-    rb_ary_push((VALUE)ref, rb_key);
+}
+
+static int collect_keys(st_data_t key, st_data_t value, st_data_t ref)
+{
+    rb_ary_push((VALUE)ref, parse_key(key));
     return ST_CONTINUE;
 }
 
@@ -4858,16 +4860,9 @@ static VALUE seen_ivars(st_table* ivars)
 
 VALUE rb_obj_shape(rb_shape_t* shape);
 
-static int collect_keys_and_values(st_data_t _key, st_data_t value, st_data_t ref)
+static int collect_keys_and_values(st_data_t key, st_data_t value, st_data_t ref)
 {
-    ID key = (ID)_key;
-    VALUE rb_key;
-    if ((key & RUBY_ID_INTERNAL) == RUBY_ID_INTERNAL) {
-        rb_key = LONG2NUM(key);
-    } else {
-        rb_key = ID2SYM(key);
-    }
-    rb_hash_aset((VALUE)ref, rb_key, rb_obj_shape((rb_shape_t*)value));
+    rb_hash_aset((VALUE)ref, parse_key(key), rb_obj_shape((rb_shape_t*)value));
     return ST_CONTINUE;
 }
 
