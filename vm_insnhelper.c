@@ -1320,7 +1320,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // If object's shape id is the same as the dest, then just write the
         // ivar
         shape_id_t shape_id = get_shape_id(obj);
-        shape_id_t shape_source_id;
+        shape_id_t shape_source_id = 0;
         if (is_attr) {
             shape_source_id = vm_cc_attr_index_shape_source_id(cc);
         }
