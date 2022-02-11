@@ -4851,8 +4851,7 @@ static int collect_keys(st_data_t key, st_data_t value, st_data_t ref)
 static VALUE seen_ivars(st_table* ivars)
 {
     VALUE array = rb_ary_new();
-    if (ivars)
-    {
+    if (ivars) {
         st_foreach(ivars, collect_keys, array);
     }
     return array;
@@ -4869,8 +4868,7 @@ static int collect_keys_and_values(st_data_t key, st_data_t value, st_data_t ref
 static VALUE edges(st_table* edges)
 {
     VALUE hash = rb_hash_new();
-    if (edges)
-    {
+    if (edges) {
         st_foreach(edges, collect_keys_and_values, hash);
     }
     return hash;
