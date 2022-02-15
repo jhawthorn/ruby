@@ -1356,9 +1356,14 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             return val; /* inline cache hit */
         }
         else {
+            shape_id_t shape_dest_id;
             if (is_attr) {
+                shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_unset);
+            } else {
+                shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
             }
+            fprintf(stderr, "shape_id: %d, shape_source_id: %d, shape_dest_id: %d\n", shape_id, shape_source_id, shape_dest_id);
         }
     }
     else {

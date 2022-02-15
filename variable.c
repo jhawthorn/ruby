@@ -1536,6 +1536,11 @@ shape_id_t get_shape_id(VALUE obj)
 
 void set_shape_id(VALUE obj, shape_id_t shape_id)
 {
+#if RUBY_DEBUG
+    rb_shape_t* shape = get_shape(obj);
+    shape->transition_count += 1;
+#endif
+
     // Ractors are occupying the upper 32 bits of flags
     // We're sneaking into the upper 16 bits (and hoping we don't interfere
     // with ractors)
@@ -1571,18 +1576,15 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
     st_data_t value;
     if (st_lookup(shape->edges, (st_data_t)id, &value)) {
         rb_shape_t* shape = (rb_shape_t*) value;
-        shape->transition_count += 1;
         return shape;
     } else {
         // Is the ivar already in the set
         if (shape->iv_table && st_lookup(shape->iv_table, (st_data_t)id, &value)) {
-            shape->transition_count += 1;
             return shape;
         } else {
             // else
             rb_vm_t *vm = GET_VM();
             rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
-            new_shape->transition_count = 1;
             st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
             if (shape->iv_table) {
                 new_shape->iv_table = st_copy(shape->iv_table);
