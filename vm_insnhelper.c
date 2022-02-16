@@ -1267,6 +1267,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
     if (RB_TYPE_P(obj, T_OBJECT)) {
         uint32_t index;
 
+        uint32_t num_iv = ROBJECT_NUMIV(obj);
         rb_shape_t* shape = get_shape(obj);
         rb_shape_t* next_shape = get_next_shape(shape, id);
         set_shape(obj, next_shape);
@@ -1285,7 +1286,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
  //               fprintf(stderr, "index in the cache: source: %d, dest: %d, ic_addr: %p\n", vm_ic_attr_index_shape_source_id(ic), vm_ic_attr_index_shape_dest_id(ic), ic);
             }
 
-            if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
+            if (UNLIKELY(index >= num_iv)) {
                 rb_init_iv_list(obj);
             }
             VALUE *ptr = ROBJECT_IVPTR(obj);
@@ -1329,12 +1330,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             shape_source_id = vm_cc_attr_index_shape_source_id(cc);
         }
         else {
-            if (vm_ic_attr_index_p(ic)) {
-                shape_source_id = vm_ic_attr_index_shape_source_id(ic);
-            }
-            else {
-                RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_serial);
-            }
+            shape_source_id = vm_ic_attr_index_shape_source_id(ic);
         }
         // Do we have a cache hit *and* is the CC intitialized
         if (shape_id == shape_source_id) {
@@ -1373,6 +1369,10 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
               //  shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_unset);
 //                fprintf(stderr, "CC: shape_id: %d, shape_source_id: %d, shape_dest_id: %d, ic addr: %p\n", shape_id, shape_source_id, shape_dest_id, cc);
+            } else {
+
+                RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
+
             }/* else {
                 shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
                 shape_source_id = vm_ic_attr_index_shape_source_id(ic);
