@@ -20,6 +20,10 @@ class TestShapes < Test::Unit::TestCase
   end
 
   class Example2
+    def initialize
+      @a = 1
+    end
+
     def e2meth
       @c = 1
       self
@@ -28,6 +32,10 @@ class TestShapes < Test::Unit::TestCase
 
   def test_initial_shape
     assert_equal(0, ObjectSpace.shape_id(Example.new))
+  end
+
+  def test_initial_shape_with_vars
+    assert_not_equal(0, ObjectSpace.shape_id(Example2.new))
   end
 
   def test_transition
