@@ -1267,21 +1267,23 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
     if (RB_TYPE_P(obj, T_OBJECT)) {
         uint32_t index;
 
-        if (iv_index_tbl_lookup(obj, id, &index)) {
-            rb_shape_t* shape = get_shape(obj);
-            rb_shape_t* next_shape = get_next_shape(shape, id);
-            set_shape(obj, next_shape);
+        rb_shape_t* shape = get_shape(obj);
+        rb_shape_t* next_shape = get_next_shape(shape, id);
+        set_shape(obj, next_shape);
 
-            if (!is_attr) {
-                vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
-            }
-            else if (index >= INT_MAX) {
+        if (iv_index_tbl_lookup(obj, id, &index)) { // based off the has stored in the transition tree
+            if (index >= INT_MAX) {
                 rb_raise(rb_eArgError, "too many instance variables");
             }
-            else {
+
+            if (is_attr) {
                 vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
             }
-
+            else {
+//                fprintf(stderr, "expecting to set shape->id %d, next_shape->id %d, ic addr: %p\n", shape->id, next_shape->id, ic);
+                vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
+ //               fprintf(stderr, "index in the cache: source: %d, dest: %d, ic_addr: %p\n", vm_ic_attr_index_shape_source_id(ic), vm_ic_attr_index_shape_dest_id(ic), ic);
+            }
 
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);
@@ -1291,6 +1293,8 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
 
             return val;
+        } else {
+            rb_bug("didn't find the id\n");
         }
     }
 #endif
@@ -1320,12 +1324,12 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // If object's shape id is the same as the dest, then just write the
         // ivar
         shape_id_t shape_id = get_shape_id(obj);
-        shape_id_t shape_source_id = 0;
+        shape_id_t shape_source_id = INVALID_SHAPE_ID;
         if (is_attr) {
             shape_source_id = vm_cc_attr_index_shape_source_id(cc);
         }
         else {
-            if (ic->entry) {
+            if (vm_ic_attr_index_p(ic)) {
                 shape_source_id = vm_ic_attr_index_shape_source_id(ic);
             }
             else {
@@ -1348,22 +1352,32 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
                 rb_init_iv_list(obj);
             }
             VALUE *ptr = ROBJECT_IVPTR(obj);
+
             RB_OBJ_WRITE(obj, &ptr[index], val);
 
             set_shape_id(obj, shape_dest_id);
 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+
+            if (is_attr) {
+                RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_is_attr);
+            } else {
+                RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_not_attr);
+            }
+
             return val; /* inline cache hit */
         }
         else {
-            shape_id_t shape_dest_id;
+//            shape_id_t shape_dest_id;
             if (is_attr) {
-                shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+              //  shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_unset);
-            } else {
+//                fprintf(stderr, "CC: shape_id: %d, shape_source_id: %d, shape_dest_id: %d, ic addr: %p\n", shape_id, shape_source_id, shape_dest_id, cc);
+            }/* else {
                 shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
-            }
-            fprintf(stderr, "shape_id: %d, shape_source_id: %d, shape_dest_id: %d\n", shape_id, shape_source_id, shape_dest_id);
+                shape_source_id = vm_ic_attr_index_shape_source_id(ic);
+ //               fprintf(stderr, "IC: shape_id: %d, shape_source_id: %d, shape_dest_id: %d, ic addr: %p\n", shape_id, shape_source_id, shape_dest_id, ic);
+            }*/
         }
     }
     else {

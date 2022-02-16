@@ -1468,9 +1468,8 @@ void
 rb_init_iv_list(VALUE obj)
 {
     st_table *index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-    // { :foo } -> num_entries == 1
-    uint32_t newsize = (uint32_t)index_tbl->num_entries;
-    // len is 3?
+// JEM: This is where you changed
+    uint32_t newsize = (uint32_t)index_tbl->num_entries * 1.5;
     uint32_t len = ROBJECT_NUMIV(obj);
     init_iv_list(obj, len, newsize < len ? len : newsize, index_tbl);
 }
