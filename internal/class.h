@@ -37,9 +37,14 @@ struct rb_cvar_class_tbl_entry {
     VALUE class_value;
 };
 
+struct rb_class_ivar_tbl {
+    uint32_t numiv;
+    VALUE *ivptr;
+};
+
 struct rb_classext_struct {
     struct st_table *iv_index_tbl; // ID -> struct rb_iv_index_tbl_entry
-    struct st_table *iv_tbl;
+    struct rb_class_ivar_tbl iv_tbl;
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE /* otherwise m_tbl is in struct RClass */
     struct rb_id_table *m_tbl;
 #endif
@@ -92,7 +97,10 @@ typedef struct rb_classext_struct rb_classext_t;
 #else
 #  define RCLASS_EXT(c) (RCLASS(c)->ptr)
 #endif
-#define RCLASS_IV_TBL(c) ((RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS)), RCLASS_EXT(c))->iv_tbl)
+//#define RCLASS_IV_TBL(c) ((RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS)), RCLASS_EXT(c))->iv_tbl)
+#define RCLASS_IV_TBL(c) (&RCLASS_EXT(c)->iv_tbl)
+#define RCLASS_NUMIV(c) (RCLASS_EXT(c)->iv_tbl.numiv)
+#define RCLASS_IVPTR(c) (RCLASS_EXT(c)->iv_tbl.ivptr)
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE
 # define RCLASS_M_TBL(c) (RCLASS_EXT(c)->m_tbl)

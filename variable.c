@@ -1236,12 +1236,16 @@ lock_st_insert(st_table *tab, st_data_t key, st_data_t value)
 VALUE
 rb_class_ivar_lookup(VALUE obj, ID id, VALUE undef)
 {
-    st_data_t val;
-
     RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
 
-    if (RCLASS_IV_TBL(obj) &&
-            lock_st_lookup(RCLASS_IV_TBL(obj), (st_data_t)id, &val)) {
+    uint32_t index;
+    uint32_t len = RCLASS_NUMIV(obj);
+    VALUE *ptr = RCLASS_IVPTR(obj);
+    VALUE val;
+
+    if (iv_index_tbl_lookup(RCLASS_IV_INDEX_TBL(CLASS_OF(obj)), id, &index) &&
+            index < len &&
+            (val = ptr[index]) != Qundef) {
         if (rb_is_instance_id(id) &&
                 UNLIKELY(!rb_ractor_main_p()) &&
                 !rb_ractor_shareable_p(val)) {
@@ -1249,8 +1253,7 @@ rb_class_ivar_lookup(VALUE obj, ID id, VALUE undef)
                     "can not get unshareable values from instance variables of classes/modules from non-main Ractors");
         }
         return val;
-    }
-    else {
+    } else {
         return undef;
     }
 }
@@ -1304,11 +1307,20 @@ rb_attr_get(VALUE obj, ID id)
 static VALUE
 rb_class_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
-    if (RCLASS_IV_TBL(obj)) {
-        st_data_t id_data = (st_data_t)id, val;
-        if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
-            return (VALUE)val;
+    struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(CLASS_OF(obj));
+    VALUE *ptr = RCLASS_IVPTR(obj);
+    uint32_t index;
+
+    if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
+            index < ROBJECT_NUMIV(obj)) {
+        VALUE val = ptr[index];
+        ptr[index] = Qundef;
+
+        if (val != Qundef) {
+            return val;
         }
+    } else {
+        return Qfalse;
     }
     return undef;
 }
@@ -1604,9 +1616,17 @@ rb_ivar_set_internal(VALUE obj, ID id, VALUE val)
 static VALUE
 rb_class_ivar_defined(VALUE obj, ID id)
 {
-    return RBOOL(
-            RCLASS_IV_TBL(obj) &&
-            lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id));
+    VALUE val;
+    struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(CLASS_OF(obj));
+    uint32_t index;
+
+    if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
+            index < ROBJECT_NUMIV(obj) &&
+            (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
+        return Qtrue;
+    } else {
+        return Qfalse;
+    }
 }
 
 VALUE
@@ -1701,6 +1721,22 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
         }
     }
 }
+
+static void
+class_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
+{
+    st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(CLASS_OF(obj));
+    if (!iv_index_tbl) return;
+    uint32_t i = 0;
+
+    for (i=0; i < RCLASS_NUMIV(obj); i++) {
+        VALUE val = RCLASS_IVPTR(obj)[i];
+        if (ivar_each_i(iv_index_tbl, val, i, func, arg)) {
+            return;
+        }
+    }
+}
+
 
 struct givar_copy {
     VALUE obj;
@@ -1821,7 +1857,7 @@ rb_ivar_foreach(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 	if (RCLASS_IV_TBL(obj)) {
             RB_VM_LOCK_ENTER();
             {
-                st_foreach_safe(RCLASS_IV_TBL(obj), func, arg);
+                class_ivar_each(obj, func, arg);
             }
             RB_VM_LOCK_LEAVE();
 	}
@@ -1834,11 +1870,22 @@ rb_ivar_foreach(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     }
 }
 
+static st_index_t
+rb_class_ivar_count(VALUE obj)
+{
+    st_index_t i, count, num = RCLASS_NUMIV(obj);
+    const VALUE *const ivptr = RCLASS_IVPTR(obj);
+    for (i = count = 0; i < num; ++i) {
+        if (ivptr[i] != Qundef) {
+            count++;
+        }
+    }
+    return count;
+}
+
 st_index_t
 rb_ivar_count(VALUE obj)
 {
-    st_table *tbl;
-
     if (SPECIAL_CONST_P(obj)) return 0;
 
     switch (BUILTIN_TYPE(obj)) {
@@ -1856,10 +1903,7 @@ rb_ivar_count(VALUE obj)
 	break;
       case T_CLASS:
       case T_MODULE:
-	if ((tbl = RCLASS_IV_TBL(obj)) != 0) {
-	    return tbl->num_entries;
-	}
-	break;
+        return rb_class_ivar_count(obj);
       default:
 	if (FL_TEST(obj, FL_EXIVAR)) {
 	    struct gen_ivtbl *ivtbl;
@@ -3806,18 +3850,33 @@ rb_iv_set(VALUE obj, const char *name, VALUE val)
     return rb_ivar_set(obj, id, val);
 }
 
+static void
+class_iv_resize(VALUE obj, uint32_t newsize)
+{
+    uint32_t oldsize = RCLASS_NUMIV(obj);
+    RCLASS_IVPTR(obj) = xrealloc(RCLASS_IVPTR(obj), newsize);
+    RCLASS_NUMIV(obj) = newsize;
+
+    for (uint32_t i = oldsize; i < newsize; i++) {
+	RCLASS_IVPTR(obj)[i] = Qundef;
+    }
+}
+
 /* tbl = xx(obj); tbl[key] = value; */
 int
-rb_class_ivar_set(VALUE obj, ID key, VALUE value)
+rb_class_ivar_set(VALUE obj, ID id, VALUE val)
 {
-    if (!RCLASS_IV_TBL(obj)) {
-        RCLASS_IV_TBL(obj) = st_init_numtable();
-    }
+    uint32_t len;
+    struct ivar_update ivup = obj_ensure_iv_index_mapping(CLASS_OF(obj), id);
 
-    st_table *tbl = RCLASS_IV_TBL(obj);
-    int result = lock_st_insert(tbl, (st_data_t)key, (st_data_t)value);
-    RB_OBJ_WRITTEN(obj, Qundef, value);
-    return result;
+    len = RCLASS_NUMIV(obj);
+    if (len <= ivup.index) {
+        uint32_t newsize = iv_index_tbl_newsize(&ivup);
+        class_iv_resize(obj, newsize);
+    }
+    RB_OBJ_WRITE(obj, &RCLASS_IVPTR(obj)[ivup.index], val);
+
+    return val;
 }
 
 static int
@@ -3830,10 +3889,11 @@ tbl_copy_i(st_data_t key, st_data_t value, st_data_t data)
 void
 rb_iv_tbl_copy(VALUE dst, VALUE src)
 {
-    st_table *orig_tbl = RCLASS_IV_TBL(src);
-    st_table *new_tbl = st_copy(orig_tbl);
-    st_foreach(new_tbl, tbl_copy_i, (st_data_t)dst);
-    RCLASS_IV_TBL(dst) = new_tbl;
+    // FIXME
+    //st_table *orig_tbl = RCLASS_IV_TBL(src);
+    //st_table *new_tbl = st_copy(orig_tbl);
+    //st_foreach(new_tbl, tbl_copy_i, (st_data_t)dst);
+    //RCLASS_IV_TBL(dst) = new_tbl;
 }
 
 MJIT_FUNC_EXPORTED rb_const_entry_t *

@@ -182,9 +182,8 @@ rb_class_detach_module_subclasses(VALUE klass)
 
 void rb_class_free_iv_tbl(VALUE klass)
 {
-    if (RCLASS_IV_TBL(obj)) {
-        st_free_table(RCLASS_IV_TBL(obj));
-        RCLASS_IV_TBL(obj) = 0;
+    if (RCLASS_NUMIV(klass) > 0) {
+        xfree(RCLASS_IVPTR(klass));
     }
 }
 
@@ -815,9 +814,6 @@ Init_class_hierarchy(void)
     rb_cObject = boot_defclass("Object", rb_cBasicObject);
     rb_gc_register_mark_object(rb_cObject);
 
-    /* resolve class name ASAP for order-independence */
-    rb_set_class_path_string(rb_cObject, rb_cObject, rb_fstring_lit("Object"));
-
     rb_cModule = boot_defclass("Module", rb_cObject);
     rb_cClass =  boot_defclass("Class",  rb_cModule);
     rb_cRefinement =  boot_defclass("Refinement",  rb_cModule);
@@ -835,6 +831,9 @@ Init_class_hierarchy(void)
     RBASIC_SET_CLASS(rb_cBasicObject, rb_cClass);
 
     ENSURE_EIGENCLASS(rb_cRefinement);
+
+    /* resolve class name ASAP for order-independence */
+    rb_set_class_path_string(rb_cObject, rb_cObject, rb_fstring_lit("Object"));
 }
 
 
