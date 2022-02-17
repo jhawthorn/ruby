@@ -92,7 +92,7 @@ typedef struct rb_classext_struct rb_classext_t;
 #else
 #  define RCLASS_EXT(c) (RCLASS(c)->ptr)
 #endif
-#define RCLASS_IV_TBL(c) (RCLASS_EXT(c)->iv_tbl)
+#define RCLASS_IV_TBL(c) ((RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS)), RCLASS_EXT(c))->iv_tbl)
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE
 # define RCLASS_M_TBL(c) (RCLASS_EXT(c)->m_tbl)
