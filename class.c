@@ -180,6 +180,14 @@ rb_class_detach_module_subclasses(VALUE klass)
     rb_class_foreach_subclass(klass, class_detach_module_subclasses, Qnil);
 }
 
+void rb_class_free_iv_tbl(VALUE klass)
+{
+    if (RCLASS_IV_TBL(obj)) {
+        st_free_table(RCLASS_IV_TBL(obj));
+        RCLASS_IV_TBL(obj) = 0;
+    }
+}
+
 /**
  * Allocates a struct RClass for a new class.
  *
@@ -406,10 +414,7 @@ class_init_copy_check(VALUE clone, VALUE orig)
 static void
 copy_tables(VALUE clone, VALUE orig)
 {
-    if (RCLASS_IV_TBL(clone)) {
-	st_free_table(RCLASS_IV_TBL(clone));
-	RCLASS_IV_TBL(clone) = 0;
-    }
+    rb_class_free_iv_tbl(clone);
     if (RCLASS_CONST_TBL(clone)) {
 	rb_free_const_table(RCLASS_CONST_TBL(clone));
 	RCLASS_CONST_TBL(clone) = 0;

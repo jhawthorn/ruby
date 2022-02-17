@@ -153,6 +153,7 @@ VALUE rb_special_singleton_class(VALUE);
 VALUE rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach);
 VALUE rb_singleton_class_get(VALUE obj);
 void rb_undef_methods_from(VALUE klass, VALUE super);
+void rb_class_free_iv_tbl(VALUE klass);
 
 static inline void RCLASS_SET_ORIGIN(VALUE klass, VALUE origin);
 static inline void RICLASS_SET_ORIGIN_SHARED_MTBL(VALUE iclass);

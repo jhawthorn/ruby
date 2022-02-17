@@ -3171,9 +3171,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
       case T_CLASS:
 	rb_id_table_free(RCLASS_M_TBL(obj));
         cc_table_free(objspace, obj, FALSE);
-	if (RCLASS_IV_TBL(obj)) {
-	    st_free_table(RCLASS_IV_TBL(obj));
-	}
+        rb_class_free_iv_tbl(obj);
 	if (RCLASS_CONST_TBL(obj)) {
 	    rb_free_const_table(RCLASS_CONST_TBL(obj));
 	}
