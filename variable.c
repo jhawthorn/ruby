@@ -1243,7 +1243,7 @@ rb_class_ivar_lookup(VALUE obj, ID id, VALUE undef)
     VALUE *ptr = RCLASS_IVPTR(obj);
     VALUE val;
 
-    if (iv_index_tbl_lookup(RCLASS_IV_INDEX_TBL(CLASS_OF(obj)), id, &index) &&
+    if (iv_index_tbl_lookup(RCLASS_SELF_IV_INDEX_TBL(obj), id, &index) &&
             index < len &&
             (val = ptr[index]) != Qundef) {
         if (rb_is_instance_id(id) &&
@@ -1307,7 +1307,7 @@ rb_attr_get(VALUE obj, ID id)
 static VALUE
 rb_class_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
-    struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(CLASS_OF(obj));
+    struct st_table *iv_index_tbl = RCLASS_SELF_IV_INDEX_TBL(obj);
     VALUE *ptr = RCLASS_IVPTR(obj);
     uint32_t index;
 
@@ -1617,7 +1617,7 @@ static VALUE
 rb_class_ivar_defined(VALUE obj, ID id)
 {
     VALUE val;
-    struct st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(CLASS_OF(obj));
+    struct st_table *iv_index_tbl = RCLASS_SELF_IV_INDEX_TBL(obj);
     uint32_t index;
 
     if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
@@ -1725,7 +1725,7 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 static void
 class_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    st_table *iv_index_tbl = RCLASS_IV_INDEX_TBL(CLASS_OF(obj));
+    st_table *iv_index_tbl = RCLASS_SELF_IV_INDEX_TBL(obj);
     if (!iv_index_tbl) return;
     uint32_t i = 0;
 
@@ -3867,14 +3867,27 @@ int
 rb_class_ivar_set(VALUE obj, ID id, VALUE val)
 {
     uint32_t len;
-    struct ivar_update ivup = obj_ensure_iv_index_mapping(CLASS_OF(obj), id);
+    st_data_t index;
+    st_table *tbl;
+
+    struct ivar_update ivup;
+
+    tbl = RCLASS_SELF_IV_INDEX_TBL(obj);
+    if (!tbl) {
+        RCLASS_SELF_IV_INDEX_TBL(obj) = tbl = st_init_numtable();
+    }
+
+    if (!st_lookup(tbl, id, &index)) {
+        index = RCLASS_IV_TBL(obj)->nextidx++;
+        st_insert(tbl, id, index);
+    }
 
     len = RCLASS_NUMIV(obj);
-    if (len <= ivup.index) {
+    if (len <= index) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         class_iv_resize(obj, newsize);
     }
-    RB_OBJ_WRITE(obj, &RCLASS_IVPTR(obj)[ivup.index], val);
+    RB_OBJ_WRITE(obj, &RCLASS_IVPTR(obj)[index], val);
 
     return val;
 }

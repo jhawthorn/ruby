@@ -38,6 +38,8 @@ struct rb_cvar_class_tbl_entry {
 };
 
 struct rb_class_ivar_tbl {
+    struct st_table *iv_index_tbl; // ID -> struct rb_iv_index_tbl_entry
+    uint32_t nextidx;
     uint32_t numiv;
     VALUE *ivptr;
 };
@@ -101,6 +103,8 @@ typedef struct rb_classext_struct rb_classext_t;
 #define RCLASS_IV_TBL(c) (&RCLASS_EXT(c)->iv_tbl)
 #define RCLASS_NUMIV(c) (RCLASS_EXT(c)->iv_tbl.numiv)
 #define RCLASS_IVPTR(c) (RCLASS_EXT(c)->iv_tbl.ivptr)
+#define RCLASS_SELF_IV_INDEX_TBL(c) (RCLASS_EXT(c)->iv_tbl.iv_index_tbl)
+
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE
 # define RCLASS_M_TBL(c) (RCLASS_EXT(c)->m_tbl)
