@@ -1552,12 +1552,15 @@ void set_shape(VALUE obj, rb_shape_t* shape)
     set_shape_id(obj, shape->id);
 }
 
-rb_shape_t* get_shape(VALUE obj)
+rb_shape_t* get_shape_by_id(shape_id_t shape_id)
 {
     rb_vm_t *vm = GET_VM();
-    shape_id_t shape_id = get_shape_id(obj);
-
     return rb_darray_get(vm->shape_list, shape_id);
+}
+
+rb_shape_t* get_shape(VALUE obj)
+{
+    return get_shape_by_id(get_shape_id(obj));
 }
 
 rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)

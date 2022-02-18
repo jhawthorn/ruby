@@ -1185,12 +1185,26 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         else { // cache miss case
             uint32_t iv_index;
 
+#if RUBY_DEBUG
             if (is_attr) {
-                RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
+                if (cached_id != INVALID_SHAPE_ID) {
+                    RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_set);
+                    rb_shape_t* shape = get_shape_by_id(cached_id);
+                    shape->miss_on_get += 1;
+                } else {
+                    RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_unset);
+                }
             }
             else {
-                RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_serial);
+                if (cached_id != INVALID_SHAPE_ID) {
+                    RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_set);
+                    rb_shape_t* shape = get_shape_by_id(cached_id);
+                    shape->miss_on_get += 1;
+                } else {
+                    RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
+                }
             }
+#endif
 
             // This is the "lookup" from the diagram
             // cast to an rb_classext_t * and then -> iv_index_tbl
@@ -1364,24 +1378,29 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             return val; /* inline cache hit */
         }
         else {
-//            shape_id_t shape_dest_id;
+#if RUBY_DEBUG
             if (is_attr) {
-              //  shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
-                RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_unset);
-//                fprintf(stderr, "CC: shape_id: %d, shape_source_id: %d, shape_dest_id: %d, ic addr: %p\n", shape_id, shape_source_id, shape_dest_id, cc);
+                if (shape_source_id != INVALID_SHAPE_ID) {
+                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
+                    rb_shape_t* shape = get_shape_by_id(shape_source_id);
+                    shape->miss_on_set += 1;
+                } else {
+                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
+                }
             } else {
-
-                RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
-
-            }/* else {
-                shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
-                shape_source_id = vm_ic_attr_index_shape_source_id(ic);
- //               fprintf(stderr, "IC: shape_id: %d, shape_source_id: %d, shape_dest_id: %d, ic addr: %p\n", shape_id, shape_source_id, shape_dest_id, ic);
-            }*/
+                if (shape_source_id != INVALID_SHAPE_ID) {
+                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
+                    rb_shape_t* shape = get_shape_by_id(shape_source_id);
+                    shape->miss_on_set += 1;
+                } else {
+                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
+                }
+            }
+#endif
         }
     }
     else {
-	RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
+        RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
     }
 #endif /* OPT_IC_FOR_IVAR */
     if (is_attr) {

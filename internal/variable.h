@@ -46,6 +46,8 @@ struct rb_shape {
     st_table * iv_table;
     shape_id_t id;
     uint16_t transition_count;
+    uint32_t miss_on_set;
+    uint32_t miss_on_get;
 };
 
 #ifndef rb_shape_t
@@ -54,6 +56,7 @@ typedef struct rb_shape rb_shape_t;
 #endif
 
 shape_id_t get_shape_id(VALUE obj);
+rb_shape_t* get_shape_by_id(shape_id_t shape_id);
 rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 void set_shape(VALUE obj, rb_shape_t* shape);
