@@ -1633,10 +1633,11 @@ void rb_obj_freeze_inline(VALUE x)
     if (RB_FL_ABLE(x)) {
         RB_OBJ_FREEZE_RAW(x);
 
-        // TODO: Do we need to compute root shape ID here or is 0 sufficient?
-        if (get_shape_id(x))
+        rb_shape_t* shape = get_shape(x);
+        if (shape->id)
         {
             transition_shape(x, (ID)rb_intern("__frozen__"), 1);
+            shape->frozen = 1;
         }
 
         if (RBASIC_CLASS(x) && !(RBASIC(x)->flags & RUBY_FL_SINGLETON)) {

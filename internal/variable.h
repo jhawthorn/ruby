@@ -45,6 +45,7 @@ struct rb_shape {
     // Store all previously seen ivars
     st_table * iv_table;
     shape_id_t id;
+    uint8_t frozen;
     uint16_t transition_count;
     uint32_t miss_on_set;
     uint32_t miss_on_get;
