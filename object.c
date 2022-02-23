@@ -304,6 +304,7 @@ init_copy(VALUE dest, VALUE obj)
         rb_raise(rb_eTypeError, "[bug] frozen object (%s) allocated", rb_obj_classname(dest));
     }
     RBASIC(dest)->flags &= ~(T_MASK|FL_EXIVAR);
+    // Copies the shape id from obj do dest
     RBASIC(dest)->flags |= RBASIC(obj)->flags & (T_MASK|FL_EXIVAR|(VALUE)0xffff<<48);
     rb_copy_wb_protected_attribute(dest, obj);
     rb_copy_generic_ivar(dest, obj);

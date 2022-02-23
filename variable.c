@@ -1089,6 +1089,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     ivtbl = gen_ivtbl_resize(ivtbl, newsize);
     *v = (st_data_t)ivtbl;
     ivup->u.ivtbl = ivtbl;
+    ivtbl->shape_id = ivup->shape->id;
     return ST_CONTINUE;
 }
 
@@ -1364,7 +1365,7 @@ static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
-    ivup.shape = get_shape(obj);
+    ivup.shape = get_next_shape(get_shape(obj), id); // The new shape
     ivup.iv_extended = 0;
 
     RB_VM_LOCK_ENTER();
@@ -1529,7 +1530,24 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 
 shape_id_t get_shape_id(VALUE obj)
 {
-    return RBASIC(obj)->flags >> 48;
+    switch (BUILTIN_TYPE(obj)) {
+      case T_OBJECT:
+      case T_CLASS:
+      case T_MODULE:
+          return RBASIC(obj)->flags >> 48;
+      default:
+          {
+              struct gen_ivtbl *ivtbl = 0;
+              st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+
+              if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+                  return ivtbl->shape_id;
+              }
+              else {
+                  return 0;
+              }
+          }
+    }
 }
 
 void set_shape_id(VALUE obj, shape_id_t shape_id)
@@ -1539,12 +1557,30 @@ void set_shape_id(VALUE obj, shape_id_t shape_id)
     shape->transition_count += 1;
 #endif
 
-    // Ractors are occupying the upper 32 bits of flags
-    // We're sneaking into the upper 16 bits (and hoping we don't interfere
-    // with ractors)
-    // That's why we're leftshifting 48 here and in get_shape_id
-    RBASIC(obj)->flags &= (0xffffffffffff);
-    RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
+    switch (BUILTIN_TYPE(obj)) {
+      case T_OBJECT:
+      case T_CLASS:
+      case T_MODULE:
+          // Ractors are occupying the upper 32 bits of flags
+          // We're sneaking into the upper 16 bits (and hoping we don't interfere
+          // with ractors)
+          // That's why we're leftshifting 48 here and in get_shape_id
+          RBASIC(obj)->flags &= (0xffffffffffff);
+          RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
+          return;
+      default:
+          {
+              struct gen_ivtbl *ivtbl = 0;
+              st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+
+              if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+                  ivtbl->shape_id = shape_id;
+              }
+              else {
+                  rb_bug("Expected shape_id entry in global iv table");
+              }
+          }
+    }
 }
 
 void set_shape(VALUE obj, rb_shape_t* shape)
@@ -1555,12 +1591,20 @@ void set_shape(VALUE obj, rb_shape_t* shape)
 rb_shape_t* get_shape_by_id(shape_id_t shape_id)
 {
     rb_vm_t *vm = GET_VM();
+    if (shape_id == INVALID_SHAPE_ID) {
+        rb_bug("Shape is invalid\n");
+    }
     return rb_darray_get(vm->shape_list, shape_id);
 }
 
 rb_shape_t* get_shape(VALUE obj)
 {
     return get_shape_by_id(get_shape_id(obj));
+}
+
+int frozen_shape_p(VALUE obj)
+{
+    return get_shape(obj)->frozen;
 }
 
 rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
@@ -1634,7 +1678,8 @@ void rb_obj_freeze_inline(VALUE x)
         RB_OBJ_FREEZE_RAW(x);
 
         rb_shape_t* shape = get_shape(x);
-        if (shape->id)
+        // Only transition T_OBJECTs with a frozen attribute
+        if (shape->id && BUILTIN_TYPE(x) == T_OBJECT)
         {
             transition_shape(x, (ID)rb_intern("__frozen__"), 1);
             shape->frozen = 1;
@@ -1651,7 +1696,6 @@ ivar_set(VALUE obj, ID id, VALUE val)
 {
     RB_DEBUG_COUNTER_INC(ivar_set_base);
 
-    transition_shape(obj, id, val);
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       {
@@ -1659,11 +1703,13 @@ ivar_set(VALUE obj, ID id, VALUE val)
            * Array of existing shapes which we can index into w a shape_id
            * Hash (tree representation) of ivar transitions between shapes
            */
+          transition_shape(obj, id, val);
           obj_ivar_set(obj, id, val);
           break;
       }
       case T_CLASS:
       case T_MODULE:
+        transition_shape(obj, id, val);
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         break;
@@ -1814,7 +1860,7 @@ gen_ivar_copy(ID id, VALUE val, st_data_t arg)
     }
     c->ivtbl->ivptr[ivup.index] = val;
 
-    RB_OBJ_WRITTEN(c->obj, Qundef, val);
+    RB_OBJ_WRITTEN(c->obj, Qundef, val); // this is important
 
     return ST_CONTINUE;
 }
@@ -1822,7 +1868,7 @@ gen_ivar_copy(ID id, VALUE val, st_data_t arg)
 void
 rb_copy_generic_ivar(VALUE clone, VALUE obj)
 {
-    struct gen_ivtbl *ivtbl;
+    struct gen_ivtbl *ivtbl; // this
 
     rb_check_frozen(clone);
 
@@ -1846,10 +1892,21 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
 	}
 
         VALUE klass = rb_obj_class(clone);
-        set_shape_id(clone, get_shape_id(obj));
         c.obj = clone;
         c.klass = klass;
+        // 1. Look up the gen_ivtable for obj (the source)
+        // 2. Allocate a new one with the same size
+        // 3. Copy from old to new
+        /*for (each ivar index, idx) {
+            new_table[idx] = old_table[idx];
+            RB_OBJ_WRITTEN(clone, Qundef, new_table[idx]);
+        }*/
+        // 4. Insert insert in to global table
+        // Allocate a new entry for the gen iv table,
+        // but use the size from obj
+        // iterate over each and copy
 	gen_ivar_each(obj, gen_ivar_copy, (st_data_t)&c);
+        set_shape_id(clone, get_shape_id(obj));
 	/*
 	 * c.ivtbl may change in gen_ivar_copy due to realloc,
 	 * no need to free
