@@ -1670,7 +1670,7 @@ int get_iv_index_from_shape(rb_shape_t * shape, ID id, st_data_t* value) {
 void transition_shape(VALUE obj, ID id, VALUE val)
 {
     rb_shape_t* shape = get_shape(obj);
-    assert(shape);
+    RUBY_ASSERT(shape);
     rb_shape_t* next_shape = get_next_shape(shape, id);
     set_shape(obj, next_shape);
 }
