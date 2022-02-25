@@ -1377,6 +1377,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     RB_VM_LOCK_LEAVE();
 
     ivup.u.ivtbl->ivptr[ivup.index] = val;
+    transition_shape(obj, id, val);
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
@@ -1538,14 +1539,17 @@ shape_id_t get_shape_id(VALUE obj)
       default:
           {
               struct gen_ivtbl *ivtbl = 0;
-              st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+              shape_id_t shape_id = 0;
+              RB_VM_LOCK_ENTER();
+              {
+                  st_table* global_iv_table = generic_ivtbl(obj, 0, false);
 
-              if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-                  return ivtbl->shape_id;
+                  if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+                      shape_id = ivtbl->shape_id;
+                  }
               }
-              else {
-                  return 0;
-              }
+              RB_VM_LOCK_LEAVE();
+              return shape_id;
           }
     }
 }
@@ -1571,14 +1575,18 @@ void set_shape_id(VALUE obj, shape_id_t shape_id)
       default:
           {
               struct gen_ivtbl *ivtbl = 0;
-              st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+              RB_VM_LOCK_ENTER();
+              {
+                  st_table* global_iv_table = generic_ivtbl(obj, 0, false);
 
-              if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-                  ivtbl->shape_id = shape_id;
+                  if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+                      ivtbl->shape_id = shape_id;
+                  }
+                  else {
+                      rb_bug("Expected shape_id entry in global iv table");
+                  }
               }
-              else {
-                  rb_bug("Expected shape_id entry in global iv table");
-              }
+              RB_VM_LOCK_LEAVE();
           }
     }
 }
@@ -1806,7 +1814,13 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     if (!iv_index_tbl) return;
     uint32_t i=0;
 
+    shape_id_t shape_id = get_shape_id(obj);
     for (i=0; i < ROBJECT_NUMIV(obj); i++) {
+        // If the objects shape changes, raise
+        if (shape_id != get_shape_id(obj)) {
+            shape_id = get_shape_id(obj);
+            iv_index_tbl = get_shape(obj)->iv_table;
+        }
         VALUE val = ROBJECT_IVPTR(obj)[i];
         if (ivar_each_i(iv_index_tbl, val, i, func, arg)) {
             return;
@@ -1830,93 +1844,42 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     }
 }
 
-struct givar_copy {
-    VALUE obj;
-    VALUE klass;
-    st_table *iv_index_tbl;
-    struct gen_ivtbl *ivtbl;
-};
-
-static int
-gen_ivar_copy(ID id, VALUE val, st_data_t arg)
-{
-    struct givar_copy *c = (struct givar_copy *)arg;
-    struct ivar_update ivup;
-
-    ivup.iv_extended = 0;
-    ivup.u.iv_index_tbl = c->iv_index_tbl;
-    ivup.shape = get_shape(c->obj);
-
-    RB_VM_LOCK_ENTER();
-    {
-        // TODO: Figure out what to do with shapes here??
-        iv_index_tbl_extend(&ivup, id);
-    }
-    RB_VM_LOCK_LEAVE();
-
-    if (ivup.index >= c->ivtbl->numiv) {
-	uint32_t newsize = iv_index_tbl_newsize(&ivup);
-	c->ivtbl = gen_ivtbl_resize(c->ivtbl, newsize);
-    }
-    c->ivtbl->ivptr[ivup.index] = val;
-
-    RB_OBJ_WRITTEN(c->obj, Qundef, val); // this is important
-
-    return ST_CONTINUE;
-}
-
 void
 rb_copy_generic_ivar(VALUE clone, VALUE obj)
 {
-    struct gen_ivtbl *ivtbl; // this
+    struct gen_ivtbl *obj_ivtbl;
+    struct gen_ivtbl *new_ivtbl;
 
     rb_check_frozen(clone);
 
     if (!FL_TEST(obj, FL_EXIVAR)) {
         goto clear;
     }
-    if (gen_ivtbl_get(obj, 0, &ivtbl)) {
-	struct givar_copy c;
-	uint32_t i;
 
-	if (gen_ivtbl_count(ivtbl) == 0)
-	    goto clear;
+    if (gen_ivtbl_get(obj, 0, &obj_ivtbl)) {
+        if (gen_ivtbl_count(obj_ivtbl) == 0)
+            goto clear;
 
-	if (gen_ivtbl_get(clone, 0, &c.ivtbl)) {
-	    for (i = 0; i < c.ivtbl->numiv; i++)
-		c.ivtbl->ivptr[i] = Qundef;
-	}
-	else {
-	    c.ivtbl = gen_ivtbl_resize(0, ivtbl->numiv);
-	    FL_SET(clone, FL_EXIVAR);
-	}
+        new_ivtbl = gen_ivtbl_resize(0, obj_ivtbl->numiv);
+        FL_SET(clone, FL_EXIVAR);
 
-        VALUE klass = rb_obj_class(clone);
-        c.obj = clone;
-        c.klass = klass;
-        // 1. Look up the gen_ivtable for obj (the source)
-        // 2. Allocate a new one with the same size
-        // 3. Copy from old to new
-        /*for (each ivar index, idx) {
-            new_table[idx] = old_table[idx];
-            RB_OBJ_WRITTEN(clone, Qundef, new_table[idx]);
-        }*/
-        // 4. Insert insert in to global table
-        // Allocate a new entry for the gen iv table,
-        // but use the size from obj
-        // iterate over each and copy
-	gen_ivar_each(obj, gen_ivar_copy, (st_data_t)&c);
-        set_shape_id(clone, get_shape_id(obj));
-	/*
-	 * c.ivtbl may change in gen_ivar_copy due to realloc,
-	 * no need to free
-	 */
+        for (uint32_t i=0; i<obj_ivtbl->numiv; i++) {
+            new_ivtbl->ivptr[i] = obj_ivtbl->ivptr[i];
+            RB_OBJ_WRITTEN(clone, Qundef, &new_ivtbl[i]);
+        }
+
+        /*
+         * c.ivtbl may change in gen_ivar_copy due to realloc,
+         * no need to free
+         */
         RB_VM_LOCK_ENTER();
         {
             generic_ivtbl_no_ractor_check(clone);
-            st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)clone, (st_data_t)c.ivtbl);
+            st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)clone, (st_data_t)new_ivtbl);
         }
         RB_VM_LOCK_LEAVE();
+
+        set_shape_id(clone, get_shape_id(obj));
     }
     return;
 
