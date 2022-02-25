@@ -16,7 +16,7 @@
 
 /* global variable */
 
-#define ROBJECT_TRANSIENT_FLAG    FL_USER13
+#define ROBJECT_TRANSIENT_FLAG    FL_USER2
 
 /* variable.c */
 void rb_gc_mark_global_tbl(void);
@@ -45,10 +45,11 @@ struct rb_shape {
     // Store all previously seen ivars
     st_table * iv_table;
     shape_id_t id;
-    uint8_t frozen;
     uint16_t transition_count;
+    // TODO: Should these only be avaialbe in debug mode
     uint32_t miss_on_set;
     uint32_t miss_on_get;
+    bool frozen;
 };
 
 #ifndef rb_shape_t

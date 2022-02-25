@@ -1535,7 +1535,7 @@ shape_id_t get_shape_id(VALUE obj)
       case T_OBJECT:
       case T_CLASS:
       case T_MODULE:
-          return RBASIC(obj)->flags >> 48;
+          return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
       default:
           {
               struct gen_ivtbl *ivtbl = 0;
@@ -1566,11 +1566,12 @@ void set_shape_id(VALUE obj, shape_id_t shape_id)
       case T_CLASS:
       case T_MODULE:
           // Ractors are occupying the upper 32 bits of flags
-          // We're sneaking into the upper 16 bits (and hoping we don't interfere
-          // with ractors)
-          // That's why we're leftshifting 48 here and in get_shape_id
-          RBASIC(obj)->flags &= (0xffffffffffff);
-          RBASIC(obj)->flags |= ((uint64_t)(shape_id) << 48);
+          // Object shapes are occupying the next 16 bits
+          // 4 bits are unused
+          // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
+          // | XXXX ractor_id | shape_id | UUUU flags |
+          RBASIC(obj)->flags &= 0xffffffff0000ffff;
+          RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
           return;
       default:
           {
