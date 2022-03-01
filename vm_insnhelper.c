@@ -1357,10 +1357,19 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
                 shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
             }
 
+            if (shape_dest_id == INVALID_SHAPE_ID || shape_id == INVALID_SHAPE_ID) {
+                rb_bug("wrong shape id dest: %d shape_id %d!\n", shape_dest_id, shape_id);
+            }
+
             VM_ASSERT(!rb_ractor_shareable_p(obj));
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                 rb_init_iv_list(obj);
             }
+
+            if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
+                rb_bug("object isn't big enough index: %d, numiv: %d!\n", index, ROBJECT_NUMIV(obj));
+            }
+
             VALUE *ptr = ROBJECT_IVPTR(obj);
 
             RB_OBJ_WRITE(obj, &ptr[index], val);

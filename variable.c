@@ -1531,15 +1531,16 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 
 shape_id_t get_shape_id(VALUE obj)
 {
+    shape_id_t shape_id = 0;
+
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       case T_CLASS:
       case T_MODULE:
-          return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+          shape_id = (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
       default:
           {
               struct gen_ivtbl *ivtbl = 0;
-              shape_id_t shape_id = 0;
               RB_VM_LOCK_ENTER();
               {
                   st_table* global_iv_table = generic_ivtbl(obj, 0, false);
@@ -1549,9 +1550,14 @@ shape_id_t get_shape_id(VALUE obj)
                   }
               }
               RB_VM_LOCK_LEAVE();
-              return shape_id;
           }
     }
+
+    // The shape id must be smaller than the tree size
+    // The shape id must not be INVALID_SHAPE_ID
+    assert(shape_id < MAX_SHAPE_ID);
+    assert(shape_id < rb_darray_size(vm->shape_list) + 1);
+    return shape_id;
 }
 
 void set_shape_id(VALUE obj, shape_id_t shape_id)
@@ -1649,6 +1655,7 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
             rb_darray_append(&vm->shape_list, new_shape);
             new_shape->id = rb_darray_size(vm->shape_list) - 1;
 
+            // TODO: Need to do this earlier, before we allocate the new shape
             if (new_shape->id > MAX_SHAPE_ID) {
                 fprintf(stderr, "Too many shapes\n");
                 abort();
