@@ -9863,6 +9863,10 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_tmpbuf:
       case imemo_callinfo:
         break;
+      case imemo_once:
+        UPDATE_IF_MOVED(objspace, RANY(obj)->as.imemo.memo.v1);
+        UPDATE_IF_MOVED(objspace, RANY(obj)->as.imemo.memo.v2);
+        break;
       default:
         rb_bug("not reachable %d", imemo_type(obj));
         break;
