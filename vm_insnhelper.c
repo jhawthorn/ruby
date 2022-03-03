@@ -4177,38 +4177,6 @@ vm_invoke_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
     return func(ec, reg_cfp, calling, ci, is_lambda, block_handler);
 }
 
-static VALUE
-vm_make_proc_with_iseq(const rb_iseq_t *blockiseq)
-{
-    const rb_execution_context_t *ec = GET_EC();
-    const rb_control_frame_t *cfp = rb_vm_get_ruby_level_next_cfp(ec, ec->cfp);
-    struct rb_captured_block *captured;
-
-    if (cfp == 0) {
-	rb_bug("vm_make_proc_with_iseq: unreachable");
-    }
-
-    captured = VM_CFP_TO_CAPTURED_BLOCK(cfp);
-    captured->code.iseq = blockiseq;
-
-    return rb_vm_make_proc(ec, captured, rb_cProc);
-}
-
-static VALUE
-vm_once_exec(VALUE iseq)
-{
-    VALUE proc = vm_make_proc_with_iseq((rb_iseq_t *)iseq);
-    return rb_proc_call_with_block(proc, 0, 0, Qnil);
-}
-
-static VALUE
-vm_once_clear(VALUE data)
-{
-    union iseq_inline_storage_entry *is = (union iseq_inline_storage_entry *)data;
-    is->once.running_thread = NULL;
-    return Qnil;
-}
-
 /* defined insn */
 
 static bool
@@ -4971,37 +4939,6 @@ vm_ic_update(const rb_iseq_t *iseq, IC ic, VALUE val, const VALUE *reg_ep)
     // notify YJIT about changes to the IC when running inside MJIT code.
     rb_yjit_constant_ic_update(iseq, ic);
 #endif
-}
-
-static VALUE
-vm_once_dispatch(rb_execution_context_t *ec, ISEQ iseq, ISE is)
-{
-    rb_thread_t *th = rb_ec_thread_ptr(ec);
-    rb_thread_t *const RUNNING_THREAD_ONCE_DONE = (rb_thread_t *)(0x1);
-
-  again:
-    if (is->once.running_thread == RUNNING_THREAD_ONCE_DONE) {
-	return is->once.value;
-    }
-    else if (is->once.running_thread == NULL) {
-	VALUE val;
-	is->once.running_thread = th;
-	val = rb_ensure(vm_once_exec, (VALUE)iseq, vm_once_clear, (VALUE)is);
-	RB_OBJ_WRITE(ec->cfp->iseq, &is->once.value, val);
-	/* is->once.running_thread is cleared by vm_once_clear() */
-	is->once.running_thread = RUNNING_THREAD_ONCE_DONE; /* success */
-	return val;
-    }
-    else if (is->once.running_thread == th) {
-	/* recursive once */
-	return vm_once_exec((VALUE)iseq);
-    }
-    else {
-	/* waiting for finish */
-	RUBY_VM_CHECK_INTS(ec);
-	rb_thread_schedule();
-	goto again;
-    }
 }
 
 static OFFSET

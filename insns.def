@@ -1048,16 +1048,6 @@ opt_setinlinecache
     vm_ic_update(GET_ISEQ(), ic, val, GET_EP());
 }
 
-/* run iseq only once */
-DEFINE_INSN
-once
-(ISEQ iseq, ISE ise)
-()
-(VALUE val)
-{
-    val = vm_once_dispatch(ec, iseq, ise);
-}
-
 /* case dispatcher, jump by table if possible */
 DEFINE_INSN
 opt_case_dispatch
