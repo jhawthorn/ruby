@@ -46,6 +46,7 @@ struct rb_shape {
     st_table * iv_table;
     shape_id_t id;
     shape_id_t parent_id;
+    ID edge_name;
     uint16_t transition_count;
     // TODO: Should these only be avaialbe in debug mode
     uint32_t miss_on_set;

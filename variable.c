@@ -1655,6 +1655,7 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
             rb_vm_t *vm = GET_VM();
             rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
             new_shape->parent_id = shape->id;
+            new_shape->edge_name = id;
             st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
             if (shape->iv_table) {
                 new_shape->iv_table = st_copy(shape->iv_table);
