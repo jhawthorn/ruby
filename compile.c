@@ -9530,7 +9530,7 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 
 	VALUE argc = INT2FIX(1);
 	ADD_INSN1(ret, node, putspecialobject, INT2FIX(VM_SPECIAL_OBJECT_VMCORE));
-        VALUE once = rb_imemo_new(imemo_once, Qundef, 0, 0, 0);
+        VALUE once = rb_imemo_new(imemo_once, Qundef, rb_mutex_new(), 0, 0);
         ADD_INSN1(ret, node, putobject, once);
 	ADD_CALL_WITH_BLOCK(ret, node, id_core_once, argc, block_iseq);
         RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)block_iseq);
@@ -9767,7 +9767,7 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 
 	VALUE argc = INT2FIX(1);
 	ADD_INSN1(ret, node, putspecialobject, INT2FIX(VM_SPECIAL_OBJECT_VMCORE));
-        VALUE once = rb_imemo_new(imemo_once, Qundef, 0, 0, 0);
+        VALUE once = rb_imemo_new(imemo_once, Qundef, rb_mutex_new(), 0, 0);
         ADD_INSN1(ret, node, putobject, once);
 	ADD_CALL_WITH_BLOCK(ret, node, id_core_once, argc, once_iseq);
         RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)once_iseq);

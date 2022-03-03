@@ -3348,12 +3348,26 @@ m_core_once(VALUE self, VALUE oncev)
         return val;
     }
 
-    // FIXME: locking
-
+    VALUE mutex = once->v2;
+    VALUE owned = rb_mutex_owned_p(mutex);
     VALUE proc = rb_block_proc();
-    val = rb_proc_call(proc, rb_ary_new());
 
-    MEMO_V1_SET(once, val);
+    if (owned) {
+        /* recursive once */
+        return rb_proc_call(proc, rb_ary_new());
+    }
+
+    rb_mutex_lock(mutex);
+
+    /* value may have been set as we were waiting */
+    val = once->v1;
+    if (val == Qundef) {
+        val = rb_proc_call(proc, rb_ary_new());
+        MEMO_V1_SET(once, val);
+    }
+
+    rb_mutex_unlock(mutex);
+
     return val;
 }
 
