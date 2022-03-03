@@ -280,10 +280,6 @@ struct iseq_inline_cvar_cache_entry {
 };
 
 union iseq_inline_storage_entry {
-    struct {
-	struct rb_thread_struct *running_thread;
-	VALUE value;
-    } once;
     struct iseq_inline_constant_cache ic_cache;
     struct iseq_inline_iv_cache_entry iv_cache;
 };

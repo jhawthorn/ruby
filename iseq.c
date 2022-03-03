@@ -210,17 +210,6 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
                 }
             }
             break;
-          case TS_ISE:
-            {
-              union iseq_inline_storage_entry *const is = (union iseq_inline_storage_entry *)code[pos + op_no + 1];
-              if (is->once.value) {
-                  VALUE nv = func(data, is->once.value);
-                  if (is->once.value != nv) {
-                      is->once.value = nv;
-                  }
-              }
-            }
-            break;
           default:
             break;
 	}
