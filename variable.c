@@ -1555,8 +1555,11 @@ shape_id_t get_shape_id(VALUE obj)
 
     // The shape id must be smaller than the tree size
     // The shape id must not be INVALID_SHAPE_ID
+
+#if RUBY_DEBUG
     assert(shape_id < MAX_SHAPE_ID);
-    assert(shape_id < rb_darray_size(vm->shape_list) + 1);
+#endif
+//    assert(shape_id < rb_darray_size(vm->shape_list) + 1);
     return shape_id;
 }
 
@@ -1617,6 +1620,12 @@ rb_shape_t* get_shape(VALUE obj)
     return get_shape_by_id(get_shape_id(obj));
 }
 
+rb_shape_t*
+get_parent_shape(VALUE obj)
+{
+    return get_shape_by_id(get_shape(obj)->parent_id);
+}
+
 int frozen_shape_p(VALUE obj)
 {
     return get_shape(obj)->frozen;
@@ -1645,6 +1654,7 @@ rb_shape_t* get_next_shape(rb_shape_t* shape, ID id)
             // else
             rb_vm_t *vm = GET_VM();
             rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
+            new_shape->parent_id = shape->id;
             st_insert(shape->edges, (st_data_t)id, (st_data_t)new_shape);
             if (shape->iv_table) {
                 new_shape->iv_table = st_copy(shape->iv_table);

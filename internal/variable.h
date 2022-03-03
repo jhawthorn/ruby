@@ -45,6 +45,7 @@ struct rb_shape {
     // Store all previously seen ivars
     st_table * iv_table;
     shape_id_t id;
+    shape_id_t parent_id;
     uint16_t transition_count;
     // TODO: Should these only be avaialbe in debug mode
     uint32_t miss_on_set;
