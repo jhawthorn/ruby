@@ -3339,6 +3339,24 @@ m_core_set_postexe(VALUE self)
     return Qnil;
 }
 
+static VALUE
+m_core_once(VALUE self, VALUE oncev)
+{
+    struct MEMO *once = MEMO_CAST(oncev);
+    VALUE val = once->v1;
+    if (LIKELY(val != Qundef)) {
+        return val;
+    }
+
+    // FIXME: locking
+
+    VALUE proc = rb_block_proc();
+    val = rb_proc_call(proc, rb_ary_new());
+
+    MEMO_V1_SET(once, val);
+    return val;
+}
+
 static VALUE core_hash_merge_kwd(VALUE hash, VALUE kw);
 
 static VALUE
@@ -3594,6 +3612,7 @@ Init_VM(void)
     rb_define_method_id(klass, id_core_set_variable_alias, m_core_set_variable_alias, 2);
     rb_define_method_id(klass, id_core_undef_method, m_core_undef_method, 2);
     rb_define_method_id(klass, id_core_set_postexe, m_core_set_postexe, 0);
+    rb_define_method_id(klass, id_core_once, m_core_once, 1);
     rb_define_method_id(klass, id_core_hash_merge_ptr, m_core_hash_merge_ptr, -1);
     rb_define_method_id(klass, id_core_hash_merge_kwd, m_core_hash_merge_kwd, 2);
     rb_define_method_id(klass, id_core_raise, f_raise, -1);

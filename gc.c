@@ -2692,6 +2692,7 @@ rb_imemo_name(enum imemo_type type)
         IMEMO_NAME(callinfo);
         IMEMO_NAME(callcache);
         IMEMO_NAME(constcache);
+        IMEMO_NAME(once);
 #undef IMEMO_NAME
     }
     return "unknown";
@@ -2753,6 +2754,7 @@ imemo_memsize(VALUE obj)
       case imemo_ifunc:
       case imemo_memo:
       case imemo_parser_strterm:
+      case imemo_once:
         break;
       default:
         /* unreachable */
@@ -3453,6 +3455,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             break;
           case imemo_constcache:
             RB_DEBUG_COUNTER_INC(obj_imemo_constcache);
+            break;
+          case imemo_once:
+            RB_DEBUG_COUNTER_INC(obj_imemo_once);
             break;
 	}
 	return TRUE;
@@ -6984,6 +6989,10 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             gc_mark(objspace, ice->value);
         }
         return;
+      case imemo_once:
+	gc_mark(objspace, RANY(obj)->as.imemo.memo.v1);
+	gc_mark(objspace, RANY(obj)->as.imemo.memo.v2);
+	return;
 #if VM_CHECK_MODE > 0
       default:
 	VM_UNREACHABLE(gc_mark_imemo);

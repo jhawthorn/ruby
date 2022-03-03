@@ -9525,11 +9525,14 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	break;
       }
       case NODE_ONCE:{
-	int ic_index = body->is_size++;
 	const rb_iseq_t *block_iseq;
 	block_iseq = NEW_CHILD_ISEQ(node->nd_body, make_name_for_block(iseq), ISEQ_TYPE_PLAIN, line);
 
-	ADD_INSN2(ret, node, once, block_iseq, INT2FIX(ic_index));
+	VALUE argc = INT2FIX(1);
+	ADD_INSN1(ret, node, putspecialobject, INT2FIX(VM_SPECIAL_OBJECT_VMCORE));
+        VALUE once = rb_imemo_new(imemo_once, Qundef, 0, 0, 0);
+        ADD_INSN1(ret, node, putobject, once);
+	ADD_CALL_WITH_BLOCK(ret, node, id_core_once, argc, block_iseq);
         RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)block_iseq);
 
 	if (popped) {
@@ -9756,14 +9759,17 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	/* compiled to:
 	 *   ONCE{ rb_mRubyVMFrozenCore::core#set_postexe{ ... } }
 	 */
-	int is_index = body->is_size++;
         struct rb_iseq_new_with_callback_callback_func *ifunc =
             rb_iseq_new_with_callback_new_callback(build_postexe_iseq, node->nd_body);
 	const rb_iseq_t *once_iseq =
             new_child_iseq_with_callback(iseq, ifunc,
 				 rb_fstring(make_name_for_block(iseq)), iseq, ISEQ_TYPE_BLOCK, line);
 
-	ADD_INSN2(ret, node, once, once_iseq, INT2FIX(is_index));
+	VALUE argc = INT2FIX(1);
+	ADD_INSN1(ret, node, putspecialobject, INT2FIX(VM_SPECIAL_OBJECT_VMCORE));
+        VALUE once = rb_imemo_new(imemo_once, Qundef, 0, 0, 0);
+        ADD_INSN1(ret, node, putobject, once);
+	ADD_CALL_WITH_BLOCK(ret, node, id_core_once, argc, once_iseq);
         RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)once_iseq);
 
 	if (popped) {
