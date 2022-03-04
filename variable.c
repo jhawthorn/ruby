@@ -1626,7 +1626,19 @@ get_parent_shape(VALUE obj)
     return get_shape_by_id(get_shape(obj)->parent_id);
 }
 
-int frozen_shape_p(VALUE obj)
+rb_shape_t*
+get_root_shape() {
+    rb_vm_t *vm = GET_VM();
+    return vm->shape_root;
+}
+
+bool
+root_shape_p(rb_shape_t* shape) {
+    return shape == get_root_shape();
+}
+
+int
+frozen_shape_p(VALUE obj)
 {
     return get_shape(obj)->frozen;
 }

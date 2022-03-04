@@ -4889,11 +4889,7 @@ VALUE rb_obj_shape(rb_shape_t* shape) {
 }
 
 static VALUE shape_transition_tree(VALUE self) {
-    // Might want to extract this into a get_root_shape
-    rb_vm_t *vm = GET_VM();
-    rb_shape_t* root_shape = vm->shape_root;
-
-    return rb_obj_shape(root_shape);
+    return rb_obj_shape(get_root_shape());
 }
 
 static VALUE shape_count(VALUE self) {
