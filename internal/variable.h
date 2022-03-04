@@ -41,9 +41,9 @@ typedef uint16_t shape_id_t;
 
 struct rb_shape {
     // id -> st_table;
-    st_table * edges;
+    struct rb_id_table * edges;
     // Store all previously seen ivars
-    st_table * iv_table;
+    struct rb_id_table * iv_table;
     shape_id_t id;
     shape_id_t parent_id;
     ID edge_name;
@@ -66,7 +66,7 @@ rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 rb_shape_t* get_root_shape();
 void set_shape(VALUE obj, rb_shape_t* shape);
 void set_shape_id(VALUE obj, shape_id_t shape_id);
-int get_iv_index_from_shape(rb_shape_t * shape, ID id, st_data_t * value);
+int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE * value);
 void transition_shape(VALUE obj, ID id, VALUE val);
 
 # define MAX_SHAPE_ID 0xFFFE

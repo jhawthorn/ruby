@@ -4832,8 +4832,7 @@ VALUE rb_obj_shape_id(VALUE self, VALUE obj) {
     return INT2NUM(get_shape_id(obj));
 }
 
-static VALUE parse_key(st_data_t _key) {
-    ID key = (ID)_key;
+static VALUE parse_key(ID key) {
     if ((key & RUBY_ID_INTERNAL) == RUBY_ID_INTERNAL) {
         return LONG2NUM(key);
     } else {
@@ -4841,35 +4840,35 @@ static VALUE parse_key(st_data_t _key) {
     }
 }
 
-static int collect_keys(st_data_t key, st_data_t value, st_data_t ref)
+static enum rb_id_table_iterator_result collect_keys(ID key, VALUE value, void *ref)
 {
-    rb_ary_push((VALUE)ref, parse_key(key));
-    return ST_CONTINUE;
+    rb_ary_push(*(VALUE *)ref, parse_key(key));
+    return ID_TABLE_CONTINUE;
 }
 
 
-static VALUE seen_ivars(st_table* ivars)
+static VALUE seen_ivars(struct rb_id_table* ivars)
 {
     VALUE array = rb_ary_new();
     if (ivars) {
-        st_foreach(ivars, collect_keys, array);
+        rb_id_table_foreach(ivars, collect_keys, &array);
     }
     return array;
 }
 
 VALUE rb_obj_shape(rb_shape_t* shape);
 
-static int collect_keys_and_values(st_data_t key, st_data_t value, st_data_t ref)
+static enum rb_id_table_iterator_result collect_keys_and_values(ID key, VALUE value, void *ref)
 {
-    rb_hash_aset((VALUE)ref, parse_key(key), rb_obj_shape((rb_shape_t*)value));
-    return ST_CONTINUE;
+    rb_hash_aset(*(VALUE *)ref, parse_key(key), rb_obj_shape((rb_shape_t*)value));
+    return ID_TABLE_CONTINUE;
 }
 
-static VALUE edges(st_table* edges)
+static VALUE edges(struct rb_id_table* edges)
 {
     VALUE hash = rb_hash_new();
     if (edges) {
-        st_foreach(edges, collect_keys_and_values, hash);
+        rb_id_table_foreach(edges, collect_keys_and_values, &hash);
     }
     return hash;
 }

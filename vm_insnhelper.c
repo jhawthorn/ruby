@@ -1090,7 +1090,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 
     RB_VM_LOCK_ENTER();
     {
-        r = shape->iv_table && st_lookup(shape->iv_table, (st_data_t)id, &ent_data);
+        r = shape->iv_table && rb_id_table_lookup(shape->iv_table, (st_data_t)id, &ent_data);
     }
     RB_VM_LOCK_LEAVE();
 
@@ -1208,7 +1208,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 
             // This is the "lookup" from the diagram
             // cast to an rb_classext_t * and then -> iv_index_tbl
-            struct st_table *iv_index_tbl;
+            struct rb_id_table *iv_index_tbl;
 
             if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) || FL_TEST_RAW(obj, FL_EXIVAR)) {
                 iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
@@ -1217,12 +1217,12 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 goto general_path;
             }
 
-            st_data_t index_st;
-            if (get_iv_index_from_shape(get_shape(obj), id, &index_st)) {
+            VALUE iv_index_value;
+            if (get_iv_index_from_shape(get_shape(obj), id, &iv_index_value)) {
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object
-                iv_index = (uint32_t) index_st;
-                fill_ivar_cache(iseq, ic, cc, is_attr, iv_index, shape_id);
+                iv_index = (uint32_t)iv_index_value;
+                fill_ivar_cache(iseq, ic, cc, is_attr, (uint32_t) iv_index_value, shape_id);
 
                 // get value
                 if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&

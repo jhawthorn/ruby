@@ -27,7 +27,7 @@ int rb_bool_expected(VALUE, const char *);
 static inline void RBASIC_CLEAR_CLASS(VALUE obj);
 static inline void RBASIC_SET_CLASS_RAW(VALUE obj, VALUE klass);
 static inline void RBASIC_SET_CLASS(VALUE obj, VALUE klass);
-static inline struct st_table *ROBJECT_IV_INDEX_TBL_inline(VALUE obj);
+static inline struct rb_id_table *ROBJECT_IV_INDEX_TBL_inline(VALUE obj);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* object.c (export) */
@@ -67,7 +67,7 @@ RBASIC_SET_CLASS(VALUE obj, VALUE klass)
 }
 
 RBIMPL_ATTR_PURE()
-static inline struct st_table *
+static inline struct rb_id_table *
 ROBJECT_IV_INDEX_TBL_inline(VALUE obj)
 {
     return get_shape(obj)->iv_table;
