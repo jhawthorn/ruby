@@ -1,4 +1,13 @@
-1. change asserts, benchmarks
-2. change edges and iv_table to rb_id_table, run benchmarks
-3. [next week] memory profiling
-4. preallocate shapes
+For GC on shapes:
+- When an object is marked, also mark its shape
+- When a shape is marked, it marks its parent
+- Remove four fields so shape fits as an IMEMO object in 40 bytes
+
+Rerun on core:
+- Prioritize lack of segv
+
+Get memory profile data:
+- run "/usr/bin/time -l" on disourse, or railsbench or something for comparative
+  memory_footprint
+
+preallocate shapes

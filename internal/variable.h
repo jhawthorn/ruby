@@ -40,6 +40,8 @@ uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
 typedef uint16_t shape_id_t;
 
 struct rb_shape {
+    // Put frozen into the shape's flags
+    VALUE flags;
     // id -> st_table;
     struct rb_id_table * edges;
     // Store all previously seen ivars
@@ -47,8 +49,8 @@ struct rb_shape {
     shape_id_t id;
     shape_id_t parent_id;
     ID edge_name;
+    // TODO: remove these four fields (eventually move frozen into flags)
     uint16_t transition_count;
-    // TODO: Should these only be avaialbe in debug mode
     uint32_t miss_on_set;
     uint32_t miss_on_get;
     bool frozen;
