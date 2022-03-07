@@ -1662,7 +1662,7 @@ get_next_shape(rb_shape_t* shape, ID id)
     } else {
         // Is the ivar already in the set
         if (shape->iv_table && rb_id_table_lookup(shape->iv_table, id, &value)) {
-            fprintf(stderr, "id %d, shape_id %d\n", id, shape->id);
+//            fprintf(stderr, "id %d, shape_id %d\n", id, shape->id);
             return shape;
         } else {
             // else

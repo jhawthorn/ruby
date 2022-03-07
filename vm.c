@@ -2759,6 +2759,28 @@ vm_memsize_builtin_function_table(const struct rb_builtin_function *builtin_func
     return builtin_function_table == NULL ? 0 : sizeof(struct rb_builtin_function);
 }
 
+static enum rb_id_table_iterator_result
+size_of_shape_transition_tree(ID key, VALUE value, void *_tree_size) {
+    rb_shape_t * shape = (rb_shape_t *) value;
+    *(size_t *)_tree_size += sizeof(rb_shape_t); // this node's size
+    if (shape->iv_table)
+        *(size_t *)_tree_size += rb_id_table_memsize(shape->iv_table); // this node's iv_table
+    if (shape->edges) {
+        *(size_t *)_tree_size += rb_id_table_memsize(shape->edges); // this node's edges
+        rb_id_table_foreach(shape->edges, size_of_shape_transition_tree, _tree_size);
+    }
+    return ID_TABLE_CONTINUE;
+}
+
+static size_t
+shape_tree_memsize(rb_vm_t *vm)
+{
+    int32_t capa = rb_darray_capa(vm->shape_list);
+    size_t tree_size = capa * sizeof(void *) + sizeof(rb_darray_meta_t);
+    size_of_shape_transition_tree(0, (VALUE) get_root_shape(), &tree_size);
+    return tree_size;
+}
+
 // Reports the memsize of the VM struct object and the structs that are
 // associated with it.
 static size_t
@@ -2781,7 +2803,8 @@ vm_memsize(const void *ptr)
         rb_st_memsize(vm->frozen_strings) +
         vm_memsize_builtin_function_table(vm->builtin_function_table) +
         rb_id_table_memsize(vm->negative_cme_table) +
-        rb_st_memsize(vm->overloaded_cme_table)
+        rb_st_memsize(vm->overloaded_cme_table) +
+        shape_tree_memsize(vm)
     );
 
     // TODO
