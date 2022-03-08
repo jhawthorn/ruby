@@ -1367,7 +1367,9 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             }
 
             if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                rb_bug("object isn't big enough index: %d, numiv: %d!\n", index, ROBJECT_NUMIV(obj));
+                fprintf(stderr, "shape_id: %d, is_attr: %d\n", shape_id, is_attr);
+                rp(obj);
+                rb_bug("object isn't big enough index: %u, numiv: %d!\n", index, ROBJECT_NUMIV(obj));
             }
 
             VALUE *ptr = ROBJECT_IVPTR(obj);

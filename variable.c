@@ -1304,7 +1304,6 @@ static VALUE
 rb_ivar_delete(VALUE obj, ID id, VALUE undef)
 {
     VALUE *ptr;
-    struct rb_id_table *iv_index_tbl;
     uint32_t len, index;
 
     rb_check_frozen(obj);
@@ -1312,7 +1311,6 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
       case T_OBJECT:
         len = ROBJECT_NUMIV(obj);
         ptr = ROBJECT_IVPTR(obj);
-        iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
 
         if (iv_index_tbl_lookup(obj, id, &index) &&
             index < len) {
@@ -1627,7 +1625,7 @@ get_parent_shape(VALUE obj)
 }
 
 rb_shape_t*
-get_root_shape() {
+get_root_shape(void) {
     rb_vm_t *vm = GET_VM();
     return vm->shape_root;
 }
@@ -1781,13 +1779,11 @@ VALUE
 rb_ivar_defined(VALUE obj, ID id)
 {
     VALUE val;
-    struct rb_id_table *iv_index_tbl;
     uint32_t index;
 
     if (SPECIAL_CONST_P(obj)) return Qfalse;
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-        iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
         if (iv_index_tbl_lookup(obj, id, &index) &&
             index < ROBJECT_NUMIV(obj) &&
             (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
@@ -2076,7 +2072,6 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
     VALUE val = Qnil;
     const ID id = id_for_var(obj, name, an, instance);
     st_data_t n, v;
-    struct rb_id_table *iv_index_tbl;
     uint32_t index;
 
     rb_check_frozen(obj);
@@ -2086,7 +2081,6 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-        iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
         if (iv_index_tbl_lookup(obj, id, &index) &&
             index < ROBJECT_NUMIV(obj) &&
             (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
