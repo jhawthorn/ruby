@@ -1,10 +1,10 @@
+Rerun on core:
+- Prioritize lack of segv
+
 For GC on shapes:
 - When an object is marked, also mark its shape
 - When a shape is marked, it marks its parent
 - Remove four fields so shape fits as an IMEMO object in 40 bytes
-
-Rerun on core:
-- Prioritize lack of segv
 
 Get memory profile data:
 - run "/usr/bin/time -l" on disourse, or railsbench or something for comparative
