@@ -305,7 +305,7 @@ init_copy(VALUE dest, VALUE obj)
     }
     RBASIC(dest)->flags &= ~(T_MASK|FL_EXIVAR);
     // Copies the shape id from obj do dest
-    RBASIC(dest)->flags |= RBASIC(obj)->flags & (T_MASK|FL_EXIVAR|(VALUE)0xffff<<48);
+    RBASIC(dest)->flags |= RBASIC(obj)->flags & (T_MASK|FL_EXIVAR);
     rb_copy_wb_protected_attribute(dest, obj);
     rb_copy_generic_ivar(dest, obj);
     rb_gc_copy_finalizer(dest, obj);

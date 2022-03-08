@@ -1,4 +1,3 @@
-#define RUBY_FUCNTION_NAME_STRING __func__
 #ifndef RBIMPL_CONFIG_H                              /*-*-C++-*-vi:se ft=cpp:*/
 #define RBIMPL_CONFIG_H
 /**

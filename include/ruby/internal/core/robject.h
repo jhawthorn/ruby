@@ -121,6 +121,7 @@ struct RObject {
              *
              * This is a shortcut for `RCLASS_IV_INDEX_TBL(rb_obj_class(obj))`.
              */
+            // TODO: get rid of this
             struct rb_id_table *iv_index_tbl;
         } heap;
 

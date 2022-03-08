@@ -750,9 +750,6 @@ w_objivar(VALUE obj, struct dump_call_arg *arg)
 {
     st_data_t num = 0;
 
-    /* try build on master, set a breakpoint in here, and watchpoint on
-     * w_ivar_arg, and figure out who is mutating and why we're not mutating it
-     * w s e on ivarg.num */
     rb_ivar_foreach(obj, obj_count_ivars, (st_data_t)&num);
     w_long(num, arg->arg);
     w_ivar_each(obj, num, arg);
