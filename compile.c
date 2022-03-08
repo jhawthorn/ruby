@@ -11215,6 +11215,9 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     VALUE op = ibf_load_small_value(load, &reading_pos);
                     code[code_index] = (VALUE)&is_entries[op];
 
+                    if (operand_type == TS_IVC)
+                        vm_ic_attr_index_initialize(((IVC)code[code_index]), INVALID_SHAPE_ID);
+
                     if (insn == BIN(opt_getinlinecache) && operand_type == TS_IC) {
                         // Store the instruction index for opt_getinlinecache on the IC for
                         // YJIT to invalidate code when opt_setinlinecache runs.
