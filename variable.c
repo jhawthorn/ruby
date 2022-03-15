@@ -1621,8 +1621,8 @@ rb_class_ivar_defined(VALUE obj, ID id)
     uint32_t index;
 
     if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
-            index < ROBJECT_NUMIV(obj) &&
-            (val = ROBJECT_IVPTR(obj)[index]) != Qundef) {
+            index < RCLASS_NUMIV(obj) &&
+            (val = RCLASS_IVPTR(obj)[index]) != Qundef) {
         return Qtrue;
     } else {
         return Qfalse;
