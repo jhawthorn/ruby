@@ -39,7 +39,6 @@ struct rb_cvar_class_tbl_entry {
 
 struct rb_class_ivar_tbl {
     struct st_table *iv_index_tbl; // ID -> struct rb_iv_index_tbl_entry
-    uint32_t nextidx;
     uint32_t numiv;
     VALUE *ivptr;
 };

@@ -3866,7 +3866,6 @@ class_iv_resize(VALUE obj, uint32_t newsize)
 int
 rb_class_ivar_set(VALUE obj, ID id, VALUE val)
 {
-    uint32_t len;
     st_table *tbl;
 
     RB_VM_LOCK_ENTER();
