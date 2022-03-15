@@ -1312,7 +1312,7 @@ rb_class_ivar_delete(VALUE obj, ID id, VALUE undef)
     uint32_t index;
 
     if (iv_index_tbl_lookup(iv_index_tbl, id, &index) &&
-            index < ROBJECT_NUMIV(obj)) {
+            index < RCLASS_NUMIV(obj)) {
         VALUE val = ptr[index];
         ptr[index] = Qundef;
 
