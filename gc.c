@@ -10041,6 +10041,11 @@ update_class_ext(rb_objspace_t *objspace, rb_classext_t *ext)
     if (ext->iv_index_tbl) {
         st_foreach(ext->iv_index_tbl, update_iv_index_tbl_i, (st_data_t)objspace);
     }
+
+    // self iv index tbl
+    if (ext->iv_tbl.iv_index_tbl) {
+        st_foreach(ext->iv_tbl.iv_index_tbl, update_iv_index_tbl_i, (st_data_t)objspace);
+    }
 }
 
 static void
@@ -10073,6 +10078,13 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
         update_superclasses(objspace, obj);
 
         //gc_update_tbl_refs(objspace, RCLASS_IV_TBL(obj));
+        {
+            VALUE *ptr = RCLASS_IVPTR(obj);
+            uint32_t i, len = RCLASS_NUMIV(obj);
+            for (i = 0; i < len; i++) {
+                UPDATE_IF_MOVED(objspace, ptr[i]);
+            }
+        }
 
         update_class_ext(objspace, RCLASS_EXT(obj));
         update_const_tbl(objspace, RCLASS_CONST_TBL(obj));
