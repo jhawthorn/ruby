@@ -3854,7 +3854,7 @@ static void
 class_iv_resize(VALUE obj, uint32_t newsize)
 {
     uint32_t oldsize = RCLASS_NUMIV(obj);
-    RCLASS_IVPTR(obj) = xrealloc(RCLASS_IVPTR(obj), newsize);
+    RCLASS_IVPTR(obj) = xrealloc(RCLASS_IVPTR(obj), newsize * SIZEOF_VALUE);
     RCLASS_NUMIV(obj) = newsize;
 
     for (uint32_t i = oldsize; i < newsize; i++) {
@@ -3867,27 +3867,31 @@ int
 rb_class_ivar_set(VALUE obj, ID id, VALUE val)
 {
     uint32_t len;
-    st_data_t index;
     st_table *tbl;
 
-    struct ivar_update ivup;
+    RB_VM_LOCK_ENTER();
 
     tbl = RCLASS_SELF_IV_INDEX_TBL(obj);
     if (!tbl) {
         RCLASS_SELF_IV_INDEX_TBL(obj) = tbl = st_init_numtable();
     }
 
-    if (!st_lookup(tbl, id, &index)) {
-        index = RCLASS_IV_TBL(obj)->nextidx++;
-        st_insert(tbl, id, index);
-    }
+    struct ivar_update ivup;
 
-    len = RCLASS_NUMIV(obj);
-    if (len <= index) {
-        uint32_t newsize = iv_index_tbl_newsize(&ivup);
+    ivup.iv_extended = 0;
+    ivup.u.iv_index_tbl = tbl;
+
+    // FIXME: class is probably wrong...
+    iv_index_tbl_extend(&ivup, id, obj);
+
+    if (ivup.index >= RCLASS_NUMIV(obj)) {
+	uint32_t newsize = iv_index_tbl_newsize(&ivup);
         class_iv_resize(obj, newsize);
     }
-    RB_OBJ_WRITE(obj, &RCLASS_IVPTR(obj)[index], val);
+
+    RB_OBJ_WRITE(obj, &RCLASS_IVPTR(obj)[ivup.index], val);
+
+    RB_VM_LOCK_LEAVE();
 
     return val;
 }
