@@ -1714,10 +1714,16 @@ int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE *value) {
 
 void transition_shape_frozen(VALUE obj)
 {
+    static ID id_frozen;
+
+    if (!id_frozen)
+        id_frozen = rb_intern("__frozen__");
+
     rb_shape_t* shape = get_shape(obj);
+
     RUBY_ASSERT(shape);
     if (!frozen_shape_p(shape)) {
-        rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)rb_intern("__frozen__"), SHAPE_FROZEN);
+        rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)id_frozen, SHAPE_FROZEN);
         next_shape->frozen = 1;
         set_shape(obj, next_shape);
     }
