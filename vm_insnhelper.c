@@ -1206,14 +1206,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             }
 #endif
 
-            // This is the "lookup" from the diagram
-            // cast to an rb_classext_t * and then -> iv_index_tbl
-            struct rb_id_table *iv_index_tbl;
-
-            if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) || FL_TEST_RAW(obj, FL_EXIVAR)) {
-                iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-            }
-            else {
+            if (!(LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) || FL_TEST_RAW(obj, FL_EXIVAR))) {
                 goto general_path;
             }
 

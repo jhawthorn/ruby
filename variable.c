@@ -1375,7 +1375,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     RB_VM_LOCK_LEAVE();
 
     ivup.u.ivtbl->ivptr[ivup.index] = val;
-    transition_shape(obj, id, val);
+    transition_shape(obj, id);
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
@@ -1636,13 +1636,18 @@ root_shape_p(rb_shape_t* shape) {
 }
 
 int
-frozen_shape_p(VALUE obj)
+frozen_shape_p(rb_shape_t* shape)
 {
-    return get_shape(obj)->frozen;
+    return shape->frozen;
 }
 
-rb_shape_t*
-get_next_shape(rb_shape_t* shape, ID id)
+enum transition_type {
+    SHAPE_IVAR,
+    SHAPE_FROZEN,
+};
+
+static rb_shape_t*
+get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 {
     // Check to see if egdges hash exists
     // If not, create a new edges hash
@@ -1674,7 +1679,11 @@ get_next_shape(rb_shape_t* shape, ID id)
             } else {
                 new_shape->iv_table = rb_id_table_create(0);
             }
-            rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
+            //  Only insert if the id is an internal one
+            if (tt == SHAPE_IVAR) {
+                rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
+            }
+            //
             rb_darray_append(&vm->shape_list, new_shape);
             new_shape->id = rb_darray_size(vm->shape_list) - 1;
 
@@ -1688,6 +1697,12 @@ get_next_shape(rb_shape_t* shape, ID id)
     }
 }
 
+rb_shape_t*
+get_next_shape(rb_shape_t* shape, ID id)
+{
+    return get_next_shape_internal(shape, id, SHAPE_IVAR);
+}
+
 int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE *value) {
     if (shape->iv_table) {
         return rb_id_table_lookup(shape->iv_table, id, value);
@@ -1697,7 +1712,18 @@ int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE *value) {
     }
 }
 
-void transition_shape(VALUE obj, ID id, VALUE val)
+void transition_shape_frozen(VALUE obj)
+{
+    rb_shape_t* shape = get_shape(obj);
+    RUBY_ASSERT(shape);
+    if (!frozen_shape_p(shape)) {
+        rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)rb_intern("__frozen__"), SHAPE_FROZEN);
+        next_shape->frozen = 1;
+        set_shape(obj, next_shape);
+    }
+}
+
+void transition_shape(VALUE obj, ID id)
 {
     rb_shape_t* shape = get_shape(obj);
     RUBY_ASSERT(shape);
@@ -1720,8 +1746,7 @@ void rb_obj_freeze_inline(VALUE x)
         // Only transition T_OBJECTs with a frozen attribute
         if (shape->id && BUILTIN_TYPE(x) == T_OBJECT)
         {
-            transition_shape(x, (ID)rb_intern("__frozen__"), 1);
-            shape->frozen = 1;
+            transition_shape_frozen(x);
         }
 
         if (RBASIC_CLASS(x) && !(RBASIC(x)->flags & RUBY_FL_SINGLETON)) {
@@ -1742,13 +1767,13 @@ ivar_set(VALUE obj, ID id, VALUE val)
            * Array of existing shapes which we can index into w a shape_id
            * Hash (tree representation) of ivar transitions between shapes
            */
-          transition_shape(obj, id, val);
+          transition_shape(obj, id);
           obj_ivar_set(obj, id, val);
           break;
       }
       case T_CLASS:
       case T_MODULE:
-        transition_shape(obj, id, val);
+        transition_shape(obj, id);
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         break;

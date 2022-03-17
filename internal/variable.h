@@ -69,7 +69,7 @@ rb_shape_t* get_root_shape();
 void set_shape(VALUE obj, rb_shape_t* shape);
 void set_shape_id(VALUE obj, shape_id_t shape_id);
 int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE * value);
-void transition_shape(VALUE obj, ID id, VALUE val);
+void transition_shape(VALUE obj, ID id);
 
 # define MAX_SHAPE_ID 0xFFFE
 # define INVALID_SHAPE_ID (MAX_SHAPE_ID + 1)
