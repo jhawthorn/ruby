@@ -3905,7 +3905,13 @@ Init_vm_objects(void)
     rb_darray_make(&vm->shape_list, 0);
     vm->shape_root = calloc(sizeof(rb_shape_t), 1);
     vm->shape_root->iv_table = rb_id_table_create(0);
+    vm->shape_root->id = ROOT_SHAPE_ID;
     rb_darray_append(&vm->shape_list, vm->shape_root);
+    vm->frozen_shape_root = calloc(sizeof(rb_shape_t), 1);
+    vm->frozen_shape_root->id = FROZEN_ROOT_SHAPE_ID;
+    vm->frozen_shape_root->frozen = 1;
+    vm->frozen_shape_root->iv_table = rb_id_table_create(0);
+    rb_darray_append(&vm->shape_list, vm->frozen_shape_root);
 }
 
 /* top self */

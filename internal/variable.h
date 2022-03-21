@@ -73,6 +73,8 @@ void transition_shape(VALUE obj, ID id);
 
 # define MAX_SHAPE_ID 0xFFFE
 # define INVALID_SHAPE_ID (MAX_SHAPE_ID + 1)
+# define ROOT_SHAPE_ID 0x0
+# define FROZEN_ROOT_SHAPE_ID 0x1
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */

@@ -1529,14 +1529,16 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 
 shape_id_t get_shape_id(VALUE obj)
 {
-    shape_id_t shape_id = 0;
+    shape_id_t shape_id = ROOT_SHAPE_ID;
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       case T_CLASS:
       case T_MODULE:
-          shape_id = (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+          return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+          break;
       default:
+          // These are "not cool" objects
           {
               struct gen_ivtbl *ivtbl = 0;
               RB_VM_LOCK_ENTER();
@@ -1545,6 +1547,9 @@ shape_id_t get_shape_id(VALUE obj)
 
                   if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
                       shape_id = ivtbl->shape_id;
+                  }
+                  else if (OBJ_FROZEN(obj)) {
+                      shape_id = FROZEN_ROOT_SHAPE_ID;
                   }
               }
               RB_VM_LOCK_LEAVE();
@@ -1630,15 +1635,26 @@ get_root_shape(void) {
     return vm->shape_root;
 }
 
+rb_shape_t*
+get_frozen_root_shape(void) {
+    rb_vm_t *vm = GET_VM();
+    return vm->frozen_shape_root;
+}
+
 bool
 root_shape_p(rb_shape_t* shape) {
     return shape == get_root_shape();
 }
 
+bool
+frozen_root_shape_p(rb_shape_t* shape) {
+    return shape == get_frozen_root_shape();
+}
+
 int
 frozen_shape_p(rb_shape_t* shape)
 {
-    return shape->frozen;
+    return frozen_root_shape_p(shape) || shape->frozen;
 }
 
 enum transition_type {
@@ -1683,6 +1699,10 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             if (tt == SHAPE_IVAR) {
                 rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
             }
+
+            if (tt == SHAPE_FROZEN) {
+                new_shape->frozen = 1;
+            }
             //
             rb_darray_append(&vm->shape_list, new_shape);
             new_shape->id = rb_darray_size(vm->shape_list) - 1;
@@ -1714,19 +1734,46 @@ int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE *value) {
 
 void transition_shape_frozen(VALUE obj)
 {
-    static ID id_frozen;
-
-    if (!id_frozen)
-        id_frozen = rb_intern("__frozen__");
-
     rb_shape_t* shape = get_shape(obj);
-
     RUBY_ASSERT(shape);
-    if (!frozen_shape_p(shape)) {
-        rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)id_frozen, SHAPE_FROZEN);
-        next_shape->frozen = 1;
-        set_shape(obj, next_shape);
+
+    rb_shape_t* next_shape;
+
+    if (shape == get_frozen_root_shape())
+        return;
+
+    if (shape == get_root_shape()) {
+        switch(BUILTIN_TYPE(obj)) {
+            case T_OBJECT:
+            case T_CLASS:
+            case T_MODULE:
+                break;
+            default:
+                return;
+        }
+        next_shape = get_frozen_root_shape();
     }
+    else {
+        if (frozen_shape_p(shape)) {
+            next_shape = shape;
+        }
+        else {
+            static ID id_frozen;
+            if (!id_frozen) id_frozen = rb_make_internal_id();
+
+            next_shape = get_next_shape_internal(shape, (ID)id_frozen, SHAPE_FROZEN);
+        }
+    }
+
+    RUBY_ASSERT(next_shape);
+    set_shape(obj, next_shape);
+    // 1. Eagerly make frozen transition for not_cool_objects
+    // 2. Make a global variable that contains the id (which shounld always be 1)
+    // 3. When we freeze an object, if it's "not cool", do nothing (just let the
+    // header bits get set)
+    //
+    // if root shape, and not_cool_object, return;
+    //
 }
 
 void transition_shape(VALUE obj, ID id)
@@ -1748,12 +1795,7 @@ void rb_obj_freeze_inline(VALUE x)
     if (RB_FL_ABLE(x)) {
         RB_OBJ_FREEZE_RAW(x);
 
-        rb_shape_t* shape = get_shape(x);
-        // Only transition T_OBJECTs with a frozen attribute
-        if (shape->id && BUILTIN_TYPE(x) == T_OBJECT)
-        {
-            transition_shape_frozen(x);
-        }
+        transition_shape_frozen(x);
 
         if (RBASIC_CLASS(x) && !(RBASIC(x)->flags & RUBY_FL_SINGLETON)) {
             rb_freeze_singleton_class(x);
@@ -1838,16 +1880,23 @@ typedef int rb_ivar_foreach_callback_func(ID key, VALUE val, st_data_t arg);
 st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 void
-iterate_over_shapes(rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
-    if (root_shape_p(shape)) {
+iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
+    if (root_shape_p(shape) || frozen_root_shape_p(shape)) {
         return;
+    }
+    else if (numiv < 0) {
+        rb_shape_t* parent = get_shape_by_id(shape->parent_id);
+        rp(obj);
+        rp(parent);
+        printf("ughhhh\n");
+        rb_bug("this shouldn't happen\n");
     }
     else {
         rb_shape_t *parent_shape = get_shape_by_id(shape->parent_id);
-        iterate_over_shapes(parent_shape, iv_list, numiv - 1, callback, arg);
+        iterate_over_shapes(obj, parent_shape, iv_list, numiv - 1, callback, arg);
 
-        if (iv_list[numiv] != Qundef) {
-            callback(shape->edge_name, iv_list[numiv], arg);
+        if (iv_list[numiv - 1] != Qundef) {
+            callback(shape->edge_name, iv_list[numiv - 1], arg);
         }
         return;
     }
@@ -1866,7 +1915,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     struct rb_id_table *iv_index_tbl = get_shape(obj)->iv_table;
     if (!iv_index_tbl) return;
 
-    iterate_over_shapes(get_shape(obj), ROBJECT_IVPTR(obj), (int)rb_id_table_size(iv_index_tbl) - 1, func, arg);
+    iterate_over_shapes(obj, get_shape(obj), ROBJECT_IVPTR(obj), (int)rb_id_table_size(iv_index_tbl), func, arg);
 }
 
 static void
@@ -1877,7 +1926,7 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     if (!iv_index_tbl) return;
     if (!gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes(get_shape(obj), ivtbl->ivptr, (int)rb_id_table_size(get_shape(obj)->iv_table) - 1, func, arg);
+    iterate_over_shapes(obj, get_shape(obj), ivtbl->ivptr, (int)rb_id_table_size(get_shape(obj)->iv_table), func, arg);
 }
 
 void

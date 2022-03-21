@@ -683,6 +683,7 @@ typedef struct rb_vm_struct {
 
     rb_shape_array_t shape_list;
     rb_shape_t *shape_root;
+    rb_shape_t *frozen_shape_root;
 
     /* load */
     VALUE top_self;
