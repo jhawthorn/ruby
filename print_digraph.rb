@@ -10,7 +10,7 @@ def iterate_over_shape(shape)
 end
 
 def add_ids(shape)
-  @id_to_labels += "    #{shape[:id]} [label=\"ID: #{shape[:id]}, Transitions: #{shape[:transition_count]}, Parent: #{shape[:parent_id]}]\"]\n"
+  @id_to_labels += "    #{shape[:id]} [label=\"ID: #{shape[:id]}, Transitions: #{shape[:transition_count]}, Parent: #{shape[:parent_id]}\"]\n"
   # @id_to_labels += "    #{shape[:id]} [label=\"#{shape[:id]}, Number of transitions: #{shape[:transition_count]}, seen: #{shape[:seen_ivars]}\"]\n"
 end
 

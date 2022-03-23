@@ -1680,6 +1680,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
         return shape;
     } else {
         // Is the ivar already in the set
+        // JEM: SHould we also check if shape is already frozen here??
         if (shape->iv_table && rb_id_table_lookup(shape->iv_table, id, &value)) {
 //            fprintf(stderr, "id %d, shape_id %d\n", id, shape->id);
             return shape;
@@ -1881,10 +1882,13 @@ st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 void
 iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
+    if (shape->frozen) {
+        return iterate_over_shapes(obj, get_shape_by_id(shape->parent_id), iv_list, numiv, callback, arg);
+    }
     if (root_shape_p(shape) || frozen_root_shape_p(shape)) {
         return;
     }
-    else if (numiv < 0) {
+    else if (numiv <= 0) {
         rb_shape_t* parent = get_shape_by_id(shape->parent_id);
         rp(obj);
         rp(parent);
