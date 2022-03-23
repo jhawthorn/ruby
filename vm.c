@@ -2623,6 +2623,9 @@ rb_vm_mark(void *ptr)
             obj_ary++;
         }
 
+        rb_gc_mark(vm->shape_list);
+        rb_gc_mark((VALUE)vm->shape_root);
+        rb_gc_mark((VALUE)vm->frozen_shape_root);
         rb_gc_mark_movable(vm->load_path);
         rb_gc_mark_movable(vm->load_path_snapshot);
         RUBY_MARK_MOVABLE_UNLESS_NULL(vm->load_path_check_cache);
@@ -2759,28 +2762,6 @@ vm_memsize_builtin_function_table(const struct rb_builtin_function *builtin_func
     return builtin_function_table == NULL ? 0 : sizeof(struct rb_builtin_function);
 }
 
-static enum rb_id_table_iterator_result
-size_of_shape_transition_tree(ID key, VALUE value, void *_tree_size) {
-    rb_shape_t * shape = (rb_shape_t *) value;
-    *(size_t *)_tree_size += sizeof(rb_shape_t); // this node's size
-    if (shape->iv_table)
-        *(size_t *)_tree_size += rb_id_table_memsize(shape->iv_table); // this node's iv_table
-    if (shape->edges) {
-        *(size_t *)_tree_size += rb_id_table_memsize(shape->edges); // this node's edges
-        rb_id_table_foreach(shape->edges, size_of_shape_transition_tree, _tree_size);
-    }
-    return ID_TABLE_CONTINUE;
-}
-
-static size_t
-shape_tree_memsize(rb_vm_t *vm)
-{
-    int32_t capa = rb_darray_capa(vm->shape_list);
-    size_t tree_size = capa * sizeof(void *) + sizeof(rb_darray_meta_t);
-    size_of_shape_transition_tree(0, (VALUE) get_root_shape(), &tree_size);
-    return tree_size;
-}
-
 // Reports the memsize of the VM struct object and the structs that are
 // associated with it.
 static size_t
@@ -2803,8 +2784,7 @@ vm_memsize(const void *ptr)
         rb_st_memsize(vm->frozen_strings) +
         vm_memsize_builtin_function_table(vm->builtin_function_table) +
         rb_id_table_memsize(vm->negative_cme_table) +
-        rb_st_memsize(vm->overloaded_cme_table) +
-        shape_tree_memsize(vm)
+        rb_st_memsize(vm->overloaded_cme_table)
     );
 
     // TODO
@@ -3902,16 +3882,16 @@ Init_vm_objects(void)
     vm->mark_object_ary = rb_ary_tmp_new(128);
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
-    rb_darray_make(&vm->shape_list, 0);
-    vm->shape_root = calloc(sizeof(rb_shape_t), 1);
+    vm->shape_list = rb_ary_new();
+    vm->shape_root = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     vm->shape_root->iv_table = rb_id_table_create(0);
     vm->shape_root->id = ROOT_SHAPE_ID;
-    rb_darray_append(&vm->shape_list, vm->shape_root);
-    vm->frozen_shape_root = calloc(sizeof(rb_shape_t), 1);
+    rb_ary_push(vm->shape_list, (VALUE)vm->shape_root);
+    vm->frozen_shape_root = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     vm->frozen_shape_root->id = FROZEN_ROOT_SHAPE_ID;
-    vm->frozen_shape_root->frozen = 1;
     vm->frozen_shape_root->iv_table = rb_id_table_create(0);
-    rb_darray_append(&vm->shape_list, vm->frozen_shape_root);
+    RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_shape_root);
+    rb_ary_push(vm->shape_list, (VALUE)vm->frozen_shape_root);
 }
 
 /* top self */

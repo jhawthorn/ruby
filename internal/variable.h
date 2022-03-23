@@ -42,18 +42,13 @@ typedef uint16_t shape_id_t;
 struct rb_shape {
     // Put frozen into the shape's flags
     VALUE flags;
+    shape_id_t id;
+    shape_id_t parent_id;
     // id -> st_table;
     struct rb_id_table * edges;
     // Store all previously seen ivars
     struct rb_id_table * iv_table;
-    shape_id_t id;
-    shape_id_t parent_id;
     ID edge_name;
-    // TODO: remove these four fields (eventually move frozen into flags)
-    uint16_t transition_count;
-    uint32_t miss_on_set;
-    uint32_t miss_on_get;
-    bool frozen;
 };
 
 #ifndef rb_shape_t
@@ -66,6 +61,7 @@ rb_shape_t* get_shape_by_id(shape_id_t shape_id);
 rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 rb_shape_t* get_root_shape();
+bool root_shape_p(rb_shape_t* shape);
 void set_shape(VALUE obj, rb_shape_t* shape);
 void set_shape_id(VALUE obj, shape_id_t shape_id);
 int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE * value);

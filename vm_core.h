@@ -681,7 +681,7 @@ typedef struct rb_vm_struct {
     VALUE mark_object_ary;
     const VALUE special_exceptions[ruby_special_error_count];
 
-    rb_shape_array_t shape_list;
+    VALUE shape_list;
     rb_shape_t *shape_root;
     rb_shape_t *frozen_shape_root;
 

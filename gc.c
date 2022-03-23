@@ -2683,6 +2683,7 @@ rb_imemo_name(enum imemo_type type)
         IMEMO_NAME(callinfo);
         IMEMO_NAME(callcache);
         IMEMO_NAME(constcache);
+        IMEMO_NAME(shape);
 #undef IMEMO_NAME
     }
     return "unknown";
@@ -2729,6 +2730,15 @@ imemo_memsize(VALUE obj)
       case imemo_iseq:
         size += rb_iseq_memsize((rb_iseq_t *)obj);
         break;
+      case imemo_shape:
+        {
+            rb_shape_t * shape = (rb_shape_t *) obj;
+            if (shape->iv_table)
+                size += rb_id_table_memsize(shape->iv_table); // this node's iv_table
+            if (shape->edges)
+                size += rb_id_table_memsize(shape->edges); // this node's edges
+            break;
+        }
       case imemo_env:
         size += RANY(obj)->as.imemo.env.env_size * sizeof(VALUE);
         break;
@@ -3421,6 +3431,12 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
           case imemo_constcache:
             RB_DEBUG_COUNTER_INC(obj_imemo_constcache);
             break;
+          case imemo_shape:
+            {
+                rb_id_table_free(((rb_shape_t *)obj)->iv_table);
+                rb_id_table_free(((rb_shape_t *)obj)->edges);
+                break;
+            }
 	}
 	return TRUE;
 
@@ -4881,9 +4897,6 @@ VALUE rb_obj_shape(rb_shape_t* shape) {
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(shape->parent_id));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edge_name")), rb_id2str(shape->edge_name));
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("transition_count")), INT2NUM(shape->transition_count));
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("miss_on_get")), INT2NUM(shape->miss_on_get));
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("miss_on_set")), INT2NUM(shape->miss_on_set));
     return rb_shape;
 }
 
@@ -4894,7 +4907,7 @@ static VALUE shape_transition_tree(VALUE self) {
 static VALUE shape_count(VALUE self) {
     // Might want to extract this into a get_root_shape
     rb_vm_t *vm = GET_VM();
-    return INT2NUM(rb_darray_size(vm->shape_list));
+    return LONG2NUM(RARRAY_LEN(vm->shape_list));
 }
 
 /*
@@ -6930,6 +6943,15 @@ gc_mark_set_parent(rb_objspace_t *objspace, VALUE obj)
     }
 }
 
+static enum rb_id_table_iterator_result
+mark_and_pin_id_table_i(VALUE value, void *data)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)data;
+
+    gc_mark_and_pin(objspace, value);
+    return ID_TABLE_CONTINUE;
+}
+
 static void
 gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
 {
@@ -7006,6 +7028,17 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             gc_mark(objspace, ice->value);
         }
         return;
+      case imemo_shape:
+        {
+            rb_shape_t *shape = (rb_shape_t *)obj;
+            gc_mark(objspace, obj);
+            if (!root_shape_p(shape))
+                gc_mark(objspace, (VALUE)get_shape_by_id(shape->parent_id));
+
+            if (shape->edges)
+                rb_id_table_foreach_values(shape->edges, mark_and_pin_id_table_i, objspace);
+        }
+        return;
 #if VM_CHECK_MODE > 0
       default:
 	VM_UNREACHABLE(gc_mark_imemo);
@@ -7049,6 +7082,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
     }
 
     gc_mark(objspace, any->as.basic.klass);
+    gc_mark(objspace, (VALUE)get_shape(obj));
 
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
@@ -9867,6 +9901,7 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_parser_strterm:
       case imemo_tmpbuf:
       case imemo_callinfo:
+      case imemo_shape:
         break;
       default:
         rb_bug("not reachable %d", imemo_type(obj));

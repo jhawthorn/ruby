@@ -1568,11 +1568,6 @@ shape_id_t get_shape_id(VALUE obj)
 
 void set_shape_id(VALUE obj, shape_id_t shape_id)
 {
-#if RUBY_DEBUG
-    rb_shape_t* shape = get_shape(obj);
-    shape->transition_count += 1;
-#endif
-
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       case T_CLASS:
@@ -1615,7 +1610,7 @@ rb_shape_t* get_shape_by_id(shape_id_t shape_id)
     if (shape_id == INVALID_SHAPE_ID) {
         rb_bug("Shape is invalid\n");
     }
-    return rb_darray_get(vm->shape_list, shape_id);
+    return (rb_shape_t*)rb_ary_entry(vm->shape_list, (long)shape_id);
 }
 
 rb_shape_t* get_shape(VALUE obj)
@@ -1654,7 +1649,13 @@ frozen_root_shape_p(rb_shape_t* shape) {
 int
 frozen_shape_p(rb_shape_t* shape)
 {
-    return frozen_root_shape_p(shape) || shape->frozen;
+    return RB_OBJ_FROZEN((VALUE)shape);
+}
+
+static inline rb_shape_t *
+shape_alloc(void)
+{
+    return (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
 }
 
 enum transition_type {
@@ -1687,7 +1688,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
         } else {
             // else
             rb_vm_t *vm = GET_VM();
-            rb_shape_t* new_shape = calloc(sizeof(rb_shape_t), 1);
+            rb_shape_t* new_shape = shape_alloc();
             new_shape->parent_id = shape->id;
             new_shape->edge_name = id;
             rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
@@ -1702,11 +1703,11 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             }
 
             if (tt == SHAPE_FROZEN) {
-                new_shape->frozen = 1;
+                RB_OBJ_FREEZE_RAW((VALUE)new_shape);
             }
             //
-            rb_darray_append(&vm->shape_list, new_shape);
-            new_shape->id = rb_darray_size(vm->shape_list) - 1;
+            new_shape->id = RARRAY_LEN(vm->shape_list);
+            rb_ary_push(vm->shape_list, (VALUE)new_shape);
 
             // TODO: Need to do this earlier, before we allocate the new shape
             if (new_shape->id > MAX_SHAPE_ID) {
@@ -1882,11 +1883,11 @@ st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 void
 iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
-    if (shape->frozen) {
-        return iterate_over_shapes(obj, get_shape_by_id(shape->parent_id), iv_list, numiv, callback, arg);
-    }
-    if (root_shape_p(shape) || frozen_root_shape_p(shape)) {
+    if (root_shape_p(shape)) {
         return;
+    }
+    else if (frozen_shape_p(shape)) {
+        return iterate_over_shapes(obj, get_shape_by_id(shape->parent_id), iv_list, numiv, callback, arg);
     }
     else if (numiv <= 0) {
         rb_shape_t* parent = get_shape_by_id(shape->parent_id);
@@ -1905,13 +1906,6 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
         return;
     }
 }
-
-/*
- * Tree one transition :a
- *
- *
- *
- */
 
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)

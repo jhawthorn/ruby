@@ -1189,8 +1189,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             if (is_attr) {
                 if (cached_id != INVALID_SHAPE_ID) {
                     RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_set);
-                    rb_shape_t* shape = get_shape_by_id(cached_id);
-                    shape->miss_on_get += 1;
                 } else {
                     RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_unset);
                 }
@@ -1198,8 +1196,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             else {
                 if (cached_id != INVALID_SHAPE_ID) {
                     RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_set);
-                    rb_shape_t* shape = get_shape_by_id(cached_id);
-                    shape->miss_on_get += 1;
                 } else {
                     RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
                 }
@@ -1301,7 +1297,8 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
 
             return val;
-        } else {
+        }
+        else {
             rb_bug("didn't find the id\n");
         }
     }
@@ -1384,16 +1381,12 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
             if (is_attr) {
                 if (shape_source_id != INVALID_SHAPE_ID) {
                     RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
-                    rb_shape_t* shape = get_shape_by_id(shape_source_id);
-                    shape->miss_on_set += 1;
                 } else {
                     RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
                 }
             } else {
                 if (shape_source_id != INVALID_SHAPE_ID) {
                     RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
-                    rb_shape_t* shape = get_shape_by_id(shape_source_id);
-                    shape->miss_on_set += 1;
                 } else {
                     RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
                 }
