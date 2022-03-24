@@ -1627,13 +1627,13 @@ get_parent_shape(VALUE obj)
 rb_shape_t*
 get_root_shape(void) {
     rb_vm_t *vm = GET_VM();
-    return vm->shape_root;
+    return vm->root_shape;
 }
 
 rb_shape_t*
 get_frozen_root_shape(void) {
     rb_vm_t *vm = GET_VM();
-    return vm->frozen_shape_root;
+    return vm->frozen_root_shape;
 }
 
 bool

@@ -2624,8 +2624,8 @@ rb_vm_mark(void *ptr)
         }
 
         rb_gc_mark(vm->shape_list);
-        rb_gc_mark((VALUE)vm->shape_root);
-        rb_gc_mark((VALUE)vm->frozen_shape_root);
+        rb_gc_mark((VALUE)vm->root_shape);
+        rb_gc_mark((VALUE)vm->frozen_root_shape);
         rb_gc_mark_movable(vm->load_path);
         rb_gc_mark_movable(vm->load_path_snapshot);
         RUBY_MARK_MOVABLE_UNLESS_NULL(vm->load_path_check_cache);
@@ -3883,15 +3883,15 @@ Init_vm_objects(void)
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
     vm->shape_list = rb_ary_new();
-    vm->shape_root = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
-    vm->shape_root->iv_table = rb_id_table_create(0);
-    vm->shape_root->id = ROOT_SHAPE_ID;
-    rb_ary_push(vm->shape_list, (VALUE)vm->shape_root);
-    vm->frozen_shape_root = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
-    vm->frozen_shape_root->id = FROZEN_ROOT_SHAPE_ID;
-    vm->frozen_shape_root->iv_table = rb_id_table_create(0);
-    RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_shape_root);
-    rb_ary_push(vm->shape_list, (VALUE)vm->frozen_shape_root);
+    vm->root_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
+    vm->root_shape->iv_table = rb_id_table_create(0);
+    vm->root_shape->id = ROOT_SHAPE_ID;
+    rb_ary_push(vm->shape_list, (VALUE)vm->root_shape);
+    vm->frozen_root_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
+    vm->frozen_root_shape->id = FROZEN_ROOT_SHAPE_ID;
+    vm->frozen_root_shape->iv_table = rb_id_table_create(0);
+    RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
+    rb_ary_push(vm->shape_list, (VALUE)vm->frozen_root_shape);
 }
 
 /* top self */
