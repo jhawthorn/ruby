@@ -1461,7 +1461,6 @@ init_iv_list(VALUE obj, uint32_t len, uint32_t newsize, struct rb_id_table *inde
         newptr[len] = Qundef;
     }
     ROBJECT(obj)->as.heap.numiv = newsize;
-    ROBJECT(obj)->as.heap.iv_index_tbl = index_tbl;
 }
 
 void
