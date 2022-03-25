@@ -1272,35 +1272,44 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
         rb_shape_t* shape = get_shape(obj);
-        rb_shape_t* next_shape = get_next_shape(shape, id);
-        set_shape(obj, next_shape);
 
-        if (iv_index_tbl_lookup(obj, id, &index)) { // based off the has stored in the transition tree
-            if (index >= INT_MAX) {
-                rb_raise(rb_eArgError, "too many instance variables");
-            }
+        if (shape->id != NO_CACHE_SHAPE_ID) {
+            rb_shape_t* next_shape = get_next_shape(shape, id);
+            set_shape(obj, next_shape);
 
-            if (is_attr) {
-                vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
+            if (next_shape->id == NO_CACHE_SHAPE_ID) {
+                ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(shape->iv_table);
+                rb_id_table_insert(ROBJECT(obj)->as.heap.iv_index_tbl, id, (VALUE)rb_id_table_size(shape->iv_table));
             }
             else {
-//                fprintf(stderr, "expecting to set shape->id %d, next_shape->id %d, ic addr: %p\n", shape->id, next_shape->id, ic);
-                vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
- //               fprintf(stderr, "index in the cache: source: %d, dest: %d, ic_addr: %p\n", vm_ic_attr_index_shape_source_id(ic), vm_ic_attr_index_shape_dest_id(ic), ic);
-            }
+                if (iv_index_tbl_lookup(obj, id, &index)) { // based off the has stored in the transition tree
+                    if (index >= INT_MAX) {
+                        rb_raise(rb_eArgError, "too many instance variables");
+                    }
 
-            if (UNLIKELY(index >= num_iv)) {
-                rb_init_iv_list(obj);
-            }
-            VALUE *ptr = ROBJECT_IVPTR(obj);
-            RB_OBJ_WRITE(obj, &ptr[index], val);
-            RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
+                    if (is_attr) {
+                        vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
+                    }
+                    else {
+                        vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
+                    }
 
-            return val;
+                    if (UNLIKELY(index >= num_iv)) {
+                        rb_init_iv_list(obj);
+                    }
+                }
+                else {
+                    rb_bug("didn't find the id\n");
+                }
+            }
         }
-        else {
-            rb_bug("didn't find the id\n");
-        }
+
+        // TODO: fix this index still
+        VALUE *ptr = ROBJECT_IVPTR(obj);
+        RB_OBJ_WRITE(obj, &ptr[index], val);
+        RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_iv_hit);
+
+        return val;
     }
 #endif
     RB_DEBUG_COUNTER_INC(ivar_set_ic_miss);
@@ -1329,69 +1338,71 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // If object's shape id is the same as the dest, then just write the
         // ivar
         shape_id_t shape_id = get_shape_id(obj);
-        shape_id_t shape_source_id = INVALID_SHAPE_ID;
-        if (is_attr) {
-            shape_source_id = vm_cc_attr_index_shape_source_id(cc);
-        }
-        else {
-            shape_source_id = vm_ic_attr_index_shape_source_id(ic);
-        }
-        // Do we have a cache hit *and* is the CC intitialized
-        if (shape_id && shape_id == shape_source_id) {
-            uint32_t index = !is_attr ? vm_ic_attr_index(ic) : vm_cc_attr_index(cc);
-            shape_id_t shape_dest_id;
+        if (shape_id != NO_CACHE_SHAPE_ID) {
+            shape_id_t shape_source_id = INVALID_SHAPE_ID;
             if (is_attr) {
-                shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+                shape_source_id = vm_cc_attr_index_shape_source_id(cc);
             }
             else {
-                shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
+                shape_source_id = vm_ic_attr_index_shape_source_id(ic);
             }
+            // Do we have a cache hit *and* is the CC intitialized
+            if (shape_id && shape_id == shape_source_id) {
+                uint32_t index = !is_attr ? vm_ic_attr_index(ic) : vm_cc_attr_index(cc);
+                shape_id_t shape_dest_id;
+                if (is_attr) {
+                    shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+                }
+                else {
+                    shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
+                }
 
-            if (shape_dest_id == INVALID_SHAPE_ID || shape_id == INVALID_SHAPE_ID) {
-                rb_bug("wrong shape id dest: %d shape_id %d!\n", shape_dest_id, shape_id);
+                if (shape_dest_id == INVALID_SHAPE_ID || shape_id == INVALID_SHAPE_ID) {
+                    rb_bug("wrong shape id dest: %d shape_id %d!\n", shape_dest_id, shape_id);
+                }
+
+                VM_ASSERT(!rb_ractor_shareable_p(obj));
+                if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
+                    rb_init_iv_list(obj);
+                }
+
+                if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
+                    rb_bug("object isn't big enough index: %u, numiv: %d!\n", index, ROBJECT_NUMIV(obj));
+                }
+
+                VALUE *ptr = ROBJECT_IVPTR(obj);
+
+                RB_OBJ_WRITE(obj, &ptr[index], val);
+
+                set_shape_id(obj, shape_dest_id);
+
+                RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
+
+                if (is_attr) {
+                    RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_is_attr);
+                } else {
+                    RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_not_attr);
+                }
+
+                return val; /* inline cache hit */
             }
-
-            VM_ASSERT(!rb_ractor_shareable_p(obj));
-            if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                rb_init_iv_list(obj);
-            }
-
-            if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                rb_bug("object isn't big enough index: %u, numiv: %d!\n", index, ROBJECT_NUMIV(obj));
-            }
-
-            VALUE *ptr = ROBJECT_IVPTR(obj);
-
-            RB_OBJ_WRITE(obj, &ptr[index], val);
-
-            set_shape_id(obj, shape_dest_id);
-
-            RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
-
-            if (is_attr) {
-                RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_is_attr);
-            } else {
-                RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_not_attr);
-            }
-
-            return val; /* inline cache hit */
-        }
-        else {
+            else {
 #if RUBY_DEBUG
-            if (is_attr) {
-                if (shape_source_id != INVALID_SHAPE_ID) {
-                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
+                if (is_attr) {
+                    if (shape_source_id != INVALID_SHAPE_ID) {
+                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
+                    } else {
+                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
+                    }
                 } else {
-                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
+                    if (shape_source_id != INVALID_SHAPE_ID) {
+                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
+                    } else {
+                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
+                    }
                 }
-            } else {
-                if (shape_source_id != INVALID_SHAPE_ID) {
-                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
-                } else {
-                    RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
-                }
-            }
 #endif
+            }
         }
     }
     else {

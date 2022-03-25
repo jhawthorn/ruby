@@ -2626,6 +2626,7 @@ rb_vm_mark(void *ptr)
         rb_gc_mark(vm->shape_list);
         rb_gc_mark((VALUE)vm->root_shape);
         rb_gc_mark((VALUE)vm->frozen_root_shape);
+        rb_gc_mark((VALUE)vm->no_cache_shape);
         rb_gc_mark_movable(vm->load_path);
         rb_gc_mark_movable(vm->load_path_snapshot);
         RUBY_MARK_MOVABLE_UNLESS_NULL(vm->load_path_check_cache);
@@ -3892,6 +3893,11 @@ Init_vm_objects(void)
     vm->frozen_root_shape->iv_table = rb_id_table_create(0);
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
     rb_ary_push(vm->shape_list, (VALUE)vm->frozen_root_shape);
+    vm->no_cache_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
+    vm->no_cache_shape->id = NO_CACHE_SHAPE_ID;
+    vm->no_cache_shape->iv_table = rb_id_table_create(0);
+    // TODO: if we're looking up no cache shape we need this
+    rb_ary_push(vm->shape_list, (VALUE)vm->no_cache_shape);
 }
 
 /* top self */

@@ -1514,7 +1514,8 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     uint32_t len;
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
     rb_shape_t* shape = get_shape(obj);
-    ivup.u.iv_index_tbl = shape->iv_table;
+    if (shape->id != NO_CACHE_SHAPE_ID)
+        ivup.u.iv_index_tbl = shape->iv_table;
 
     len = ROBJECT_NUMIV(obj);
     if (len <= (ivup.index)) {
@@ -1607,6 +1608,7 @@ rb_shape_t* get_shape_by_id(shape_id_t shape_id)
 {
     rb_vm_t *vm = GET_VM();
     if (shape_id == INVALID_SHAPE_ID) {
+        // TODO: Turn into RUBY_ASSERT, this shouldn't happen
         rb_bug("Shape is invalid\n");
     }
     return (rb_shape_t*)rb_ary_entry(vm->shape_list, (long)shape_id);
@@ -1633,6 +1635,12 @@ rb_shape_t*
 get_frozen_root_shape(void) {
     rb_vm_t *vm = GET_VM();
     return vm->frozen_root_shape;
+}
+
+rb_shape_t*
+get_no_cache_shape(void) {
+    rb_vm_t *vm = GET_VM();
+    return vm->no_cache_shape;
 }
 
 bool
@@ -1679,14 +1687,15 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
         rb_shape_t* shape = (rb_shape_t*) value;
         return shape;
     } else {
-        // Is the ivar already in the set
-        // JEM: SHould we also check if shape is already frozen here??
         if (shape->iv_table && rb_id_table_lookup(shape->iv_table, id, &value)) {
-//            fprintf(stderr, "id %d, shape_id %d\n", id, shape->id);
             return shape;
         } else {
-            // else
             rb_vm_t *vm = GET_VM();
+            long number_of_shapes = RARRAY_LEN(vm->shape_list);
+            // JEM: Do we need a special case frozen_no_cache_shape?
+            if (number_of_shapes == MAX_SHAPE_ID) {
+                return get_no_cache_shape();
+            }
             rb_shape_t* new_shape = shape_alloc();
             new_shape->parent_id = shape->id;
             new_shape->edge_name = id;
@@ -1704,8 +1713,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             if (tt == SHAPE_FROZEN) {
                 RB_OBJ_FREEZE_RAW((VALUE)new_shape);
             }
-            //
-            new_shape->id = RARRAY_LEN(vm->shape_list);
+            new_shape->id = number_of_shapes;
             rb_ary_push(vm->shape_list, (VALUE)new_shape);
 
             // TODO: Need to do this earlier, before we allocate the new shape
@@ -1882,7 +1890,7 @@ st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 void
 iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
-    if (root_shape_p(shape)) {
+    if (root_shape_p(shape) || numiv == 0) {
         return;
     }
     else if (frozen_shape_p(shape)) {
@@ -1896,21 +1904,47 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
         rb_bug("this shouldn't happen\n");
     }
     else {
-        rb_shape_t *parent_shape = get_shape_by_id(shape->parent_id);
+        rb_shape_t *parent_shape;
+        if (shape->id == NO_CACHE_SHAPE_ID) {
+            parent_shape = shape;
+        }
+        else {
+            parent_shape = get_shape_by_id(shape->parent_id);
+        }
         iterate_over_shapes(obj, parent_shape, iv_list, numiv - 1, callback, arg);
 
         if (iv_list[numiv - 1] != Qundef) {
-            callback(shape->edge_name, iv_list[numiv - 1], arg);
+            ID id;
+            if (shape->id == NO_CACHE_SHAPE_ID) {
+                id = rb_intern("@placeholder");
+            }
+            else {
+                id = shape->edge_name;
+            }
+
+            callback(id, iv_list[numiv - 1], arg);
         }
         return;
     }
 }
 
+
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
-    struct rb_id_table *iv_index_tbl = get_shape(obj)->iv_table;
-    if (!iv_index_tbl) return;
+    rb_shape_t* shape = get_shape(obj);
+    struct rb_id_table *iv_index_tbl;
+
+    if (shape->id == NO_CACHE_SHAPE_ID) {
+        iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
+    }
+    else {
+        iv_index_tbl = get_shape(obj)->iv_table;
+    }
+
+    if (!iv_index_tbl) {
+        return;
+    }
 
     iterate_over_shapes(obj, get_shape(obj), ROBJECT_IVPTR(obj), (int)rb_id_table_size(iv_index_tbl), func, arg);
 }

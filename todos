@@ -1,3 +1,5 @@
+ShapeID for frozen root shape (ObjectSpace.shape_id(:sym))
+
 Deal with out of shapes case:
 - NO_CACHE_SHAPE_ID that is given to shapes when we're out of IDs
 
