@@ -277,6 +277,7 @@ opt_getconst
             val = vm_get_ev_const(ec, val, id, allow_nil, 0);
             allow_nil = FALSE;
         }
+        vm_ic_update(GET_ISEQ(), ic, val, GET_EP());
     }
 }
 
