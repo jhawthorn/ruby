@@ -8915,25 +8915,17 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
 static int
 compile_colon3(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, int popped)
 {
-    const int line = nd_line(node);
-    LABEL *lend = NEW_LABEL(line);
-    int ic_index = ISEQ_BODY(iseq)->is_size++;
-
     debugi("colon3#nd_mid", node->nd_mid);
 
     /* add cache insn */
     if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	ADD_INSN2(ret, node, opt_getinlinecache, lend, INT2FIX(ic_index));
-	ADD_INSN(ret, node, pop);
-    }
-
-    ADD_INSN1(ret, node, putobject, rb_cObject);
-    ADD_INSN1(ret, node, putobject, Qtrue);
-    ADD_INSN1(ret, node, getconstant, ID2SYM(node->nd_mid));
-
-    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	ADD_INSN1(ret, node, opt_setinlinecache, INT2FIX(ic_index));
-	ADD_LABEL(ret, lend);
+        int ic_index = ISEQ_BODY(iseq)->is_size++;
+        VALUE segments = rb_ary_new_from_args(2, Qnil, ID2SYM(node->nd_mid));
+        ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
+    } else {
+        ADD_INSN1(ret, node, putobject, rb_cObject);
+        ADD_INSN1(ret, node, putobject, Qtrue);
+        ADD_INSN1(ret, node, getconstant, ID2SYM(node->nd_mid));
     }
 
     if (popped) {
@@ -9435,14 +9427,9 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	debugi("nd_vid", node->nd_vid);
 
 	if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	    LABEL *lend = NEW_LABEL(line);
-	    int ic_index = body->is_size++;
-
-            ADD_INSN2(ret, node, opt_getinlinecache, lend, INT2FIX(ic_index));
-            ADD_INSN1(ret, node, putobject, Qtrue);
-            ADD_INSN1(ret, node, getconstant, ID2SYM(node->nd_vid));
-            ADD_INSN1(ret, node, opt_setinlinecache, INT2FIX(ic_index));
-	    ADD_LABEL(ret, lend);
+            int ic_index = iseq->body->is_size++;
+            VALUE segments = rb_ary_new_from_args(1, ID2SYM(node->nd_vid));
+            ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
 	}
 	else {
 	    ADD_INSN(ret, node, putnil);
