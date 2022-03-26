@@ -8866,6 +8866,7 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
                 (segments = collect_const_segments(iseq, node))) {
             int ic_index = ISEQ_BODY(iseq)->is_size++;
             ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
+            RB_OBJ_WRITTEN(iseq, Qundef, segments);
         } else {
             /* constant */
             DECL_ANCHOR(pref);
@@ -8907,6 +8908,7 @@ compile_colon3(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
         int ic_index = ISEQ_BODY(iseq)->is_size++;
         VALUE segments = rb_ary_new_from_args(2, Qnil, ID2SYM(node->nd_mid));
         ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
+        RB_OBJ_WRITTEN(iseq, Qundef, segments);
     } else {
         ADD_INSN1(ret, node, putobject, rb_cObject);
         ADD_INSN1(ret, node, putobject, Qtrue);
@@ -9415,6 +9417,7 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
             int ic_index = iseq->body->is_size++;
             VALUE segments = rb_ary_new_from_args(1, ID2SYM(node->nd_vid));
             ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
+            RB_OBJ_WRITTEN(iseq, Qundef, segments);
 	}
 	else {
 	    ADD_INSN(ret, node, putnil);
