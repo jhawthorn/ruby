@@ -1040,6 +1040,27 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
 }
 
 static inline VALUE
+vm_get_ev_const_chain(rb_execution_context_t *ec, VALUE segments)
+{
+    VALUE val;
+    int idx = 0;
+    int allow_nil = TRUE;
+    val = Qnil;
+    if (NIL_P(RARRAY_AREF(segments, 0))) {
+        val = rb_cObject;
+        idx++;
+        allow_nil = FALSE;
+    }
+    while (idx < RARRAY_LEN(segments)) {
+        ID id = SYM2ID(RARRAY_AREF(segments, idx++));
+        val = vm_get_ev_const(ec, val, id, allow_nil, 0);
+        allow_nil = FALSE;
+    }
+    return val;
+}
+
+
+static inline VALUE
 vm_get_cvar_base(const rb_cref_t *cref, const rb_control_frame_t *cfp, int top_level_raise)
 {
     VALUE klass;

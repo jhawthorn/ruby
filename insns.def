@@ -263,20 +263,10 @@ opt_getconst
     struct iseq_inline_constant_cache_entry *ice = ic->entry;
     if (ice && vm_ic_hit_p(ice, GET_EP())) {
         val = ice->value;
+
+        VM_ASSERT(val == vm_get_ev_const_chain(ec, segments));
     } else {
-        int idx = 0;
-        int allow_nil = TRUE;
-        val = Qnil;
-        if (NIL_P(RARRAY_AREF(segments, 0))) {
-            val = rb_cObject;
-            idx++;
-            allow_nil = FALSE;
-        }
-        while (idx < RARRAY_LEN(segments)) {
-            ID id = SYM2ID(RARRAY_AREF(segments, idx++));
-            val = vm_get_ev_const(ec, val, id, allow_nil, 0);
-            allow_nil = FALSE;
-        }
+        val = vm_get_ev_const_chain(ec, segments);
         vm_ic_update(GET_ISEQ(), ic, val, GET_EP());
     }
 }
