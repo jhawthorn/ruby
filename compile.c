@@ -5099,6 +5099,30 @@ compile_massign(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node,
     return COMPILE_OK;
 }
 
+static VALUE
+collect_const_segments(rb_iseq_t *iseq, const NODE *node)
+{
+    VALUE arr = rb_ary_new();
+    for (;;)
+    {
+        switch (nd_type(node)) {
+          case NODE_CONST:
+            rb_ary_unshift(arr, ID2SYM(node->nd_vid));
+            return arr;
+          case NODE_COLON3:
+            rb_ary_unshift(arr, ID2SYM(node->nd_mid));
+            rb_ary_unshift(arr, Qnil);
+            return arr;
+          case NODE_COLON2:
+            rb_ary_unshift(arr, ID2SYM(node->nd_mid));
+            node = node->nd_head;
+            break;
+          default:
+            return Qfalse;
+        }
+    }
+}
+
 static int
 compile_const_prefix(rb_iseq_t *iseq, const NODE *const node,
 		     LINK_ANCHOR *const pref, LINK_ANCHOR *const body)
@@ -8838,6 +8862,11 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
 {
     const int line = nd_line(node);
     if (rb_is_const_id(node->nd_mid)) {
+        VALUE segments = collect_const_segments(iseq, node);
+        if (segments) {
+            ADD_INSN1(ret, node, opt_getconst, segments);
+        } else {
+
 	/* constant */
 	LABEL *lend = NEW_LABEL(line);
         int ic_index = ISEQ_BODY(iseq)->is_size++;
@@ -8847,6 +8876,7 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
 
 	INIT_ANCHOR(pref);
 	INIT_ANCHOR(body);
+
 	CHECK(compile_const_prefix(iseq, node, pref, body));
 	if (LIST_INSN_SIZE_ZERO(pref)) {
 	    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
@@ -8866,6 +8896,7 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
 	else {
 	    ADD_SEQ(ret, pref);
 	    ADD_SEQ(ret, body);
+	}
 	}
     }
     else {

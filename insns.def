@@ -253,6 +253,28 @@ setclassvariable
     vm_setclassvariable(GET_ISEQ(), GET_CFP(), id,  val, ic);
 }
 
+DEFINE_INSN
+opt_getconst
+(VALUE segments)
+()
+(VALUE klass)
+// attr bool leaf = false; /* may autoload */
+{
+    int idx = 0;
+    int allow_nil = TRUE;
+    klass = Qnil;
+    if (NIL_P(RARRAY_AREF(segments, 0))) {
+        klass = rb_cObject;
+        idx++;
+        allow_nil = FALSE;
+    }
+    while (idx < RARRAY_LEN(segments)) {
+        ID id = SYM2ID(RARRAY_AREF(segments, idx++));
+        klass = vm_get_ev_const(ec, klass, id, allow_nil, 0);
+        allow_nil = FALSE;
+    }
+}
+
 /* Get constant variable id. If klass is Qnil and allow_nil is Qtrue, constants
    are searched in the current scope. Otherwise, get constant under klass
    class or module.
