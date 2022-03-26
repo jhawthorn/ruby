@@ -8860,45 +8860,30 @@ compile_match(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
 static int
 compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, int popped)
 {
-    const int line = nd_line(node);
     if (rb_is_const_id(node->nd_mid)) {
-        VALUE segments = collect_const_segments(iseq, node);
-        if (segments) {
-            int ic_index = iseq->body->is_size++;
+        VALUE segments;
+        if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache &&
+                (segments = collect_const_segments(iseq, node))) {
+            int ic_index = ISEQ_BODY(iseq)->is_size++;
             ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
         } else {
+            /* constant */
+            DECL_ANCHOR(pref);
+            DECL_ANCHOR(body);
 
-	/* constant */
-	LABEL *lend = NEW_LABEL(line);
-        int ic_index = ISEQ_BODY(iseq)->is_size++;
+            INIT_ANCHOR(pref);
+            INIT_ANCHOR(body);
 
-	DECL_ANCHOR(pref);
-	DECL_ANCHOR(body);
-
-	INIT_ANCHOR(pref);
-	INIT_ANCHOR(body);
-
-	CHECK(compile_const_prefix(iseq, node, pref, body));
-	if (LIST_INSN_SIZE_ZERO(pref)) {
-	    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-		ADD_INSN2(ret, node, opt_getinlinecache, lend, INT2FIX(ic_index));
-	    }
-	    else {
-		ADD_INSN(ret, node, putnil);
-	    }
-
-	    ADD_SEQ(ret, body);
-
-	    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-		ADD_INSN1(ret, node, opt_setinlinecache, INT2FIX(ic_index));
-		ADD_LABEL(ret, lend);
-	    }
-	}
-	else {
-	    ADD_SEQ(ret, pref);
-	    ADD_SEQ(ret, body);
-	}
-	}
+            CHECK(compile_const_prefix(iseq, node, pref, body));
+            if (LIST_INSN_SIZE_ZERO(pref)) {
+                ADD_INSN(ret, node, putnil);
+                ADD_SEQ(ret, body);
+            }
+            else {
+                ADD_SEQ(ret, pref);
+                ADD_SEQ(ret, body);
+            }
+        }
     }
     else {
 	/* function call */
