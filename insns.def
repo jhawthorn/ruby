@@ -255,23 +255,28 @@ setclassvariable
 
 DEFINE_INSN
 opt_getconst
-(VALUE segments)
+(VALUE segments, IC ic)
 ()
-(VALUE klass)
+(VALUE val)
 // attr bool leaf = false; /* may autoload */
 {
-    int idx = 0;
-    int allow_nil = TRUE;
-    klass = Qnil;
-    if (NIL_P(RARRAY_AREF(segments, 0))) {
-        klass = rb_cObject;
-        idx++;
-        allow_nil = FALSE;
-    }
-    while (idx < RARRAY_LEN(segments)) {
-        ID id = SYM2ID(RARRAY_AREF(segments, idx++));
-        klass = vm_get_ev_const(ec, klass, id, allow_nil, 0);
-        allow_nil = FALSE;
+    struct iseq_inline_constant_cache_entry *ice = ic->entry;
+    if (ice && vm_ic_hit_p(ice, GET_EP())) {
+        val = ice->value;
+    } else {
+        int idx = 0;
+        int allow_nil = TRUE;
+        val = Qnil;
+        if (NIL_P(RARRAY_AREF(segments, 0))) {
+            val = rb_cObject;
+            idx++;
+            allow_nil = FALSE;
+        }
+        while (idx < RARRAY_LEN(segments)) {
+            ID id = SYM2ID(RARRAY_AREF(segments, idx++));
+            val = vm_get_ev_const(ec, val, id, allow_nil, 0);
+            allow_nil = FALSE;
+        }
     }
 }
 

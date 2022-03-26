@@ -8864,7 +8864,8 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
     if (rb_is_const_id(node->nd_mid)) {
         VALUE segments = collect_const_segments(iseq, node);
         if (segments) {
-            ADD_INSN1(ret, node, opt_getconst, segments);
+            int ic_index = iseq->body->is_size++;
+            ADD_INSN2(ret, node, opt_getconst, segments, INT2FIX(ic_index));
         } else {
 
 	/* constant */
