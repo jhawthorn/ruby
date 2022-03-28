@@ -1351,8 +1351,9 @@ iv_index_tbl_extend(struct ivar_update *ivup, ID id)
 {
     ASSERT_vm_locking();
     VALUE ent_data;
+    struct rb_id_table *iv_table = ivup->shape->iv_table;
 
-    if (rb_id_table_lookup(ivup->shape->iv_table, id, &ent_data)) {
+    if (rb_id_table_lookup(iv_table, id, &ent_data)) {
         ivup->index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
 	return;
@@ -1441,8 +1442,8 @@ rb_obj_transient_heap_evacuate(VALUE obj, int promote)
 }
 #endif
 
-static void
-init_iv_list(VALUE obj, uint32_t len, uint32_t newsize, struct rb_id_table *index_tbl)
+void
+rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
 {
     VALUE *ptr = ROBJECT_IVPTR(obj);
     VALUE *newptr;
@@ -1466,10 +1467,9 @@ init_iv_list(VALUE obj, uint32_t len, uint32_t newsize, struct rb_id_table *inde
 void
 rb_init_iv_list(VALUE obj)
 {
-    struct rb_id_table *index_tbl = ROBJECT_IV_INDEX_TBL(obj);
-    uint32_t newsize = rb_id_table_size(index_tbl) * 1.5;
+    uint32_t newsize = rb_id_table_size(ROBJECT_IV_INDEX_TBL(obj)) * 1.5;
     uint32_t len = ROBJECT_NUMIV(obj);
-    init_iv_list(obj, len, newsize < len ? len : newsize, index_tbl);
+    rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
 
 // Retrieve or create the id-to-index mapping for a given object and an
@@ -1483,7 +1483,6 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
 
     RB_VM_LOCK_ENTER();
     {
-        // TODO: Figure out what to do with shapes here??
         iv_index_tbl_extend(&ivup, id);
     }
     RB_VM_LOCK_LEAVE();
@@ -1514,13 +1513,17 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     uint32_t len;
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
     rb_shape_t* shape = get_shape(obj);
-    if (shape->id != NO_CACHE_SHAPE_ID)
+/*    if (shape->id == NO_CACHE_SHAPE_ID) {
+        // ivup.u.iv_index_tbl = ROBJECT_IVPTR(obj);
+    }
+    else { */
         ivup.u.iv_index_tbl = shape->iv_table;
+//    }
 
     len = ROBJECT_NUMIV(obj);
     if (len <= (ivup.index)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
-        init_iv_list(obj, len, newsize, ivup.u.iv_index_tbl);
+        rb_ensure_iv_list_size(obj, len, newsize);
     }
     RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[ivup.index], val);
 
@@ -1538,7 +1541,6 @@ shape_id_t get_shape_id(VALUE obj)
           return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
           break;
       default:
-          // These are "not cool" objects
           {
               struct gen_ivtbl *ivtbl = 0;
               RB_VM_LOCK_ENTER();
@@ -1890,18 +1892,14 @@ st_data_t rb_st_nth_key(st_table *tab, st_index_t index);
 
 void
 iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_ivar_foreach_callback_func *callback, st_data_t arg) {
-    if (root_shape_p(shape) || numiv == 0) {
+    if (root_shape_p(shape)) {
         return;
     }
     else if (frozen_shape_p(shape)) {
         return iterate_over_shapes(obj, get_shape_by_id(shape->parent_id), iv_list, numiv, callback, arg);
     }
     else if (numiv <= 0) {
-        rb_shape_t* parent = get_shape_by_id(shape->parent_id);
-        rp(obj);
-        rp(parent);
-        printf("ughhhh\n");
-        rb_bug("this shouldn't happen\n");
+        rb_bug("bad numiv iterating over shapes\n");
     }
     else {
         rb_shape_t *parent_shape;
@@ -1914,13 +1912,7 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
         iterate_over_shapes(obj, parent_shape, iv_list, numiv - 1, callback, arg);
 
         if (iv_list[numiv - 1] != Qundef) {
-            ID id;
-            if (shape->id == NO_CACHE_SHAPE_ID) {
-                id = rb_intern("@placeholder");
-            }
-            else {
-                id = shape->edge_name;
-            }
+            ID id = shape->edge_name;
 
             callback(id, iv_list[numiv - 1], arg);
         }
@@ -1928,6 +1920,14 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
     }
 }
 
+static enum rb_id_table_iterator_result
+add_to_array(ID id, VALUE val, void * data)
+{
+    uint32_t idx = (uint32_t)val;
+    VALUE * list = (VALUE *)data;
+    list[idx] = id;
+    return ID_TABLE_CONTINUE;
+}
 
 static void
 obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
@@ -1937,16 +1937,22 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 
     if (shape->id == NO_CACHE_SHAPE_ID) {
         iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
+        VALUE * array = xmalloc(sizeof(VALUE) * rb_id_table_size(iv_index_tbl));
+
+        rb_id_table_foreach(iv_index_tbl, add_to_array, array);
+        for (uint32_t i = 0; i < (uint32_t)rb_id_table_size(iv_index_tbl); i++) {
+            func(array[i], ROBJECT_IVPTR(obj)[i], arg);
+        }
+
+        xfree(array);
     }
     else {
         iv_index_tbl = get_shape(obj)->iv_table;
+        if (!iv_index_tbl) {
+            return;
+        }
+        iterate_over_shapes(obj, get_shape(obj), ROBJECT_IVPTR(obj), (int)rb_id_table_size(iv_index_tbl), func, arg);
     }
-
-    if (!iv_index_tbl) {
-        return;
-    }
-
-    iterate_over_shapes(obj, get_shape(obj), ROBJECT_IVPTR(obj), (int)rb_id_table_size(iv_index_tbl), func, arg);
 }
 
 static void

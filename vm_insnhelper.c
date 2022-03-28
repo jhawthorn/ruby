@@ -1272,36 +1272,54 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
         rb_shape_t* shape = get_shape(obj);
+        rb_shape_t* next_shape = get_next_shape(shape, id);
+        set_shape(obj, next_shape);
 
-        if (shape->id != NO_CACHE_SHAPE_ID) {
-            rb_shape_t* next_shape = get_next_shape(shape, id);
-            set_shape(obj, next_shape);
+        // cache -> no cache
+        //   ensure object isn't embedded
+        //   copy the iv idnex table
+        //   set the iv index table pointer on the object
+        // no cache -> no cache
+        //
+        // both caches
+        if (shape->id != NO_CACHE_SHAPE_ID && next_shape->id == NO_CACHE_SHAPE_ID) {
+            // Copy IV index table
+            struct rb_id_table * iv_index_tbl = rb_id_table_copy(shape->iv_table);
 
-            if (next_shape->id == NO_CACHE_SHAPE_ID) {
-                ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(shape->iv_table);
-                rb_id_table_insert(ROBJECT(obj)->as.heap.iv_index_tbl, id, (VALUE)rb_id_table_size(shape->iv_table));
+            // Ensure the object is *not* embedded
+            if (num_iv < (ROBJECT_EMBED_LEN_MAX + 1)) {
+                rb_ensure_iv_list_size(obj, num_iv, ROBJECT_EMBED_LEN_MAX + 1);
             }
-            else {
-                if (iv_index_tbl_lookup(obj, id, &index)) { // based off the has stored in the transition tree
-                    if (index >= INT_MAX) {
-                        rb_raise(rb_eArgError, "too many instance variables");
-                    }
 
-                    if (is_attr) {
-                        vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
-                    }
-                    else {
-                        vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
-                    }
+            // Save the IV index table on the instance
+            ROBJECT(obj)->as.heap.iv_index_tbl = iv_index_tbl;
+        }
 
-                    if (UNLIKELY(index >= num_iv)) {
-                        rb_init_iv_list(obj);
-                    }
+        if (shape->id == NO_CACHE_SHAPE_ID || next_shape->id == NO_CACHE_SHAPE_ID) {
+            index = (uint32_t)rb_id_table_size(ROBJECT(obj)->as.heap.iv_index_tbl);
+            rb_id_table_insert(ROBJECT(obj)->as.heap.iv_index_tbl, id, (VALUE)index);
+        }
+        else {
+            if (iv_index_tbl_lookup(obj, id, &index)) { // based off the has stored in the transition tree
+                if (index >= INT_MAX) {
+                    rb_raise(rb_eArgError, "too many instance variables");
+                }
+
+                if (is_attr) {
+                    vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
                 }
                 else {
-                    rb_bug("didn't find the id\n");
+                    vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
                 }
             }
+            else {
+                rb_bug("didn't find the id\n");
+            }
+        }
+
+        // Ensure the IV buffer is wide enough to store the IV
+        if (UNLIKELY(index >= num_iv)) {
+            rb_init_iv_list(obj);
         }
 
         // TODO: fix this index still
