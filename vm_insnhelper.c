@@ -1131,6 +1131,10 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     else {
         // Put shape_id into the inline cache
         shape_id_t shape_id = get_shape_id(obj);
+
+        if (shape_id == NO_CACHE_SHAPE_ID)
+            goto general_path;
+
         shape_id_t cached_id;
 
         if (is_attr) {

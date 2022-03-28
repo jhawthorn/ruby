@@ -887,10 +887,18 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
     int r;
 
     rb_shape_t* shape = get_shape(obj);
+    struct rb_id_table *iv_table;
+
+    if (shape->id == NO_CACHE_SHAPE_ID) {
+        iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
+    }
+    else {
+        iv_table  = shape->iv_table;
+    }
 
     RB_VM_LOCK_ENTER();
     {
-        r = shape->iv_table && rb_id_table_lookup(shape->iv_table, (st_data_t)id, &ent_data);
+        r = iv_table && rb_id_table_lookup(iv_table, (st_data_t)id, &ent_data);
     }
     RB_VM_LOCK_LEAVE();
 
@@ -1347,11 +1355,23 @@ rb_attr_delete(VALUE obj, ID id)
 }
 
 static void
-iv_index_tbl_extend(struct ivar_update *ivup, ID id)
+iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
 {
     ASSERT_vm_locking();
     VALUE ent_data;
-    struct rb_id_table *iv_table = ivup->shape->iv_table;
+    struct rb_id_table *iv_table;
+
+    if (ivup->shape->id == NO_CACHE_SHAPE_ID) {
+        iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
+        if ((VALUE)iv_table == Qundef) {
+            iv_table = rb_id_table_create(0);
+        }
+        uint32_t index = (uint32_t)rb_id_table_size(iv_table);
+        rb_id_table_insert(iv_table, id, (VALUE)index);
+    }
+    else {
+        iv_table = ivup->shape->iv_table;
+    }
 
     if (rb_id_table_lookup(iv_table, id, &ent_data)) {
         ivup->index = (uint32_t) ent_data;
@@ -1369,7 +1389,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 
     RB_VM_LOCK_ENTER();
     {
-        iv_index_tbl_extend(&ivup, id);
+        iv_index_tbl_extend(obj, &ivup, id);
         st_update(generic_ivtbl(obj, id, false), (st_data_t)obj, generic_ivar_update,
                   (st_data_t)&ivup);
     }
@@ -1483,7 +1503,7 @@ obj_ensure_iv_index_mapping(VALUE obj, ID id)
 
     RB_VM_LOCK_ENTER();
     {
-        iv_index_tbl_extend(&ivup, id);
+        iv_index_tbl_extend(obj, &ivup, id);
     }
     RB_VM_LOCK_LEAVE();
 
@@ -1513,12 +1533,13 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     uint32_t len;
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
     rb_shape_t* shape = get_shape(obj);
-/*    if (shape->id == NO_CACHE_SHAPE_ID) {
-        // ivup.u.iv_index_tbl = ROBJECT_IVPTR(obj);
+    struct RObject *robject = ROBJECT(obj);
+    if (shape->id == NO_CACHE_SHAPE_ID) {
+        ivup.u.iv_index_tbl = robject->as.heap.iv_index_tbl;
     }
-    else { */
+    else {
         ivup.u.iv_index_tbl = shape->iv_table;
-//    }
+    }
 
     len = ROBJECT_NUMIV(obj);
     if (len <= (ivup.index)) {
@@ -1937,10 +1958,11 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 
     if (shape->id == NO_CACHE_SHAPE_ID) {
         iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
-        VALUE * array = xmalloc(sizeof(VALUE) * rb_id_table_size(iv_index_tbl));
+        uint32_t table_size = (uint32_t) rb_id_table_size(iv_index_tbl);
+        VALUE * array = xmalloc(sizeof(VALUE) * table_size);
 
         rb_id_table_foreach(iv_index_tbl, add_to_array, array);
-        for (uint32_t i = 0; i < (uint32_t)rb_id_table_size(iv_index_tbl); i++) {
+        for (uint32_t i = 0; i < table_size; i++) {
             func(array[i], ROBJECT_IVPTR(obj)[i], arg);
         }
 
