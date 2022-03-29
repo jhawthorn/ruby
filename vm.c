@@ -3896,8 +3896,13 @@ Init_vm_objects(void)
     vm->no_cache_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     vm->no_cache_shape->id = NO_CACHE_SHAPE_ID;
     vm->no_cache_shape->iv_table = rb_id_table_create(0);
-    // TODO: if we're looking up no cache shape we need this
     rb_ary_push(vm->shape_list, (VALUE)vm->no_cache_shape);
+    RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
+    RB_OBJ_WRITTEN(vm->root_shape, Qundef, (VALUE)vm);
+    RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
+    FL_SET_RAW((VALUE)vm->frozen_root_shape, RUBY_FL_SHAREABLE);
+    FL_SET_RAW((VALUE)vm->root_shape, RUBY_FL_SHAREABLE);
+    FL_SET_RAW((VALUE)vm->no_cache_shape, RUBY_FL_SHAREABLE);
 }
 
 /* top self */

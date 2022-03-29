@@ -1,3 +1,8 @@
+Can make shapes shareable, need to take a ractor lock each time we mutate a
+shape - transition
+
+
+
 - Fix few failing tests on make test-all
 - Fix few failing tests on shopify ci
 - Implement debug_shape (wip so far)

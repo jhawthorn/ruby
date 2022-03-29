@@ -1682,7 +1682,9 @@ frozen_shape_p(rb_shape_t* shape)
 static inline rb_shape_t *
 shape_alloc(void)
 {
-    return (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
+    rb_shape_t *shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
+    FL_SET_RAW((VALUE)shape, RUBY_FL_SHAREABLE);
+    return shape;
 }
 
 enum transition_type {
@@ -1693,58 +1695,67 @@ enum transition_type {
 static rb_shape_t*
 get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 {
-    // Check to see if egdges hash exists
-    // If not, create a new edges hash
-    // Check if id is in hash
-    // If not, allocate a new shape and insert
-    // If so, return existing shape
-    if (!shape->edges) {
-        shape->edges = rb_id_table_create(0);
-    }
+    rb_shape_t *res;
+    RB_VM_LOCK_ENTER();
+    {
+        // Check to see if egdges hash exists
+        // If not, create a new edges hash
+        // Check if id is in hash
+        // If not, allocate a new shape and insert
+        // If so, return existing shape
+        if (!shape->edges) {
+            shape->edges = rb_id_table_create(0);
+        }
 
-    VALUE value;
-    if (rb_id_table_lookup(shape->edges, id, &value)) {
-        rb_shape_t* shape = (rb_shape_t*) value;
-        return shape;
-    } else {
-        if (shape->iv_table && rb_id_table_lookup(shape->iv_table, id, &value)) {
-            return shape;
+        VALUE value;
+        if (rb_id_table_lookup(shape->edges, id, &value)) {
+            rb_shape_t* shape = (rb_shape_t*) value;
+            res = shape;
         } else {
-            rb_vm_t *vm = GET_VM();
-            long number_of_shapes = RARRAY_LEN(vm->shape_list);
-            // JEM: Do we need a special case frozen_no_cache_shape?
-            if (number_of_shapes == MAX_SHAPE_ID) {
-                return get_no_cache_shape();
-            }
-            rb_shape_t* new_shape = shape_alloc();
-            new_shape->parent_id = shape->id;
-            RB_OBJ_WRITTEN((VALUE)shape, Qundef, (VALUE)new_shape);
-            new_shape->edge_name = id;
-            rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
-            if (shape->iv_table) {
-                new_shape->iv_table = rb_id_table_copy(shape->iv_table);
+            if (shape->iv_table && rb_id_table_lookup(shape->iv_table, id, &value)) {
+                res = shape;
             } else {
-                new_shape->iv_table = rb_id_table_create(0);
-            }
-            //  Only insert if the id is an internal one
-            if (tt == SHAPE_IVAR) {
-                rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
-            }
+                rb_vm_t *vm = GET_VM();
+                long number_of_shapes = RARRAY_LEN(vm->shape_list);
+                // JEM: Do we need a special case frozen_no_cache_shape?
+                if (number_of_shapes == MAX_SHAPE_ID) {
+                    res = get_no_cache_shape();
+                }
+                else {
+                    rb_shape_t* new_shape = shape_alloc();
+                    new_shape->parent_id = shape->id;
+                    RB_OBJ_WRITTEN((VALUE)shape, Qundef, (VALUE)new_shape);
+                    new_shape->edge_name = id;
 
-            if (tt == SHAPE_FROZEN) {
-                RB_OBJ_FREEZE_RAW((VALUE)new_shape);
-            }
-            new_shape->id = number_of_shapes;
-            rb_ary_push(vm->shape_list, (VALUE)new_shape);
+                    rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
+                    if (shape->iv_table) {
+                        new_shape->iv_table = rb_id_table_copy(shape->iv_table);
+                    } else {
+                        new_shape->iv_table = rb_id_table_create(0);
+                    }
+                    //  Only insert if the id is an internal one
+                    if (tt == SHAPE_IVAR) {
+                        rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
+                    }
 
-            // TODO: Need to do this earlier, before we allocate the new shape
-            if (new_shape->id > MAX_SHAPE_ID) {
-                fprintf(stderr, "Too many shapes\n");
-                abort();
+                    if (tt == SHAPE_FROZEN) {
+                        RB_OBJ_FREEZE_RAW((VALUE)new_shape);
+                    }
+                    new_shape->id = number_of_shapes;
+                    rb_ary_push(vm->shape_list, (VALUE)new_shape);
+
+                    // TODO: Need to do this earlier, before we allocate the new shape
+                    if (new_shape->id > MAX_SHAPE_ID) {
+                        fprintf(stderr, "Too many shapes\n");
+                        abort();
+                    }
+                    res = new_shape;
+                }
             }
-            return new_shape;
         }
     }
+    RB_VM_LOCK_LEAVE();
+    return res;
 }
 
 rb_shape_t*
