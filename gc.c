@@ -7031,7 +7031,6 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_shape:
         {
             rb_shape_t *shape = (rb_shape_t *)obj;
-            gc_mark(objspace, obj);
             if (!root_shape_p(shape))
                 gc_mark(objspace, (VALUE)get_shape_by_id(shape->parent_id));
 

@@ -1583,7 +1583,8 @@ shape_id_t get_shape_id(VALUE obj)
     return shape_id;
 }
 
-void set_shape_id(VALUE obj, shape_id_t shape_id)
+static void
+set_shape_id(VALUE obj, shape_id_t shape_id)
 {
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
@@ -1616,9 +1617,11 @@ void set_shape_id(VALUE obj, shape_id_t shape_id)
     }
 }
 
-void set_shape(VALUE obj, rb_shape_t* shape)
+void
+set_shape(VALUE obj, rb_shape_t* shape)
 {
     set_shape_id(obj, shape->id);
+    RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
 }
 
 rb_shape_t* get_shape_by_id(shape_id_t shape_id)
@@ -1715,6 +1718,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             }
             rb_shape_t* new_shape = shape_alloc();
             new_shape->parent_id = shape->id;
+            RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
             new_shape->edge_name = id;
             rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
             if (shape->iv_table) {
@@ -2017,7 +2021,7 @@ rb_copy_generic_ivar(VALUE clone, VALUE obj)
         }
         RB_VM_LOCK_LEAVE();
 
-        set_shape_id(clone, get_shape_id(obj));
+        set_shape(clone, get_shape(obj));
     }
     return;
 

@@ -311,7 +311,7 @@ init_copy(VALUE dest, VALUE obj)
     rb_gc_copy_finalizer(dest, obj);
 
     if (RB_TYPE_P(obj, T_OBJECT)) {
-        set_shape_id(dest, get_shape_id(obj));
+        set_shape(dest, get_shape(obj));
 	rb_obj_copy_ivar(dest, obj);
     }
 }

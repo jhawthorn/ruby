@@ -112,6 +112,7 @@ class TestObjSpace < Test::Unit::TestCase
     assert_operator(ObjectSpace.memsize_of(iseqw), :>, base_obj_size)
   end
 
+  # JEM: Fix these tests to include the shape imemo objs
   def test_reachable_objects_from
     opts = %w[--disable-gem --disable=frozen-string-literal -robjspace]
     assert_separately opts, "#{<<-"begin;"}\n#{<<-'end;'}"
@@ -511,9 +512,12 @@ class TestObjSpace < Test::Unit::TestCase
           ObjectSpace.dump_all(output: :stdout)
         end
 
-        p dump_my_heap_please
+        puts "---"
+        puts dump_my_heap_please
+        puts "---"
       end;
       assert_equal 'nil', output.pop
+      # JEM: read the --- and just actually parse the json, make assertions on that (below too)
       assert_match(entry, output.grep(/TEST STRING/).join("\n"))
     end
 
@@ -585,7 +589,7 @@ class TestObjSpace < Test::Unit::TestCase
     begin
       bar
     rescue => err
-      _, m = ObjectSpace.reachable_objects_from(err)
+      _, _, m = ObjectSpace.reachable_objects_from(err)
     end
     assert_equal(m, m.clone)
   end

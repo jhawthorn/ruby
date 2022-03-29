@@ -50,7 +50,7 @@ MJIT_STATIC VALUE
 ruby_vm_special_exception_copy(VALUE exc)
 {
     VALUE e = rb_obj_alloc(rb_class_real(RBASIC_CLASS(exc)));
-    set_shape_id(e, get_shape_id(exc));
+    set_shape(e, get_shape(exc));
     rb_obj_copy_ivar(e, exc);
     return e;
 }
@@ -1396,7 +1396,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 
                 RB_OBJ_WRITE(obj, &ptr[index], val);
 
-                set_shape_id(obj, shape_dest_id);
+                set_shape(obj, get_shape_by_id(shape_dest_id));
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
