@@ -1718,7 +1718,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             }
             rb_shape_t* new_shape = shape_alloc();
             new_shape->parent_id = shape->id;
-            RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
+            RB_OBJ_WRITTEN((VALUE)shape, Qundef, (VALUE)new_shape);
             new_shape->edge_name = id;
             rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
             if (shape->iv_table) {
