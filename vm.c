@@ -26,6 +26,7 @@
 #include "internal/thread.h"
 #include "internal/vm.h"
 #include "internal/sanitizers.h"
+#include "internal/variable.h"
 #include "iseq.h"
 #include "mjit.h"
 #include "yjit.h"
@@ -2623,7 +2624,6 @@ rb_vm_mark(void *ptr)
             obj_ary++;
         }
 
-        rb_gc_mark(vm->shape_list);
         rb_gc_mark((VALUE)vm->root_shape);
         rb_gc_mark((VALUE)vm->frozen_root_shape);
         rb_gc_mark((VALUE)vm->no_cache_shape);
@@ -3884,32 +3884,32 @@ Init_vm_objects(void)
     vm->mark_object_ary = rb_ary_tmp_new(128);
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
-    vm->shape_list = rb_ary_new();
+    vm->shape_list = xcalloc(MAX_SHAPE_ID, sizeof(rb_shape_t *));
 
     // Root shape
-    vm->root_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
-    vm->root_shape->iv_table = rb_id_table_create(0);
-    vm->root_shape->id = ROOT_SHAPE_ID;
-    rb_ary_push(vm->shape_list, (VALUE)vm->root_shape);
+    vm->root_shape = rb_shape_alloc(ROOT_SHAPE_ID,
+            0,
+            0,
+            rb_id_table_create(0));
+    set_shape_by_id(vm->root_shape, ROOT_SHAPE_ID);
     RB_OBJ_WRITTEN(vm->root_shape, Qundef, (VALUE)vm);
-    FL_SET_RAW((VALUE)vm->root_shape, RUBY_FL_SHAREABLE);
 
     // Frozen root shape
-    vm->frozen_root_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
-    vm->frozen_root_shape->id = FROZEN_ROOT_SHAPE_ID;
-    vm->frozen_root_shape->iv_table = rb_id_table_create(0);
+    vm->frozen_root_shape = rb_shape_alloc(FROZEN_ROOT_SHAPE_ID,
+            0,
+            ROOT_SHAPE_ID,
+            rb_id_table_create(0));
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
-    rb_ary_push(vm->shape_list, (VALUE)vm->frozen_root_shape);
+    set_shape_by_id(vm->frozen_root_shape, FROZEN_ROOT_SHAPE_ID);
     RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
-    FL_SET_RAW((VALUE)vm->frozen_root_shape, RUBY_FL_SHAREABLE);
 
     // No cache shape
-    vm->no_cache_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
-    vm->no_cache_shape->id = NO_CACHE_SHAPE_ID;
-    vm->no_cache_shape->iv_table = rb_id_table_create(0);
-    rb_ary_push(vm->shape_list, (VALUE)vm->no_cache_shape);
+    vm->no_cache_shape = rb_shape_alloc(NO_CACHE_SHAPE_ID,
+            0,
+            0,
+            rb_id_table_create(0));
+    set_shape_by_id(vm->no_cache_shape, NO_CACHE_SHAPE_ID);
     RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
-    FL_SET_RAW((VALUE)vm->no_cache_shape, RUBY_FL_SHAREABLE);
 
     /*
      * TODO: Why are these not working here?

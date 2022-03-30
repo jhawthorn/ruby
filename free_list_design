@@ -1,0 +1,24 @@
+* vm->shape_list should be a weak array so everything isn't alive (darray?)
+    * ((1 << 16) - 1) * sizeof(void *)
+
+* function to search available ids
+* if a shape gets collected, how do we invalidate caches? *****
+    * weak ref to shape
+        * two reads, get the shape, then get the shape id
+    * shapes store iseqs where they were set?
+        * now we have to store a reference from shape to iseq
+
+total shapes = (1 << 16) - 1
+shapes array = (shape_t *)[total shapes]
+bitmap = (uint *)list[total_shapes / sizeof(unit)]
+bitmap2 = (uint *)list[(total_shapes / sizeof(unit)) / sizeof(unit)]
+
+for num in bitmap
+    if num < max_int
+        for bit in num
+            find zero bit
+        end
+    else
+        # ...
+    end
+end

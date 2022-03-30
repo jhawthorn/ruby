@@ -5010,8 +5010,11 @@ static VALUE shape_transition_tree(VALUE self) {
 
 static VALUE shape_count(VALUE self) {
     // Might want to extract this into a get_root_shape
-    rb_vm_t *vm = GET_VM();
-    return LONG2NUM(RARRAY_LEN(vm->shape_list));
+    int shape_count = 0;
+    for(int i=0; i<MAX_SHAPE_ID; i++) {
+        if(get_shape_by_id(i)) shape_count++;
+    }
+    return INT2NUM(shape_count);
 }
 
 /*
