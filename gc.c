@@ -4955,6 +4955,7 @@ VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
         // JEM: TODO: move these inits somewhere else, don't seem to be working
         // in Init_vm_objects
         rb_cShape = rb_define_class_under(rb_cRubyVM, "Shape", rb_cObject);
+        rb_undef_alloc_func(rb_cShape);
         rb_define_method(rb_cShape, "id", rb_shape_id, 0);
         rb_define_method(rb_cShape, "parent_id", rb_shape_parent_id, 0);
         rb_define_method(rb_cShape, "parent", rb_shape_parent, 0);
