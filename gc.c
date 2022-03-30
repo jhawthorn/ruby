@@ -4848,6 +4848,42 @@ VALUE rb_obj_shape_id(VALUE self, VALUE obj) {
     return INT2NUM(get_shape_id(obj));
 }
 
+VALUE rb_cShape;
+
+static void
+shape_mark(void *ptr)
+{
+    rb_gc_mark((VALUE)ptr);
+}
+
+static size_t
+shape_memsize(const void *ptr)
+{
+    return imemo_memsize((VALUE)ptr);
+}
+
+static const rb_data_type_t shape_data_type = {
+    "T_IMEMO/shape",
+    {shape_mark, NULL, shape_memsize,},
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED
+};
+
+static VALUE
+rb_shape_id(VALUE self)
+{
+    rb_shape_t * shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+    return INT2NUM(shape->id);
+}
+
+static VALUE
+rb_shape_parent_id(VALUE self)
+{
+    rb_shape_t * shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+    return INT2NUM(shape->parent_id);
+}
+
 static VALUE parse_key(ID key) {
     if ((key & RUBY_ID_INTERNAL) == RUBY_ID_INTERNAL) {
         return LONG2NUM(key);
@@ -4856,11 +4892,79 @@ static VALUE parse_key(ID key) {
     }
 }
 
+static VALUE
+rb_shape_t_to_rb_cShape(rb_shape_t *shape) {
+    union { const rb_shape_t *in; void *out; } deconst;
+    VALUE res;
+    deconst.in = shape;
+    res = TypedData_Wrap_Struct(rb_cShape, &shape_data_type, deconst.out);
+    RB_OBJ_WRITTEN(res, Qundef, shape);
+
+    return res;
+}
+
 static enum rb_id_table_iterator_result collect_keys(ID key, VALUE value, void *ref)
 {
     rb_ary_push(*(VALUE *)ref, parse_key(key));
     return ID_TABLE_CONTINUE;
 }
+
+static enum rb_id_table_iterator_result rb_edges_to_hash(ID key, VALUE value, void *ref)
+{
+    rb_hash_aset(*(VALUE *)ref, parse_key(key), rb_shape_t_to_rb_cShape((rb_shape_t*)value));
+    return ID_TABLE_CONTINUE;
+}
+
+static VALUE
+rb_shape_iv_table(VALUE self)
+{
+    rb_shape_t * shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+
+    VALUE array = rb_ary_new();
+    if (((rb_shape_t)*shape).iv_table) {
+        rb_id_table_foreach(((rb_shape_t)*shape).iv_table, collect_keys, &array);
+    }
+    return array;
+}
+
+static VALUE
+rb_shape_edges(VALUE self)
+{
+    rb_shape_t* shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+
+    VALUE hash = rb_hash_new();
+    if (((rb_shape_t)*shape).edges) {
+        rb_id_table_foreach(((rb_shape_t)*shape).edges, rb_edges_to_hash, &hash);
+    }
+    return hash;
+}
+
+static VALUE
+rb_shape_parent(VALUE self)
+{
+    rb_shape_t * shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+    return rb_shape_t_to_rb_cShape(shape);
+}
+
+VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
+    rb_shape_t *shape = get_shape(obj);
+    if (!rb_cShape) {
+        // JEM: TODO: move these inits somewhere else, don't seem to be working
+        // in Init_vm_objects
+        rb_cShape = rb_define_class_under(rb_cRubyVM, "Shape", rb_cObject);
+        rb_define_method(rb_cShape, "id", rb_shape_id, 0);
+        rb_define_method(rb_cShape, "parent_id", rb_shape_parent_id, 0);
+        rb_define_method(rb_cShape, "parent", rb_shape_parent, 0);
+        rb_define_method(rb_cShape, "ivars", rb_shape_iv_table, 0);
+        rb_define_method(rb_cShape, "edges", rb_shape_edges, 0);
+    }
+
+    return rb_shape_t_to_rb_cShape(shape);
+}
+
 
 
 static VALUE seen_ivars(struct rb_id_table* ivars)
@@ -4883,9 +4987,8 @@ static enum rb_id_table_iterator_result collect_keys_and_values(ID key, VALUE va
 static VALUE edges(struct rb_id_table* edges)
 {
     VALUE hash = rb_hash_new();
-    if (edges) {
+    if (edges)
         rb_id_table_foreach(edges, collect_keys_and_values, &hash);
-    }
     return hash;
 }
 

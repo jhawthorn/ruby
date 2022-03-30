@@ -3503,6 +3503,7 @@ Init_VM(void)
     rb_define_singleton_method(rb_cRubyVM, "stat", vm_stat, -1);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines", vm_keep_script_lines, 0);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines=", vm_keep_script_lines_set, 1);
+    rb_define_singleton_method(rb_cRubyVM, "debug_shape", rb_obj_debug_shape, 1);
 
 #if USE_DEBUG_COUNTER
     rb_define_singleton_method(rb_cRubyVM, "reset_debug_counters", rb_debug_counter_reset, 0);
@@ -3884,25 +3885,38 @@ Init_vm_objects(void)
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
     vm->shape_list = rb_ary_new();
+
+    // Root shape
     vm->root_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     vm->root_shape->iv_table = rb_id_table_create(0);
     vm->root_shape->id = ROOT_SHAPE_ID;
     rb_ary_push(vm->shape_list, (VALUE)vm->root_shape);
+    RB_OBJ_WRITTEN(vm->root_shape, Qundef, (VALUE)vm);
+    FL_SET_RAW((VALUE)vm->root_shape, RUBY_FL_SHAREABLE);
+
+    // Frozen root shape
     vm->frozen_root_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     vm->frozen_root_shape->id = FROZEN_ROOT_SHAPE_ID;
     vm->frozen_root_shape->iv_table = rb_id_table_create(0);
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
     rb_ary_push(vm->shape_list, (VALUE)vm->frozen_root_shape);
+    RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
+    FL_SET_RAW((VALUE)vm->frozen_root_shape, RUBY_FL_SHAREABLE);
+
+    // No cache shape
     vm->no_cache_shape = (rb_shape_t *)rb_imemo_new(imemo_shape, 0, 0, 0, 0);
     vm->no_cache_shape->id = NO_CACHE_SHAPE_ID;
     vm->no_cache_shape->iv_table = rb_id_table_create(0);
     rb_ary_push(vm->shape_list, (VALUE)vm->no_cache_shape);
-    RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
-    RB_OBJ_WRITTEN(vm->root_shape, Qundef, (VALUE)vm);
     RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
-    FL_SET_RAW((VALUE)vm->frozen_root_shape, RUBY_FL_SHAREABLE);
-    FL_SET_RAW((VALUE)vm->root_shape, RUBY_FL_SHAREABLE);
     FL_SET_RAW((VALUE)vm->no_cache_shape, RUBY_FL_SHAREABLE);
+
+    /*
+     * TODO: Why are these not working here?
+    // RubyVM.debug_shape functionality
+    rb_cShape = rb_define_class_under(rb_cRubyVM, "Shape", rb_cObject);
+    rb_define_method(rb_cShape, "id", rb_shape_id, 0);
+    */
 }
 
 /* top self */
