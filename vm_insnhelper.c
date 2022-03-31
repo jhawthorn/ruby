@@ -1369,7 +1369,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
                 shape_source_id = vm_ic_attr_index_shape_source_id(ic);
             }
             // Do we have a cache hit *and* is the CC intitialized
-            if (shape_id && shape_id == shape_source_id) {
+            if (shape_id == shape_source_id) {
                 uint32_t index = !is_attr ? vm_ic_attr_index(ic) : vm_cc_attr_index(cc);
                 shape_id_t shape_dest_id;
                 if (is_attr) {
