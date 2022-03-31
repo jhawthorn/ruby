@@ -65,7 +65,7 @@ bool root_shape_p(rb_shape_t* shape);
 void set_shape(VALUE obj, rb_shape_t* shape);
 int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE * value);
 void transition_shape(VALUE obj, ID id);
-void set_shape_by_id(rb_shape_t *, shape_id_t);
+void set_shape_by_id(shape_id_t, rb_shape_t *);
 rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, shape_id_t parent_id, struct rb_id_table * iv_table);
 
 # define MAX_SHAPE_ID 0xFFFE

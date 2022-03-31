@@ -685,6 +685,7 @@ typedef struct rb_vm_struct {
     rb_shape_t *root_shape;
     rb_shape_t *frozen_root_shape;
     rb_shape_t *no_cache_shape;
+    uint allocated_shape_bitmap[0xFFFF / sizeof(uint)];
 
     /* load */
     VALUE top_self;

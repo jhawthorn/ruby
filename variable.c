@@ -1620,25 +1620,42 @@ void
 set_shape(VALUE obj, rb_shape_t* shape)
 {
     set_shape_id(obj, shape->id);
+    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
 }
 
 void
-set_shape_by_id(rb_shape_t *shape, shape_id_t shape_id)
+set_shape_in_bitmap(shape_id_t shape_id) {
+    rb_vm_t *vm = GET_VM();
+    uint index = shape_id / sizeof(uint);
+    vm->allocated_shape_bitmap[index] |= (shape_id - (index * sizeof(uint)));
+}
+
+void
+unset_shape_in_bitmap(shape_id_t shape_id) {
+    rb_vm_t *vm = GET_VM();
+    uint index = shape_id / sizeof(uint);
+//    vm->allocated_shape_bitmap[index] &= ^(shape_id - (index * sizeof(uint)));
+}
+
+void
+set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
+    RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
     vm->shape_list[shape_id] = shape;
+    set_shape_in_bitmap(shape_id);
 }
 
 rb_shape_t*
 get_shape_by_id(shape_id_t shape_id)
 {
+    RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
+
     rb_vm_t *vm = GET_VM();
-    if (shape_id == INVALID_SHAPE_ID) {
-        // TODO: Turn into RUBY_ASSERT, this shouldn't happen
-        rb_bug("Shape is invalid\n");
-    }
-    return vm->shape_list[shape_id];
+    rb_shape_t *shape = vm->shape_list[shape_id];
+    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
+    return shape;
 }
 
 rb_shape_t* get_shape(VALUE obj)
@@ -1768,7 +1785,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
-                    set_shape_by_id(new_shape, next_shape_id);
+                    set_shape_by_id(next_shape_id, new_shape);
 
                     // TODO: Need to do this earlier, before we allocate the new shape
                     if (new_shape->id > MAX_SHAPE_ID) {

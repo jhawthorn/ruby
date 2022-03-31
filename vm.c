@@ -3891,7 +3891,7 @@ Init_vm_objects(void)
             0,
             0,
             rb_id_table_create(0));
-    set_shape_by_id(vm->root_shape, ROOT_SHAPE_ID);
+    set_shape_by_id(ROOT_SHAPE_ID, vm->root_shape);
     RB_OBJ_WRITTEN(vm->root_shape, Qundef, (VALUE)vm);
 
     // Frozen root shape
@@ -3900,7 +3900,7 @@ Init_vm_objects(void)
             ROOT_SHAPE_ID,
             rb_id_table_create(0));
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);
-    set_shape_by_id(vm->frozen_root_shape, FROZEN_ROOT_SHAPE_ID);
+    set_shape_by_id(FROZEN_ROOT_SHAPE_ID, vm->frozen_root_shape);
     RB_OBJ_WRITTEN(vm->frozen_root_shape, Qundef, (VALUE)vm);
 
     // No cache shape
@@ -3908,8 +3908,10 @@ Init_vm_objects(void)
             0,
             0,
             rb_id_table_create(0));
-    set_shape_by_id(vm->no_cache_shape, NO_CACHE_SHAPE_ID);
+    set_shape_by_id(NO_CACHE_SHAPE_ID, vm->no_cache_shape);
     RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
+
+    memset(vm->allocated_shape_bitmap, 0, (0xFFFF / sizeof(uint)));
 
     /*
      * TODO: Why are these not working here?

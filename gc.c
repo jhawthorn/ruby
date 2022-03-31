@@ -3433,8 +3433,14 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             break;
           case imemo_shape:
             {
-                rb_id_table_free(((rb_shape_t *)obj)->iv_table);
-                rb_id_table_free(((rb_shape_t *)obj)->edges);
+                rb_shape_t *shape = (rb_shape_t *)obj;
+                rb_id_table_free(shape->iv_table);
+                if(shape->edges) rb_id_table_free(shape->edges);
+                set_shape_by_id(shape->id, NULL);
+                rb_shape_t *parent = get_shape_by_id(shape->parent_id);
+
+                if (!rb_objspace_garbage_object_p(parent))
+                    rb_id_table_delete(parent->edges, shape->edge_name);
                 break;
             }
 	}
@@ -7048,15 +7054,6 @@ gc_mark_set_parent(rb_objspace_t *objspace, VALUE obj)
     }
 }
 
-static enum rb_id_table_iterator_result
-mark_and_pin_id_table_i(VALUE value, void *data)
-{
-    rb_objspace_t *objspace = (rb_objspace_t *)data;
-
-    gc_mark_and_pin(objspace, value);
-    return ID_TABLE_CONTINUE;
-}
-
 static void
 gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
 {
@@ -7138,9 +7135,6 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             rb_shape_t *shape = (rb_shape_t *)obj;
             if (!root_shape_p(shape))
                 gc_mark(objspace, (VALUE)get_shape_by_id(shape->parent_id));
-
-            if (shape->edges)
-                rb_id_table_foreach_values(shape->edges, mark_and_pin_id_table_i, objspace);
         }
         return;
 #if VM_CHECK_MODE > 0
