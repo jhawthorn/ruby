@@ -4946,7 +4946,7 @@ rb_shape_parent(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return rb_shape_t_to_rb_cShape(shape);
+    return rb_shape_t_to_rb_cShape(get_shape_by_id(((rb_shape_t)*shape).parent_id));
 }
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
@@ -4965,8 +4965,6 @@ VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
 
     return rb_shape_t_to_rb_cShape(shape);
 }
-
-
 
 static VALUE seen_ivars(struct rb_id_table* ivars)
 {
