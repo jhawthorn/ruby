@@ -1352,7 +1352,7 @@ vm_setivar_slowpath_attr(VALUE obj, ID id, VALUE val, const struct rb_callcache 
 }
 
 static inline VALUE
-vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr)
+vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_source_id, shape_id_t shape_dest_id, uint32_t index)
 {
 #if OPT_IC_FOR_IVAR
     if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
@@ -1362,24 +1362,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
         // ivar
         shape_id_t shape_id = get_shape_id(obj);
         if (shape_id != NO_CACHE_SHAPE_ID) {
-            shape_id_t shape_source_id = INVALID_SHAPE_ID;
-            if (is_attr) {
-                shape_source_id = vm_cc_attr_index_shape_source_id(cc);
-            }
-            else {
-                shape_source_id = vm_ic_attr_index_shape_source_id(ic);
-            }
             // Do we have a cache hit *and* is the CC intitialized
             if (shape_id == shape_source_id) {
-                uint32_t index = !is_attr ? vm_ic_attr_index(ic) : vm_cc_attr_index(cc);
-                shape_id_t shape_dest_id;
-                if (is_attr) {
-                    shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
-                }
-                else {
-                    shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
-                }
-
                 if (shape_dest_id == INVALID_SHAPE_ID || shape_id == INVALID_SHAPE_ID) {
                     rb_bug("wrong shape id dest: %d shape_id %d!\n", shape_dest_id, shape_id);
                 }
@@ -1402,14 +1386,17 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
+                /*
                 if (is_attr) {
                     RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_is_attr);
                 } else {
                     RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_not_attr);
                 }
+                */
 
                 return val; /* inline cache hit */
             }
+                /*
             else {
 #if RUBY_DEBUG
                 if (is_attr) {
@@ -1427,18 +1414,15 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
                 }
 #endif
             }
+*/
         }
     }
     else {
         RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
     }
+
+    return Qundef;
 #endif /* OPT_IC_FOR_IVAR */
-    if (is_attr) {
-        return vm_setivar_slowpath_attr(obj, id, val, cc);
-    }
-    else {
-        return vm_setivar_slowpath_ivar(obj, id, val, iseq, ic);
-    }
 }
 
 static VALUE
@@ -1533,7 +1517,11 @@ vm_getinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, IVC ic)
 static inline void
 vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC ic)
 {
-    vm_setivar(obj, id, val, iseq, ic, 0, 0);
+    shape_id_t shape_source_id = vm_ic_attr_index_shape_source_id(ic);
+    uint32_t index = vm_ic_attr_index(ic);
+    shape_id_t shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
+    if (vm_setivar(obj, id, val, iseq, shape_source_id, shape_dest_id, index) == Qundef)
+        vm_setivar_slowpath_ivar(obj, id, val, iseq, ic);
 }
 
 void
@@ -3234,7 +3222,14 @@ vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_c
     RB_DEBUG_COUNTER_INC(ccf_attrset);
     VALUE val = *(cfp->sp - 1);
     cfp->sp -= 2;
-    return vm_setivar(calling->recv, vm_cc_cme(cc)->def->body.attr.id, val, NULL, NULL, cc, 1);
+    shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
+    uint32_t index = vm_cc_attr_index(cc);
+    shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+    VALUE obj = calling->recv;
+    ID id = vm_cc_cme(cc)->def->body.attr.id;
+    VALUE res = vm_setivar(obj, id, val, NULL, shape_source_id, shape_dest_id, index);
+    if (res == Qundef) res = vm_setivar_slowpath_attr(obj, id, val, cc);
+    return res;
 }
 
 bool

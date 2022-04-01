@@ -1619,8 +1619,8 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
 void
 set_shape(VALUE obj, rb_shape_t* shape)
 {
-    set_shape_id(obj, shape->id);
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
+    set_shape_id(obj, shape->id);
     RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
 }
 
