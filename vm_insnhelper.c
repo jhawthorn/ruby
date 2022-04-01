@@ -1314,6 +1314,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 }
                 else {
                     vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
+                    RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
                 }
             }
             else {
@@ -1396,6 +1397,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 
                 RB_OBJ_WRITE(obj, &ptr[index], val);
 
+                // TODO: We should directly set it for speed
                 set_shape(obj, get_shape_by_id(shape_dest_id));
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);

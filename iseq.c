@@ -196,6 +196,20 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
             }
             break;
           case TS_IVC:
+            {
+                IVC ivc = (IVC)code[pos + op_no + 1];
+                shape_id_t shape_source_id = vm_ic_attr_index_shape_source_id(ivc);
+                shape_id_t shape_dest_id = vm_ic_attr_index_shape_dest_id(ivc);
+                if (shape_source_id != INVALID_SHAPE_ID) {
+                    rb_shape_t *shape = get_shape_by_id(shape_source_id);
+                    func(data, (VALUE)shape);
+                }
+                if (shape_dest_id != INVALID_SHAPE_ID) {
+                    rb_shape_t *shape = get_shape_by_id(shape_dest_id);
+                    func(data, (VALUE)shape);
+                }
+                break;
+            }
           case TS_ICVARC:
           case TS_ISE:
             {
