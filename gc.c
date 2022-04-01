@@ -3439,7 +3439,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 set_shape_by_id(shape->id, NULL);
                 rb_shape_t *parent = get_shape_by_id(shape->parent_id);
 
-                if (!rb_objspace_garbage_object_p(parent))
+                if (parent && !rb_objspace_garbage_object_p(parent))
                     rb_id_table_delete(parent->edges, shape->edge_name);
                 break;
             }

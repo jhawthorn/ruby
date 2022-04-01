@@ -277,7 +277,10 @@ struct iseq_inline_constant_cache {
 struct iseq_inline_iv_cache_entry {
     // struct rb_iv_index_tbl_entry *entry;
     // TODO: Split entry in three: shape_ids of shape_id_t (16bits) (source, dest) and attr_index (32 bit)
-    uint64_t entry;
+    // These should be shape_id_t
+    uint16_t source_shape_id;
+    uint16_t dest_shape_id;
+    uint32_t attr_index;
 };
 
 struct iseq_inline_cvar_cache_entry {

@@ -396,35 +396,37 @@ static inline unsigned int
 vm_ic_attr_index(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    return ((int)ic->entry & 0xFFFFFFFF) - 1;
+    // What is this -1
+    return (int)ic->attr_index - 1;
 }
 
 static inline bool
 vm_ic_attr_index_p(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    return (ic->entry & 0xFFFFFFFF) > 0;
+    return ic->attr_index > 0;
 }
 
 static inline uint16_t
 vm_ic_attr_shape_id(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    return (ic->entry >> 32) & 0xFFFF;
+    // Maybe dest here?
+    return ic->source_shape_id;
 }
 
 static inline uint16_t
 vm_ic_attr_index_shape_source_id(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    return ic->entry >> 48;
+    return ic->source_shape_id;
 }
 
 static inline uint16_t
 vm_ic_attr_index_shape_dest_id(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    return (ic->entry >> 32) & 0xFFFF;
+    return ic->dest_shape_id;
 }
 
 static inline unsigned int
@@ -493,7 +495,10 @@ vm_ic_attr_index_set(const struct iseq_inline_iv_cache_entry *ic, int index, sha
 {
     // VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     // VM_ASSERT(cc != vm_ic_empty());
-    *(uint64_t *)&ic->entry = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
+    // *(uint64_t *)&ic->entry = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
+    *(uint16_t *)&ic->source_shape_id = source_shape_id;
+    *(uint16_t *)&ic->dest_shape_id = dest_shape_id;
+    *(uint32_t *)&ic->attr_index = index + 1;
 }
 
 static inline void
@@ -501,7 +506,9 @@ vm_ic_attr_index_initialize(const struct iseq_inline_iv_cache_entry *ic, shape_i
 {
     // VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     // VM_ASSERT(cc != vm_ic_empty());
-    *(uint64_t *)&ic->entry = ((uint64_t)(shape_id) << 48) | ((uint64_t)(shape_id) << 32) | 0;
+    *(uint16_t *)&ic->source_shape_id = shape_id;
+    *(uint16_t *)&ic->dest_shape_id = shape_id;
+    *(uint32_t *)&ic->attr_index = 0;
 }
 
 static inline void
