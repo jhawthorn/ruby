@@ -58,6 +58,7 @@ typedef struct rb_shape rb_shape_t;
 
 shape_id_t get_shape_id(VALUE obj);
 rb_shape_t* get_shape_by_id(shape_id_t shape_id);
+rb_shape_t* get_shape_by_id_without_assertion(shape_id_t shape_id);
 rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 rb_shape_t* get_root_shape();

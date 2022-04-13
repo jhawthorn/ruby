@@ -3435,11 +3435,12 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
+                printf("freeing shape: %d, parent: %d\n", shape->id, shape->parent_id);
                 if(shape->edges) rb_id_table_free(shape->edges);
                 set_shape_by_id(shape->id, NULL);
-                rb_shape_t *parent = get_shape_by_id(shape->parent_id);
+                rb_shape_t *parent = get_shape_by_id_without_assertion(shape->parent_id);
 
-                if (parent && !rb_objspace_garbage_object_p(parent))
+                if (parent && !rb_objspace_garbage_object_p((VALUE)parent))
                     rb_id_table_delete(parent->edges, shape->edge_name);
                 break;
             }
@@ -5016,7 +5017,7 @@ static VALUE shape_count(VALUE self) {
     // Might want to extract this into a get_root_shape
     int shape_count = 0;
     for(int i=0; i<MAX_SHAPE_ID; i++) {
-        if(get_shape_by_id(i)) shape_count++;
+        if(get_shape_by_id_without_assertion(i)) shape_count++;
     }
     return INT2NUM(shape_count);
 }
@@ -7122,6 +7123,23 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
             const struct rb_callcache *cc = (const struct rb_callcache *)obj;
             // should not mark klass here
             gc_mark(objspace, (VALUE)vm_cc_cme(cc));
+
+            // Check it's an attr_(reader|writer)
+            if (cc->cme_ && (
+                        cc->cme_->def->type == VM_METHOD_TYPE_ATTRSET ||
+                        cc->cme_->def->type == VM_METHOD_TYPE_IVAR
+                        )) {
+                shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
+                shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
+                if (shape_source_id != INVALID_SHAPE_ID) {
+                    rb_shape_t *shape = get_shape_by_id(shape_source_id);
+                    gc_mark(objspace, (VALUE)shape);
+                }
+                if (shape_dest_id != INVALID_SHAPE_ID) {
+                    rb_shape_t *shape = get_shape_by_id(shape_dest_id);
+                    gc_mark(objspace, (VALUE)shape);
+                }
+            }
         }
         return;
       case imemo_constcache:

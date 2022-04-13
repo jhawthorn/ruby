@@ -1648,13 +1648,26 @@ set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 }
 
 rb_shape_t*
+get_shape_by_id_without_assertion(shape_id_t shape_id)
+{
+    RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
+
+    rb_vm_t *vm = GET_VM();
+    rb_shape_t *shape = vm->shape_list[shape_id];
+    return shape;
+}
+
+rb_shape_t*
 get_shape_by_id(shape_id_t shape_id)
 {
     RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
 
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
-//    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
+    if (!IMEMO_TYPE_P(shape, imemo_shape)) {
+        printf("looking for shape_id: %d\n", shape_id);
+    }
+    RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     return shape;
 }
 
@@ -1774,7 +1787,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                             rb_id_table_copy(shape->iv_table));
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
-                    RB_OBJ_WRITTEN((VALUE)shape, Qundef, (VALUE)new_shape);
+                    RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
 
                     //  Only insert if the id is an internal one
                     if (tt == SHAPE_IVAR) {
