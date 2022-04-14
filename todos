@@ -1,3 +1,8 @@
+edges should store pointers, not IDs
+check if we need predicates for NO_CACHE and FROZEN
+
+----
+
 Can make shapes shareable, need to take a ractor lock each time we mutate a
 shape - transition
 

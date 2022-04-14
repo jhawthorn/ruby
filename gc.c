@@ -3100,7 +3100,7 @@ static enum rb_id_table_iterator_result
 remove_child_shapes_parent_id(VALUE value, void *ref)
 {
     rb_shape_t * shape = (rb_shape_t *) value;
-    shape->parent_id = INVALID_SHAPE_ID;
+    shape->parent = NULL;
     return ID_TABLE_CONTINUE;
 }
 
@@ -3447,18 +3447,18 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 if(shape->edges) {
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
                     rb_id_table_free(shape->edges);
+                    shape->edges = NULL;
                 }
                 set_shape_by_id(SHAPE_ID(shape), NULL);
 
-                // The shape won't have a valid parent_id if the shape's parent
-                // has already been garbage collected
-                if (shape->parent_id != INVALID_SHAPE_ID) {
-                    rb_shape_t *parent = get_shape_by_id_without_assertion(shape->parent_id);
+                rb_shape_t *parent = shape->parent;
 
-                    // The case where we have a non-garbage parent, but not parent->edges is
-                    // when a _new_ shape has reused an old shape's slot
-                    if (parent && !rb_objspace_garbage_object_p((VALUE)parent) && parent->edges) {
-                        rb_id_table_delete(parent->edges, shape->edge_name);
+                // The case where we have a non-garbage parent, but not parent->edges is
+                // when a _new_ shape has reused an old shape's slot
+                if (parent && !rb_objspace_garbage_object_p((VALUE)parent)) {
+                    RUBY_ASSERT(parent->edges);
+                    if (!rb_id_table_delete(parent->edges, shape->edge_name)) {
+                        rb_bug("Edge %s should exist", rb_id2name(shape->edge_name));
                     }
                 }
                 break;
@@ -4907,7 +4907,7 @@ rb_shape_parent_id(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return INT2NUM(shape->parent_id);
+    return INT2NUM(SHAPE_ID(shape->parent));
 }
 
 static VALUE parse_key(ID key) {
@@ -4972,7 +4972,7 @@ rb_shape_parent(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return rb_shape_t_to_rb_cShape(get_shape_by_id(((rb_shape_t)*shape).parent_id));
+    return rb_shape_t_to_rb_cShape(((rb_shape_t)*shape).parent);
 }
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
@@ -5023,7 +5023,7 @@ VALUE rb_obj_shape(rb_shape_t* shape) {
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(SHAPE_ID(shape)));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("seen_ivars")), seen_ivars(shape->iv_table));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(shape->parent_id));
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(SHAPE_ID(shape->parent)));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edge_name")), rb_id2str(shape->edge_name));
     return rb_shape;
 }
@@ -7171,7 +7171,7 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
         {
             rb_shape_t *shape = (rb_shape_t *)obj;
             if (!root_shape_p(shape))
-                gc_mark(objspace, (VALUE)get_shape_by_id(shape->parent_id));
+                gc_mark(objspace, (VALUE)shape->parent);
         }
         return;
 #if VM_CHECK_MODE > 0

@@ -1554,6 +1554,28 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     return val;
 }
 
+#define SHAPE_UNMARKABLE IMEMO_FL_USER0
+
+static const struct rb_shape invalid_shape = {
+    .flags = T_IMEMO | (imemo_shape << FL_USHIFT) | SHAPE_UNMARKABLE,
+    .parent = NULL,
+    .edges = NULL,
+    .iv_table = NULL,
+    .edge_name = 0
+};
+
+rb_shape_t *
+rb_invalid_shape(void)
+{
+    return (rb_shape_t *)&invalid_shape;
+}
+
+bool
+rb_invalid_shape_p(rb_shape_t * shape)
+{
+    return shape == rb_invalid_shape();
+}
+
 shape_id_t get_shape_id(VALUE obj)
 {
     shape_id_t shape_id = ROOT_SHAPE_ID;
@@ -1703,7 +1725,7 @@ rb_shape_t* get_shape(VALUE obj)
 rb_shape_t*
 get_parent_shape(VALUE obj)
 {
-    return get_shape_by_id(get_shape(obj)->parent_id);
+    return get_shape(obj)->parent;
 }
 
 rb_shape_t*
@@ -1749,12 +1771,12 @@ shape_alloc(void)
 }
 
 rb_shape_t *
-rb_shape_alloc(shape_id_t shape_id, ID edge_name, shape_id_t parent_id, struct rb_id_table * iv_table)
+rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb_id_table * iv_table)
 {
     rb_shape_t * shape = shape_alloc();
     set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
-    shape->parent_id = parent_id;
+    shape->parent = parent;
     shape->iv_table = iv_table;
     return shape;
 }
@@ -1807,7 +1829,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                 else {
                     rb_shape_t * new_shape = rb_shape_alloc(next_shape_id,
                             id,
-                            SHAPE_ID(shape),
+                            shape,
                             rb_id_table_copy(shape->iv_table));
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
@@ -2006,7 +2028,7 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
         return;
     }
     else if (frozen_shape_p(shape)) {
-        return iterate_over_shapes(obj, get_shape_by_id(shape->parent_id), iv_list, numiv, callback, arg);
+        return iterate_over_shapes(obj, shape->parent, iv_list, numiv, callback, arg);
     }
     else if (numiv <= 0) {
         rb_bug("bad numiv iterating over shapes\n");
@@ -2017,7 +2039,7 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
             parent_shape = shape;
         }
         else {
-            parent_shape = get_shape_by_id(shape->parent_id);
+            parent_shape = shape->parent;
         }
         iterate_over_shapes(obj, parent_shape, iv_list, numiv - 1, callback, arg);
 
