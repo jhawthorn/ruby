@@ -1294,7 +1294,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
         // no cache -> no cache
         //
         // both caches
-        if (shape->id != NO_CACHE_SHAPE_ID && next_shape->id == NO_CACHE_SHAPE_ID) {
+        if (SHAPE_ID(shape) != NO_CACHE_SHAPE_ID && SHAPE_ID(next_shape) == NO_CACHE_SHAPE_ID) {
             // Copy IV index table
             struct rb_id_table * iv_index_tbl = rb_id_table_copy(shape->iv_table);
 
@@ -1307,7 +1307,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             ROBJECT(obj)->as.heap.iv_index_tbl = iv_index_tbl;
         }
 
-        if (shape->id == NO_CACHE_SHAPE_ID || next_shape->id == NO_CACHE_SHAPE_ID) {
+        if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID || SHAPE_ID(next_shape) == NO_CACHE_SHAPE_ID) {
             index = (uint32_t)rb_id_table_size(ROBJECT(obj)->as.heap.iv_index_tbl);
             rb_id_table_insert(ROBJECT(obj)->as.heap.iv_index_tbl, id, (VALUE)index);
         }
@@ -1319,12 +1319,12 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
                 if (is_attr) {
                     if (vm_cc_markable(cc)) {
-                        vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
+                        vm_cc_attr_index_set(cc, (int)(index), SHAPE_ID(shape), SHAPE_ID(next_shape));
                         RB_OBJ_WRITTEN(cc, Qundef, (VALUE)next_shape);
                     }
                 }
                 else {
-                    vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);
+                    vm_ic_attr_index_set(ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
                 }
             }

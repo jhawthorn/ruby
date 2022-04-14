@@ -41,8 +41,8 @@ typedef uint16_t shape_id_t;
 
 struct rb_shape {
     // Put frozen into the shape's flags
+    // Shape's ID is within its flags
     VALUE flags;
-    shape_id_t id;
     shape_id_t parent_id;
     // id -> st_table;
     struct rb_id_table * edges;
@@ -50,6 +50,8 @@ struct rb_shape {
     struct rb_id_table * iv_table;
     ID edge_name;
 };
+
+#define SHAPE_ID(shape) get_shape_id((VALUE)shape)
 
 #ifndef rb_shape_t
 typedef struct rb_shape rb_shape_t;

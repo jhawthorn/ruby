@@ -889,7 +889,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
     rb_shape_t* shape = get_shape(obj);
     struct rb_id_table *iv_table;
 
-    if (shape->id == NO_CACHE_SHAPE_ID) {
+    if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
     }
     else {
@@ -1097,7 +1097,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     ivtbl = gen_ivtbl_resize(ivtbl, newsize);
     *v = (st_data_t)ivtbl;
     ivup->u.ivtbl = ivtbl;
-    ivtbl->shape_id = ivup->shape->id;
+    ivtbl->shape_id = SHAPE_ID(ivup->shape);
     return ST_CONTINUE;
 }
 
@@ -1362,7 +1362,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     VALUE ent_data;
     struct rb_id_table *iv_table;
 
-    if (ivup->shape->id == NO_CACHE_SHAPE_ID) {
+    if (SHAPE_ID(ivup->shape) == NO_CACHE_SHAPE_ID) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
         if ((VALUE)iv_table == Qundef) {
             iv_table = rb_id_table_create(0);
@@ -1564,6 +1564,11 @@ shape_id_t get_shape_id(VALUE obj)
       case T_MODULE:
           return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
           break;
+      case T_IMEMO:
+          if (imemo_type(obj) == imemo_shape) {
+              return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+              break;
+          }
       default:
           {
               struct gen_ivtbl *ivtbl = 0;
@@ -1606,6 +1611,12 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
           RBASIC(obj)->flags &= 0xffffffff0000ffff;
           RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
           return;
+      case T_IMEMO:
+          if (imemo_type(obj) == imemo_shape) {
+              RBASIC(obj)->flags &= 0xffffffff0000ffff;
+              RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
+              return;
+          }
       default:
           {
               struct gen_ivtbl *ivtbl = 0;
@@ -1628,9 +1639,9 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
 void
 set_shape(VALUE obj, rb_shape_t* shape)
 {
-    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", shape->id, &obj, &shape);
+//    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", SHAPE_ID(shape), &obj, &shape);
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    set_shape_id(obj, shape->id);
+    set_shape_id(obj, SHAPE_ID(shape));
     RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
 }
 
@@ -1741,7 +1752,7 @@ rb_shape_t *
 rb_shape_alloc(shape_id_t shape_id, ID edge_name, shape_id_t parent_id, struct rb_id_table * iv_table)
 {
     rb_shape_t * shape = shape_alloc();
-    shape->id = shape_id;
+    set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
     shape->parent_id = parent_id;
     shape->iv_table = iv_table;
@@ -1796,7 +1807,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                 else {
                     rb_shape_t * new_shape = rb_shape_alloc(next_shape_id,
                             id,
-                            shape->id,
+                            SHAPE_ID(shape),
                             rb_id_table_copy(shape->iv_table));
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
@@ -1814,7 +1825,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                     set_shape_by_id(next_shape_id, new_shape);
 
                     // TODO: Need to do this earlier, before we allocate the new shape
-                    if (new_shape->id > MAX_SHAPE_ID) {
+                    if (SHAPE_ID(new_shape) > MAX_SHAPE_ID) {
                         fprintf(stderr, "Too many shapes\n");
                         abort();
                     }
@@ -2002,7 +2013,7 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
     }
     else {
         rb_shape_t *parent_shape;
-        if (shape->id == NO_CACHE_SHAPE_ID) {
+        if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID) {
             parent_shape = shape;
         }
         else {
@@ -2034,7 +2045,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     rb_shape_t* shape = get_shape(obj);
     struct rb_id_table *iv_index_tbl;
 
-    if (shape->id == NO_CACHE_SHAPE_ID) {
+    if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID) {
         iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
         uint32_t table_size = (uint32_t) rb_id_table_size(iv_index_tbl);
         VALUE * array = xmalloc(sizeof(VALUE) * table_size);

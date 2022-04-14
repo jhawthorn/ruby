@@ -3443,12 +3443,12 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
-                fprintf(stderr, "freeing shape: %d, parent: %d\n", shape->id, shape->parent_id);
+//                fprintf(stderr, "freeing shape: %d, parent: %d\n", shape->id, shape->parent_id);
                 if(shape->edges) {
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
                     rb_id_table_free(shape->edges);
                 }
-                set_shape_by_id(shape->id, NULL);
+                set_shape_by_id(SHAPE_ID(shape), NULL);
 
                 // The shape won't have a valid parent_id if the shape's parent
                 // has already been garbage collected
@@ -4899,7 +4899,7 @@ rb_shape_id(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return INT2NUM(shape->id);
+    return INT2NUM(SHAPE_ID(shape));
 }
 
 static VALUE
@@ -5020,7 +5020,7 @@ static VALUE edges(struct rb_id_table* edges)
 VALUE rb_obj_shape(rb_shape_t* shape) {
     VALUE rb_shape = rb_hash_new();
 
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(shape->id));
+    rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(SHAPE_ID(shape)));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("seen_ivars")), seen_ivars(shape->iv_table));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(shape->parent_id));
