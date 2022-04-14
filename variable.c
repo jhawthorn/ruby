@@ -1150,7 +1150,7 @@ rb_mark_generic_ivar(VALUE obj)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, 0, &ivtbl)) {
-        rb_gc_mark(get_shape_by_id(ivtbl->shape_id));
+        rb_gc_mark((VALUE)get_shape_by_id(ivtbl->shape_id));
 	gen_ivtbl_mark(ivtbl);
     }
 }
@@ -1407,7 +1407,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 
     ivup.u.ivtbl->ivptr[ivup.index] = val;
     set_shape(obj, shape);
-    RB_GC_GUARD(shape);
+    RB_GC_GUARD(*(VALUE *)shape);
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
@@ -1628,6 +1628,7 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
 void
 set_shape(VALUE obj, rb_shape_t* shape)
 {
+    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", shape->id, &obj, &shape);
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     set_shape_id(obj, shape->id);
     RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
@@ -1640,12 +1641,14 @@ set_shape_in_bitmap(shape_id_t shape_id) {
     vm->allocated_shape_bitmap[index] |= (shape_id - (index * sizeof(uint)));
 }
 
+/*
 void
 unset_shape_in_bitmap(shape_id_t shape_id) {
     rb_vm_t *vm = GET_VM();
     uint index = shape_id / sizeof(uint);
 //    vm->allocated_shape_bitmap[index] &= ^(shape_id - (index * sizeof(uint)));
 }
+*/
 
 void
 set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)

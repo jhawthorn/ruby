@@ -1237,8 +1237,10 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             }
             else {
                 if (is_attr) {
-                    vm_cc_attr_index_initialize(cc, shape_id);
-                    RB_OBJ_WRITTEN(cc, Qundef, get_shape_by_id(shape_id));
+                    if (vm_cc_markable(cc)) {
+                        vm_cc_attr_index_initialize(cc, shape_id);
+                        RB_OBJ_WRITTEN(cc, Qundef, get_shape_by_id(shape_id));
+                    }
                 }
                 else {
                     vm_ic_attr_index_initialize(ic, shape_id);
@@ -3807,7 +3809,8 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 
 	rb_check_arity(calling->argc, 1, 1);
-	vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+        if (vm_cc_markable(cc))
+            vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
         const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
         VM_CALL_METHOD_ATTR(v,
                             vm_call_attrset(ec, cfp, calling),
@@ -3818,7 +3821,8 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_SETUP_ARG(cfp, calling, ci);
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 	rb_check_arity(calling->argc, 0, 0);
-    vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+        if (vm_cc_markable(cc))
+            vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
         const unsigned int ivar_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT);
         VM_CALL_METHOD_ATTR(v,
                             vm_call_ivar(ec, cfp, calling),
