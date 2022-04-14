@@ -1111,8 +1111,10 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
 {
     // fill cache
     if (is_attr) {
-        vm_cc_attr_index_set(cc, index, shape_id, shape_id);
-        RB_OBJ_WRITTEN(cc, Qundef, get_shape_by_id(shape_id));
+        if (vm_cc_markable(cc)) {
+            vm_cc_attr_index_set(cc, index, shape_id, shape_id);
+            RB_OBJ_WRITTEN(cc, Qundef, get_shape_by_id(shape_id));
+        }
     }
     else {
         vm_ic_attr_index_set(ic, index, shape_id, shape_id);
@@ -1314,17 +1316,10 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 }
 
                 if (is_attr) {
-                    vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
-                    struct rb_id_table *cc_tbl = RCLASS_CC_TBL(cc->klass);
-
-                    VALUE lol;
-                    if (rb_id_table_lookup(cc_tbl, cc->cme_->called_id, &lol)) {
-                        fprintf(stderr, "HAVE writing (klass: %p) cc cache %d -> %d\n", cc->klass, shape->id, next_shape->id);
+                    if (vm_cc_markable(cc)) {
+                        vm_cc_attr_index_set(cc, (int)(index), shape->id, next_shape->id);
+                        RB_OBJ_WRITTEN(cc, Qundef, (VALUE)next_shape);
                     }
-                    else {
-                        fprintf(stderr, "NOHAVE writing (klass: %p) cc cache %d -> %d\n", cc->klass, shape->id, next_shape->id);
-                    }
-                    RB_OBJ_WRITTEN(cc, Qundef, (VALUE)next_shape);
                 }
                 else {
                     vm_ic_attr_index_set(ic, (int)index, shape->id, next_shape->id);

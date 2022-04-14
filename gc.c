@@ -3435,13 +3435,16 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
-                printf("freeing shape: %d, parent: %d\n", shape->id, shape->parent_id);
+//                printf("freeing shape: %d, parent: %d\n", shape->id, shape->parent_id);
                 if(shape->edges) rb_id_table_free(shape->edges);
                 set_shape_by_id(shape->id, NULL);
                 rb_shape_t *parent = get_shape_by_id_without_assertion(shape->parent_id);
 
-                if (parent && !rb_objspace_garbage_object_p((VALUE)parent))
+                // The case where we have a non-garbage parent, but not parent->edges is
+                // when a _new_ shape has reused an old shape's slot
+                if (parent && !rb_objspace_garbage_object_p((VALUE)parent) && parent->edges) {
                     rb_id_table_delete(parent->edges, shape->edge_name);
+                }
                 break;
             }
 	}

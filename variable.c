@@ -1150,6 +1150,7 @@ rb_mark_generic_ivar(VALUE obj)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, 0, &ivtbl)) {
+        rb_gc_mark(get_shape_by_id(ivtbl->shape_id));
 	gen_ivtbl_mark(ivtbl);
     }
 }
@@ -1372,13 +1373,18 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
         ROBJECT(obj)->as.heap.iv_index_tbl = iv_table;
     }
     else {
+        // This sets the iv table in the ivup struct
         ivup->u.iv_index_tbl = ivup->shape->iv_table;
     }
 
+    // This should always hit
     if (rb_id_table_lookup(ivup->u.iv_index_tbl, id, &ent_data)) {
         ivup->index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
 	return;
+    }
+    else {
+        rb_bug("Should have found the id here\n");
     }
 }
 
@@ -1386,7 +1392,9 @@ static void
 generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
-    ivup.shape = get_next_shape(get_shape(obj), id);
+    // The returned shape should have `id` in its iv_table
+    rb_shape_t * shape = get_next_shape(get_shape(obj), id);
+    ivup.shape = shape;
     ivup.iv_extended = 0;
 
     RB_VM_LOCK_ENTER();
@@ -1398,7 +1406,8 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     RB_VM_LOCK_LEAVE();
 
     ivup.u.ivtbl->ivptr[ivup.index] = val;
-    transition_shape(obj, id);
+    set_shape(obj, shape);
+    RB_GC_GUARD(shape);
 
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
@@ -1665,7 +1674,8 @@ get_shape_by_id(shape_id_t shape_id)
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
     if (!IMEMO_TYPE_P(shape, imemo_shape)) {
-        printf("looking for shape_id: %d\n", shape_id);
+        fprintf(stderr, "looking for shape_id: %d\n", shape_id);
+        rb_bug("1669");
     }
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     return shape;
