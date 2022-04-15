@@ -20,5 +20,6 @@ rb_shape_t * rb_invalid_shape(void);
 bool rb_invalid_shape_p(rb_shape_t * shape);
 int rb_ivar_generic_ivtbl_lookup(VALUE obj, struct gen_ivtbl **);
 VALUE rb_ivar_generic_lookup_with_index(VALUE obj, ID id, uint32_t index);
+bool rb_no_cache_shape_p(rb_shape_t * shape);
 
 #endif /* RUBY_TOPLEVEL_VARIABLE_H */

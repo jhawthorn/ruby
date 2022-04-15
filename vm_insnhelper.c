@@ -1294,7 +1294,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
         // no cache -> no cache
         //
         // both caches
-        if (SHAPE_ID(shape) != NO_CACHE_SHAPE_ID && SHAPE_ID(next_shape) == NO_CACHE_SHAPE_ID) {
+        if (!rb_no_cache_shape_p(shape) && !rb_no_cache_shape_p(next_shape)) {
             // Copy IV index table
             struct rb_id_table * iv_index_tbl = rb_id_table_copy(shape->iv_table);
 
@@ -1307,7 +1307,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
             ROBJECT(obj)->as.heap.iv_index_tbl = iv_index_tbl;
         }
 
-        if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID || SHAPE_ID(next_shape) == NO_CACHE_SHAPE_ID) {
+        if (rb_no_cache_shape_p(shape) || rb_no_cache_shape_p(next_shape)) {
             index = (uint32_t)rb_id_table_size(ROBJECT(obj)->as.heap.iv_index_tbl);
             rb_id_table_insert(ROBJECT(obj)->as.heap.iv_index_tbl, id, (VALUE)index);
         }

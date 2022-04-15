@@ -889,7 +889,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
     rb_shape_t* shape = get_shape(obj);
     struct rb_id_table *iv_table;
 
-    if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID) {
+    if (rb_no_cache_shape_p(shape)) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
     }
     else {
@@ -1362,7 +1362,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     VALUE ent_data;
     struct rb_id_table *iv_table;
 
-    if (SHAPE_ID(ivup->shape) == NO_CACHE_SHAPE_ID) {
+    if (rb_no_cache_shape_p(ivup->shape)) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
         if ((VALUE)iv_table == Qundef) {
             iv_table = rb_id_table_create(0);
@@ -1575,6 +1575,15 @@ rb_invalid_shape_p(rb_shape_t * shape)
 {
     return shape == rb_invalid_shape();
 }
+
+bool
+rb_no_cache_shape_p(rb_shape_t * shape)
+{
+    // JEM TODO: Could likely save time by comparing IDs
+    rb_vm_t *vm = GET_VM();
+    return shape == vm->no_cache_shape;
+}
+
 
 shape_id_t get_shape_id(VALUE obj)
 {
@@ -2035,7 +2044,7 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
     }
     else {
         rb_shape_t *parent_shape;
-        if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID) {
+        if (rb_no_cache_shape_p(shape)) {
             parent_shape = shape;
         }
         else {
@@ -2067,7 +2076,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     rb_shape_t* shape = get_shape(obj);
     struct rb_id_table *iv_index_tbl;
 
-    if (SHAPE_ID(shape) == NO_CACHE_SHAPE_ID) {
+    if (rb_no_cache_shape_p(shape)) {
         iv_index_tbl = ROBJECT(obj)->as.heap.iv_index_tbl;
         uint32_t table_size = (uint32_t) rb_id_table_size(iv_index_tbl);
         VALUE * array = xmalloc(sizeof(VALUE) * table_size);
