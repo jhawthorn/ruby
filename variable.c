@@ -1719,7 +1719,7 @@ get_shape_by_id(shape_id_t shape_id)
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
     if (!IMEMO_TYPE_P(shape, imemo_shape)) {
-        fprintf(stderr, "looking for shape_id: %d\n", shape_id);
+        fprintf(stderr, "-----looking for shape_id: %d\n", shape_id);
         rb_bug("1669");
     }
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));

@@ -19,6 +19,7 @@
 #include "internal/hash.h"
 #include "internal/imemo.h"
 #include "internal/sanitizers.h"
+#include "internal/variable.h"
 #include "node.h"
 #include "ruby/io.h"
 #include "ruby/re.h"

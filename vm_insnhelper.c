@@ -1117,7 +1117,7 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
         }
     }
     else {
-        vm_ic_attr_index_set(ic, index, shape_id, shape_id);
+        vm_ic_attr_index_set(iseq, ic, index, shape_id, shape_id);
         RB_OBJ_WRITTEN(iseq, Qundef, get_shape_by_id(shape_id));
     }
 }
@@ -1320,12 +1320,35 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 if (is_attr) {
                     if (vm_cc_markable(cc)) {
                         vm_cc_attr_index_set(cc, (int)(index), SHAPE_ID(shape), SHAPE_ID(next_shape));
+                        RB_OBJ_WRITTEN(cc, Qundef, (VALUE)shape);
                         RB_OBJ_WRITTEN(cc, Qundef, (VALUE)next_shape);
                     }
                 }
                 else {
-                    vm_ic_attr_index_set(ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
+                    vm_ic_attr_index_set(iseq, ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
+                    RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
+                    /*
+                     * So here's what's going on:
+                     * We think the shape is reachable from the iseq, and
+                     * someone else is cutting the reference to the shape from
+                     * the iseq, so it's not being found later
+                     *
+                     * To confirm, we want to fix this code up so that it flags
+                     * if the shape _isnt_ reachable from the iseq. Expectation
+                     * is no flag will be thrown
+                     *
+                     * If the expectation is met, then we will want to get a
+                     * reproducable error so we can watch the memory address of
+                     * the iseq and see who is cutting the reference
+                    struct check_shape ctx;
+                    ctx.shape = next_shape;
+                    ctx.found = 0;
+                    rb_objspace_reachable_objects_from(iseq, check_shapes, &ctx);
+                    if (!ctx.found) {
+                        rb_bug("couldn't find the shape we just set");
+                    }
+                    */
                 }
             }
             else {
@@ -1393,6 +1416,11 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                 RB_OBJ_WRITE(obj, &ptr[index], val);
 
                 // TODO: We should directly set it for speed
+                rb_vm_t *vm = GET_VM();
+                if (!vm->shape_list[shape_dest_id]) {
+                    fprintf(stderr, "couldn't find iseq: %p shape_id: %d\n", iseq, shape_dest_id);
+                    abort();
+                }
                 set_shape(obj, get_shape_by_id(shape_dest_id));
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
