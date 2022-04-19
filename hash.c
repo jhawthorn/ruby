@@ -682,7 +682,7 @@ ar_equal(VALUE x, VALUE y)
 }
 
 static unsigned
-ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
+ar_find_entry_hint_legcy(VALUE hash, ar_hint_t hint, st_data_t key)
 {
     unsigned i, bound = RHASH_AR_TABLE_BOUND(hash);
     const ar_hint_t *hints = RHASH(hash)->ar_hint.ary;
@@ -722,6 +722,56 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
     }
     RB_DEBUG_COUNTER_INC(artable_hint_notfound);
     return RHASH_AR_TABLE_MAX_BOUND;
+}
+
+static unsigned
+ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
+{
+    // Here we are able to test against all stored AR hints at once
+    // https://graphics.stanford.edu/~seander/bithacks.html#ValueInWord
+    unsigned long ones = (~0UL / 255); // 0x01010101
+    unsigned long cmp = hint * ones;   // for hint 0xab: 0xabababab
+
+    unsigned long hints = RHASH(hash)->ar_hint.word;
+    unsigned long v = hints ^ cmp;
+
+    unsigned long found = ((v - ones) & ~v & (ones << 7));
+    found >>= 7;
+
+    unsigned ret = ar_find_entry_hint_legcy(hash, hint, key);
+
+    unsigned bound = RHASH_AR_TABLE_BOUND(hash);
+    //fprintf(stderr, "found: %p, pos: %i, ret: %i\n", found, pos, ret);
+
+    // test
+    //found = ones << 7;
+
+    unsigned i = ntz_intptr(found) >> 3;
+    while (i < bound) {
+        //fprintf(stderr, "i: %i, ary: %i, hint: %i\n", i, RHASH(hash)->ar_hint.ary[i], hint);
+        RUBY_ASSERT_ALWAYS(RHASH(hash)->ar_hint.ary[i] == hint);
+
+        ar_table_pair *pair = RHASH_AR_TABLE_REF(hash, i);
+        if (ar_equal(key, pair->key)) {
+            RB_DEBUG_COUNTER_INC(artable_hint_hit);
+            return i;
+        }
+
+        // advance past current hint
+        i++;
+        found >> 8;
+
+        if (found == 0) {
+            // nothing found
+            return RHASH_AR_TABLE_MAX_BOUND;
+        }
+
+        // advance past all non-matching hints
+        found >>= i * 8;
+        i += ntz_intptr(found) >> 3;
+    }
+
+    return ret;
 }
 
 static unsigned
@@ -1088,7 +1138,7 @@ ar_insert(VALUE hash, st_data_t key, st_data_t value)
     }
 }
 
-static int
+static int __attribute__((noinline))
 ar_lookup(VALUE hash, st_data_t key, st_data_t *value)
 {
     if (RHASH_AR_TABLE_SIZE(hash) == 0) {
