@@ -3443,7 +3443,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
-                fprintf(stderr, "freeing shape: %d\n", SHAPE_ID(shape));
+                // fprintf(stderr, "freeing shape: %d\n", SHAPE_ID(shape));
                 if(shape->edges) {
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
                     rb_id_table_free(shape->edges);
