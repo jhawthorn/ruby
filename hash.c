@@ -1045,10 +1045,10 @@ ar_foreach_check(VALUE hash, st_foreach_check_callback_func *func, st_data_t arg
                   pair = RHASH_AR_TABLE_REF(hash, i);
                   if (pair->key == never) break;
                   ret = ar_find_entry_hint(hash, hint, key);
-                  unsigned old_ret = ar_find_entry_hint_legacy(hash, hint, key);
+                  //unsigned old_ret = ar_find_entry_hint_legacy(hash, hint, key);
                   //fprintf(stderr, "new ret: %u\n", ret);
                   //fprintf(stderr, "old ret: %u\n", old_ret);
-                  RUBY_ASSERT(ret == old_ret);
+                  //RUBY_ASSERT(ret == old_ret);
 
                   if (ret == RHASH_AR_TABLE_MAX_BOUND) {
                       retval = (*func)(0, 0, arg, 1);
