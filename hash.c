@@ -673,8 +673,6 @@ ar_alloc_table(VALUE hash)
     return tab;
 }
 
-NOINLINE(static int ar_equal(VALUE x, VALUE y));
-
 static int
 ar_equal(VALUE x, VALUE y)
 {
@@ -771,7 +769,7 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
 
         do {
             unsigned long found_shift = (found >> 8) >> (i * 8);
-            if (!found_shift) {
+            if (LIKELY(!found_shift)) {
                 // nothing found
                 return RHASH_AR_TABLE_MAX_BOUND;
             }
