@@ -682,7 +682,7 @@ ar_equal(VALUE x, VALUE y)
 }
 
 static unsigned
-ar_find_entry_hint_legcy(VALUE hash, ar_hint_t hint, st_data_t key)
+ar_find_entry_hint_legacy(VALUE hash, ar_hint_t hint, st_data_t key)
 {
     unsigned i, bound = RHASH_AR_TABLE_BOUND(hash);
     const ar_hint_t *hints = RHASH(hash)->ar_hint.ary;
@@ -727,51 +727,75 @@ ar_find_entry_hint_legcy(VALUE hash, ar_hint_t hint, st_data_t key)
 static unsigned
 ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
 {
+    unsigned bound = RHASH_AR_TABLE_BOUND(hash);
+    if (bound == 0)
+        return RHASH_AR_TABLE_MAX_BOUND;
+
     // Here we are able to test against all stored AR hints at once
     // https://graphics.stanford.edu/~seander/bithacks.html#ValueInWord
     unsigned long ones = (~0UL / 255); // 0x01010101
     unsigned long cmp = hint * ones;   // for hint 0xab: 0xabababab
 
-    unsigned long hints = RHASH(hash)->ar_hint.word;
-    unsigned long v = hints ^ cmp;
+    unsigned long hints_word = RHASH(hash)->ar_hint.word;
+    unsigned long v = hints_word ^ cmp;
 
-    unsigned long found = ((v - ones) & ~v & (ones << 7));
-    found >>= 7;
+    unsigned long mask = ones << 7; // 0x80808080
 
-    unsigned ret = ar_find_entry_hint_legcy(hash, hint, key);
+    // mask away matching hints past bound
+    mask >>= ((8 - bound) * 8);
+    //fprintf(stderr, "mask: %#lx, bound: %i\n", mask, bound);
 
-    unsigned bound = RHASH_AR_TABLE_BOUND(hash);
-    //fprintf(stderr, "found: %p, pos: %i, ret: %i\n", found, pos, ret);
+    unsigned long found = ((v - ones) & ~v & mask);
+
+    //fprintf(stderr, "found: %#lx\n", found);
+
+    if (!found)
+        return RHASH_AR_TABLE_MAX_BOUND;
+
+    //fprintf(stderr, "found: %#x, pos: %i, ret: %i\n", found, pos, ret);
 
     // test
     //found = ones << 7;
 
-    unsigned i = ntz_intptr(found) >> 3;
-    while (i < bound) {
+    unsigned i = ((ntz_intptr(found)) >> 3);
+    for (;;) {
         //fprintf(stderr, "i: %i, ary: %i, hint: %i\n", i, RHASH(hash)->ar_hint.ary[i], hint);
-        RUBY_ASSERT_ALWAYS(RHASH(hash)->ar_hint.ary[i] == hint);
+        RUBY_ASSERT(i < bound);
+        RUBY_ASSERT(RHASH(hash)->ar_hint.ary[i] == hint);
 
         ar_table_pair *pair = RHASH_AR_TABLE_REF(hash, i);
-        if (ar_equal(key, pair->key)) {
+        if (LIKELY(ar_equal(key, pair->key))) {
             RB_DEBUG_COUNTER_INC(artable_hint_hit);
             return i;
         }
 
-        // advance past current hint
-        i++;
-        found >> 8;
+        do {
+            unsigned long found_shift = (found >> 8) >> (i * 8);
+            if (!found_shift) {
+                // nothing found
+                return RHASH_AR_TABLE_MAX_BOUND;
+            }
 
-        if (found == 0) {
-            // nothing found
-            return RHASH_AR_TABLE_MAX_BOUND;
-        }
+            //fprintf(stderr, "hints_word: %#lx\n", hints_word);
+            //fprintf(stderr, "old_i: %i, found %#lx, found_shift: %#lx\n", i, found, found_shift);
 
-        // advance past all non-matching hints
-        found >>= i * 8;
-        i += ntz_intptr(found) >> 3;
+            // advance past current hint
+            i++;
+
+            // advance to next match
+            i += ntz_intptr(found_shift) >> 3;
+
+            //fprintf(stderr, "new_i: %i\n", i);
+
+            //fprintf(stderr, "i: %i, ary: %#x, hint: %#x\n", i, RHASH(hash)->ar_hint.ary[i], hint);
+            RUBY_ASSERT(i < 8);
+
+            // this almost always exits, except for the rare case that our
+            // zero-detection hits a false positive.
+            // This happens when the very next hint is one more than the match
+            // we just hit (1/255).
+        } while (RHASH(hash)->ar_hint.ary[i] != hint);
     }
-
-    return ret;
 }
 
 static unsigned
@@ -1023,6 +1047,11 @@ ar_foreach_check(VALUE hash, st_foreach_check_callback_func *func, st_data_t arg
                   pair = RHASH_AR_TABLE_REF(hash, i);
                   if (pair->key == never) break;
                   ret = ar_find_entry_hint(hash, hint, key);
+                  unsigned old_ret = ar_find_entry_hint_legacy(hash, hint, key);
+                  //fprintf(stderr, "new ret: %u\n", ret);
+                  //fprintf(stderr, "old ret: %u\n", old_ret);
+                  RUBY_ASSERT(ret == old_ret);
+
                   if (ret == RHASH_AR_TABLE_MAX_BOUND) {
                       retval = (*func)(0, 0, arg, 1);
                       return 2;
