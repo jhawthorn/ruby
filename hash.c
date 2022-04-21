@@ -673,6 +673,8 @@ ar_alloc_table(VALUE hash)
     return tab;
 }
 
+NOINLINE(static int ar_equal(VALUE x, VALUE y));
+
 static int
 ar_equal(VALUE x, VALUE y)
 {
