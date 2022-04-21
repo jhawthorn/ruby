@@ -726,38 +726,19 @@ static unsigned
 ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
 {
     unsigned bound = RHASH_AR_TABLE_BOUND(hash);
-    if (bound == 0)
-        return RHASH_AR_TABLE_MAX_BOUND;
-
-    // Here we are able to test against all stored AR hints at once
-    // https://graphics.stanford.edu/~seander/bithacks.html#ValueInWord
-    unsigned long ones = (~0UL / 255); // 0x01010101
-    unsigned long cmp = hint * ones;   // for hint 0xab: 0xabababab
 
     unsigned long hints_word = RHASH(hash)->ar_hint.word;
-    unsigned long v = hints_word ^ cmp;
+    __m128i haystack = _mm_set_epi64x(0, hints_word);
+    __m128i needle = _mm_set1_epi8(hint);
+    int movemask = _mm_movemask_epi8(_mm_cmpeq_epi8(haystack, needle));
 
-    unsigned long mask = ones << 7; // 0x80808080
+    movemask &= (1 << bound) - 1;
 
-    // mask away matching hints past bound
-    mask >>= ((8 - bound) * 8);
-    //fprintf(stderr, "mask: %#lx, bound: %i\n", mask, bound);
-
-    unsigned long found = ((v - ones) & ~v & mask);
-
-    //fprintf(stderr, "found: %#lx\n", found);
-
-    if (!found)
-        return RHASH_AR_TABLE_MAX_BOUND;
-
-    //fprintf(stderr, "found: %#x, pos: %i, ret: %i\n", found, pos, ret);
-
-    // test
-    //found = ones << 7;
-
-    unsigned i = ((ntz_intptr(found)) >> 3);
     for (;;) {
-        //fprintf(stderr, "i: %i, ary: %i, hint: %i\n", i, RHASH(hash)->ar_hint.ary[i], hint);
+        if (!movemask)
+            return RHASH_AR_TABLE_MAX_BOUND;
+
+        unsigned i = ntz_intptr(movemask);
         RUBY_ASSERT(i < bound);
         RUBY_ASSERT(RHASH(hash)->ar_hint.ary[i] == hint);
 
@@ -767,32 +748,8 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
             return i;
         }
 
-        do {
-            unsigned long found_shift = (found >> 8) >> (i * 8);
-            if (LIKELY(!found_shift)) {
-                // nothing found
-                return RHASH_AR_TABLE_MAX_BOUND;
-            }
-
-            //fprintf(stderr, "hints_word: %#lx\n", hints_word);
-            //fprintf(stderr, "old_i: %i, found %#lx, found_shift: %#lx\n", i, found, found_shift);
-
-            // advance past current hint
-            i++;
-
-            // advance to next match
-            i += ntz_intptr(found_shift) >> 3;
-
-            //fprintf(stderr, "new_i: %i\n", i);
-
-            //fprintf(stderr, "i: %i, ary: %#x, hint: %#x\n", i, RHASH(hash)->ar_hint.ary[i], hint);
-            RUBY_ASSERT(i < 8);
-
-            // this almost always exits, except for the rare case that our
-            // zero-detection hits a false positive.
-            // This happens when the very next hint is one more than the match
-            // we just hit (1/255).
-        } while (RHASH(hash)->ar_hint.ary[i] != hint);
+        // clear lowest bit
+        movemask &= movemask - 1;
     }
 }
 
