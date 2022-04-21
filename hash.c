@@ -735,7 +735,7 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
     movemask &= (1 << bound) - 1;
 
     for (;;) {
-        if (!movemask)
+        if (UNLIKELY(!movemask))
             return RHASH_AR_TABLE_MAX_BOUND;
 
         unsigned i = ntz_intptr(movemask);
@@ -743,7 +743,7 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
         RUBY_ASSERT(RHASH(hash)->ar_hint.ary[i] == hint);
 
         ar_table_pair *pair = RHASH_AR_TABLE_REF(hash, i);
-        if (LIKELY(ar_equal(key, pair->key))) {
+        if (LIKELY(key == pair->key) || ar_equal(key, pair->key)) {
             RB_DEBUG_COUNTER_INC(artable_hint_hit);
             return i;
         }
