@@ -740,7 +740,7 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
         if (UNLIKELY(!movemask))
             return RHASH_AR_TABLE_MAX_BOUND;
 
-        unsigned i = ntz_intptr(movemask);
+        int i = ntz_intptr(movemask);
         RUBY_ASSERT(i < bound);
         RUBY_ASSERT(RHASH(hash)->ar_hint.ary[i] == hint);
 
