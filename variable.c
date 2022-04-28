@@ -1673,6 +1673,9 @@ set_shape(VALUE obj, rb_shape_t* shape)
 //    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", SHAPE_ID(shape), &obj, &shape);
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     set_shape_id(obj, SHAPE_ID(shape));
+    if (SHAPE_ID(shape) == 313) {
+        fprintf(stderr, "setting shape %p %d on obj %p\n", shape, SHAPE_ID(shape), (void *)obj);
+    }
     RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
 }
 
@@ -1697,6 +1700,9 @@ set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
+    if (shape_id == 313) {
+        fprintf(stderr, "setting shape 313 %p\n", shape);
+    }
     vm->shape_list[shape_id] = shape;
     set_shape_in_bitmap(shape_id);
 }
@@ -1786,6 +1792,9 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb
     set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
     shape->parent = parent;
+    if (shape_id == 313)
+        fprintf(stderr, "allocated shape %d\n", shape_id);
+    RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
     shape->iv_table = iv_table;
     return shape;
 }
@@ -1820,14 +1829,14 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             shape->edges = rb_id_table_create(0);
         }
 
-        VALUE value;
-        if (rb_id_table_lookup(shape->edges, id, &value)) {
-            rb_shape_t* shape = (rb_shape_t*) value;
-            res = shape;
-        } else {
-            if (shape->iv_table && rb_id_table_lookup(shape->iv_table, id, &value)) {
-                res = shape;
-            } else {
+        fprintf(stderr, "from %lu via: %d", id);
+        if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res)) {
+            fprintf(stderr, "couldn't find id in edges %lu\n", id);
+            RUBY_ASSERT(shape->iv_table);
+            // Why aren't we doing shape allocation here???
+            // How can the edge be in iv table but not in edges?
+            if (!rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
+                fprintf(stderr, "couldn't find id in iv_table %lu\n", id);
                 shape_id_t next_shape_id = get_next_shape_id();
                 // DO we want a get_next_shape that gives us back whatever the
                 // shape is? Even a no_cache_shape, then we don't have to set ID
@@ -1844,12 +1853,11 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
 
-                    //  Only insert if the id is an internal one
+                    //  Only insert if the id is an ivar
                     if (tt == SHAPE_IVAR) {
                         rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
                     }
-
-                    if (tt == SHAPE_FROZEN) {
+                    else {
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
@@ -1863,9 +1871,18 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                     res = new_shape;
                 }
             }
+            else {
+                fprintf(stderr, "found id %lu in iv table\n", id);
+            }
+        }
+        else {
+            fprintf(stderr, "found id %lu in edges\n", id);
         }
     }
     RB_VM_LOCK_LEAVE();
+    if(res->edge_name != id) {
+        rb_bug("uh oh 1887\n");
+    }
     return res;
 }
 

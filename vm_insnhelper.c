@@ -1117,7 +1117,7 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
         }
     }
     else {
-        vm_ic_attr_index_set(ic, index, shape_id, shape_id);
+        vm_ic_attr_index_set(iseq, ic, index, shape_id, shape_id);
         RB_OBJ_WRITTEN(iseq, Qundef, get_shape_by_id(shape_id));
     }
 }
@@ -1339,7 +1339,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     }
                 }
                 else {
-                    vm_ic_attr_index_set(ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
+                    vm_ic_attr_index_set(iseq, ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
                     /*

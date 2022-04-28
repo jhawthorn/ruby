@@ -3443,7 +3443,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
-                // fprintf(stderr, "freeing shape: %d\n", SHAPE_ID(shape));
+                if (SHAPE_ID(shape) == 313) {
+                    fprintf(stderr, "freeing shape: %d\n", SHAPE_ID(shape));
+                }
                 if(shape->edges) {
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
                     rb_id_table_free(shape->edges);
@@ -9965,6 +9967,38 @@ gc_update_values(rb_objspace_t *objspace, long n, VALUE *values)
     }
 }
 
+static enum rb_id_table_iterator_result
+check_id_table_move(VALUE value, void *data)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)data;
+
+    if (gc_object_moved_p(objspace, (VALUE)value)) {
+        return ID_TABLE_REPLACE;
+    }
+
+    return ID_TABLE_CONTINUE;
+}
+
+static enum rb_id_table_iterator_result
+update_id_table(VALUE *value, void *data, int existing)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)data;
+
+    if (gc_object_moved_p(objspace, (VALUE)*value)) {
+        *value = rb_gc_location((VALUE)*value);
+    }
+
+    return ID_TABLE_CONTINUE;
+}
+
+static void
+update_m_tbl(rb_objspace_t *objspace, struct rb_id_table *tbl)
+{
+    if (tbl) {
+        rb_id_table_foreach_values_with_replace(tbl, check_id_table_move, update_id_table, objspace);
+    }
+}
+
 static void
 gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
 {
@@ -10036,24 +10070,20 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_parser_strterm:
       case imemo_tmpbuf:
       case imemo_callinfo:
+        break;
       case imemo_shape:
+        {
+            rb_shape_t * shape = (rb_shape_t *)obj;
+            if(shape->edges) {
+                update_m_tbl(objspace, shape->edges);
+            }
+            UPDATE_IF_MOVED(objspace, shape->parent);
+        }
         break;
       default:
         rb_bug("not reachable %d", imemo_type(obj));
         break;
     }
-}
-
-static enum rb_id_table_iterator_result
-check_id_table_move(VALUE value, void *data)
-{
-    rb_objspace_t *objspace = (rb_objspace_t *)data;
-
-    if (gc_object_moved_p(objspace, (VALUE)value)) {
-        return ID_TABLE_REPLACE;
-    }
-
-    return ID_TABLE_CONTINUE;
 }
 
 /* Returns the new location of an object, if it moved.  Otherwise returns
@@ -10087,26 +10117,6 @@ rb_gc_location(VALUE value)
     }
 
     return destination;
-}
-
-static enum rb_id_table_iterator_result
-update_id_table(VALUE *value, void *data, int existing)
-{
-    rb_objspace_t *objspace = (rb_objspace_t *)data;
-
-    if (gc_object_moved_p(objspace, (VALUE)*value)) {
-        *value = rb_gc_location((VALUE)*value);
-    }
-
-    return ID_TABLE_CONTINUE;
-}
-
-static void
-update_m_tbl(rb_objspace_t *objspace, struct rb_id_table *tbl)
-{
-    if (tbl) {
-        rb_id_table_foreach_values_with_replace(tbl, check_id_table_move, update_id_table, objspace);
-    }
 }
 
 static enum rb_id_table_iterator_result
@@ -10430,6 +10440,8 @@ gc_update_references(rb_objspace_t *objspace)
 
     struct heap_page *page = NULL;
 
+    rb_vm_update_references(vm);
+
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         bool should_set_mark_bits = TRUE;
         rb_size_pool_t *size_pool = &size_pools[i];
@@ -10448,7 +10460,6 @@ gc_update_references(rb_objspace_t *objspace)
             }
         }
     }
-    rb_vm_update_references(vm);
     rb_transient_heap_update_references();
     rb_gc_update_global_tbl();
     global_symbols.ids = rb_gc_location(global_symbols.ids);
