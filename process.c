@@ -323,6 +323,22 @@ static ID id_unsetenv_others, id_chdir, id_umask, id_close_others;
 static ID id_nanosecond, id_microsecond, id_millisecond, id_second;
 static ID id_float_microsecond, id_float_millisecond, id_float_second;
 static ID id_GETTIMEOFDAY_BASED_CLOCK_REALTIME, id_TIME_BASED_CLOCK_REALTIME;
+#ifdef CLOCK_REALTIME
+static ID id_CLOCK_REALTIME;
+# define RUBY_CLOCK_REALTIME ID2SYM(id_CLOCK_REALTIME)
+#endif
+#ifdef CLOCK_MONOTONIC
+static ID id_CLOCK_MONOTONIC;
+# define RUBY_CLOCK_MONOTONIC ID2SYM(id_CLOCK_MONOTONIC)
+#endif
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+static ID id_CLOCK_PROCESS_CPUTIME_ID;
+# define RUBY_CLOCK_PROCESS_CPUTIME_ID ID2SYM(id_CLOCK_PROCESS_CPUTIME_ID)
+#endif
+#ifdef CLOCK_THREAD_CPUTIME_ID
+static ID id_CLOCK_THREAD_CPUTIME_ID;
+# define RUBY_CLOCK_THREAD_CPUTIME_ID ID2SYM(id_CLOCK_THREAD_CPUTIME_ID)
+#endif
 #ifdef HAVE_TIMES
 static ID id_TIMES_BASED_CLOCK_MONOTONIC;
 static ID id_TIMES_BASED_CLOCK_PROCESS_CPUTIME_ID;
@@ -333,6 +349,7 @@ static ID id_GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID;
 static ID id_CLOCK_BASED_CLOCK_PROCESS_CPUTIME_ID;
 #ifdef __APPLE__
 static ID id_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC;
+# define RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC ID2SYM(id_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC)
 #endif
 static ID id_hertz;
 
@@ -1059,7 +1076,7 @@ do_waitpid(rb_pid_t pid, int *st, int flags)
 #define WAITPID_LOCK_ONLY ((struct waitpid_state *)-1)
 
 struct waitpid_state {
-    struct list_node wnode;
+    struct ccan_list_node wnode;
     rb_execution_context_t *ec;
     rb_nativethread_cond_t *cond;
     rb_pid_t ret;
@@ -1093,12 +1110,12 @@ waitpid_signal(struct waitpid_state *w)
 // Used for VM memsize reporting. Returns the size of a list of waitpid_state
 // structs. Defined here because the struct definition lives here as well.
 size_t
-rb_vm_memsize_waiting_list(struct list_head *waiting_list)
+rb_vm_memsize_waiting_list(struct ccan_list_head *waiting_list)
 {
     struct waitpid_state *waitpid = 0;
     size_t size = 0;
 
-    list_for_each(waiting_list, waitpid, wnode) {
+    ccan_list_for_each(waiting_list, waitpid, wnode) {
         size += sizeof(struct waitpid_state);
     }
 
@@ -1115,10 +1132,10 @@ sigwait_fd_migrate_sleeper(rb_vm_t *vm)
 {
     struct waitpid_state *w = 0;
 
-    list_for_each(&vm->waiting_pids, w, wnode) {
+    ccan_list_for_each(&vm->waiting_pids, w, wnode) {
         if (waitpid_signal(w)) return;
     }
-    list_for_each(&vm->waiting_grps, w, wnode) {
+    ccan_list_for_each(&vm->waiting_grps, w, wnode) {
         if (waitpid_signal(w)) return;
     }
 }
@@ -1135,18 +1152,18 @@ rb_sigwait_fd_migrate(rb_vm_t *vm)
 extern volatile unsigned int ruby_nocldwait; /* signal.c */
 /* called by timer thread or thread which acquired sigwait_fd */
 static void
-waitpid_each(struct list_head *head)
+waitpid_each(struct ccan_list_head *head)
 {
     struct waitpid_state *w = 0, *next;
 
-    list_for_each_safe(head, w, next, wnode) {
+    ccan_list_for_each_safe(head, w, next, wnode) {
         rb_pid_t ret = do_waitpid(w->pid, &w->status, w->options | WNOHANG);
 
         if (!ret) continue;
         if (ret == -1) w->errnum = errno;
 
         w->ret = ret;
-        list_del_init(&w->wnode);
+        ccan_list_del_init(&w->wnode);
         waitpid_signal(w);
     }
 }
@@ -1160,11 +1177,11 @@ ruby_waitpid_all(rb_vm_t *vm)
 #if RUBY_SIGCHLD
     rb_native_mutex_lock(&vm->waitpid_lock);
     waitpid_each(&vm->waiting_pids);
-    if (list_empty(&vm->waiting_pids)) {
+    if (ccan_list_empty(&vm->waiting_pids)) {
         waitpid_each(&vm->waiting_grps);
     }
     /* emulate SA_NOCLDWAIT */
-    if (list_empty(&vm->waiting_pids) && list_empty(&vm->waiting_grps)) {
+    if (ccan_list_empty(&vm->waiting_pids) && ccan_list_empty(&vm->waiting_grps)) {
         while (ruby_nocldwait && do_waitpid(-1, 0, WNOHANG) > 0)
             ; /* keep looping */
     }
@@ -1205,7 +1222,7 @@ ruby_waitpid_locked(rb_vm_t *vm, rb_pid_t pid, int *status, int options,
     assert(!ruby_thread_has_gvl_p() && "must not have GVL");
 
     waitpid_state_init(&w, pid, options);
-    if (w.pid > 0 || list_empty(&vm->waiting_pids))
+    if (w.pid > 0 || ccan_list_empty(&vm->waiting_pids))
         w.ret = do_waitpid(w.pid, &w.status, w.options | WNOHANG);
     if (w.ret) {
         if (w.ret == -1) w.errnum = errno;
@@ -1214,7 +1231,7 @@ ruby_waitpid_locked(rb_vm_t *vm, rb_pid_t pid, int *status, int options,
         int sigwait_fd = -1;
 
         w.ec = 0;
-        list_add(w.pid > 0 ? &vm->waiting_pids : &vm->waiting_grps, &w.wnode);
+        ccan_list_add(w.pid > 0 ? &vm->waiting_pids : &vm->waiting_grps, &w.wnode);
         do {
             if (sigwait_fd < 0)
                 sigwait_fd = rb_sigwait_fd_get(0);
@@ -1230,7 +1247,7 @@ ruby_waitpid_locked(rb_vm_t *vm, rb_pid_t pid, int *status, int options,
                 rb_native_cond_wait(w.cond, &vm->waitpid_lock);
             }
         } while (!w.ret);
-        list_del(&w.wnode);
+        ccan_list_del(&w.wnode);
 
         /* we're done, maybe other waitpid callers are not: */
         if (sigwait_fd >= 0) {
@@ -1263,14 +1280,14 @@ waitpid_cleanup(VALUE x)
     struct waitpid_state *w = (struct waitpid_state *)x;
 
     /*
-     * XXX w->ret is sometimes set but list_del is still needed, here,
-     * Not sure why, so we unconditionally do list_del here:
+     * XXX w->ret is sometimes set but ccan_list_del is still needed, here,
+     * Not sure why, so we unconditionally do ccan_list_del here:
      */
     if (TRUE || w->ret == 0) {
         rb_vm_t *vm = rb_ec_vm_ptr(w->ec);
 
         rb_native_mutex_lock(&vm->waitpid_lock);
-        list_del(&w->wnode);
+        ccan_list_del(&w->wnode);
         rb_native_mutex_unlock(&vm->waitpid_lock);
     }
 
@@ -1290,7 +1307,7 @@ waitpid_wait(struct waitpid_state *w)
      */
     rb_native_mutex_lock(&vm->waitpid_lock);
 
-    if (w->pid > 0 || list_empty(&vm->waiting_pids)) {
+    if (w->pid > 0 || ccan_list_empty(&vm->waiting_pids)) {
         w->ret = do_waitpid(w->pid, &w->status, w->options | WNOHANG);
     }
 
@@ -1306,7 +1323,7 @@ waitpid_wait(struct waitpid_state *w)
     if (need_sleep) {
         w->cond = 0;
         /* order matters, favor specified PIDs rather than -1 or 0 */
-        list_add(w->pid > 0 ? &vm->waiting_pids : &vm->waiting_grps, &w->wnode);
+        ccan_list_add(w->pid > 0 ? &vm->waiting_pids : &vm->waiting_grps, &w->wnode);
     }
 
     rb_native_mutex_unlock(&vm->waitpid_lock);
@@ -3148,7 +3165,7 @@ NORETURN(static VALUE f_exec(int c, const VALUE *a, VALUE _));
  *  [<code>exec(cmdname, arg1, ...)</code>]
  *	command name and one or more arguments (no shell)
  *  [<code>exec([cmdname, argv0], arg1, ...)</code>]
- *	command name, argv[0] and zero or more arguments (no shell)
+ *	command name, +argv[0]+ and zero or more arguments (no shell)
  *
  *  In the first form, the string is taken as a command line that is subject to
  *  shell expansion before being executed.
@@ -4212,7 +4229,7 @@ retry_fork_async_signal_safe(struct rb_process_status *status, int *ep,
         if (waitpid_lock) {
             if (pid > 0 && w != WAITPID_LOCK_ONLY) {
                 w->pid = pid;
-                list_add(&GET_VM()->waiting_pids, &w->wnode);
+                ccan_list_add(&GET_VM()->waiting_pids, &w->wnode);
             }
             rb_native_mutex_unlock(waitpid_lock);
         }
@@ -4754,6 +4771,9 @@ rb_spawn(int argc, const VALUE *argv)
  *
  *  Executes _command..._ in a subshell.
  *  _command..._ is one of following forms.
+ *
+ *  This method has potential security vulnerabilities if called with untrusted input;
+ *  see {Command Injection}[rdoc-ref:command_injection.rdoc].
  *
  *  [<code>commandline</code>]
  *    command line string which is passed to the standard shell
@@ -8188,6 +8208,13 @@ ruby_real_ms_time(void)
 }
 #endif
 
+#if defined(NUM2CLOCKID)
+# define NUMERIC_CLOCKID 1
+#else
+# define NUMERIC_CLOCKID 0
+# define NUM2CLOCKID(x) 0
+#endif
+
 /*
  *  call-seq:
  *     Process.clock_gettime(clock_id [, unit])   -> number
@@ -8304,7 +8331,7 @@ ruby_real_ms_time(void)
  *  The underlying function, clock_gettime(), returns a number of nanoseconds.
  *  Float object (IEEE 754 double) is not enough to represent
  *  the return value for CLOCK_REALTIME.
- *  If the exact nanoseconds value is required, use +:nanoseconds+ as the +unit+.
+ *  If the exact nanoseconds value is required, use +:nanosecond+ as the +unit+.
  *
  *  The origin (zero) of the returned value varies.
  *  For example, system start up time, process start up time, the Epoch, etc.
@@ -8328,8 +8355,37 @@ rb_clock_gettime(int argc, VALUE *argv, VALUE _)
 
     VALUE unit = (rb_check_arity(argc, 1, 2) == 2) ? argv[1] : Qnil;
     VALUE clk_id = argv[0];
+    clockid_t c;
 
     if (SYMBOL_P(clk_id)) {
+#ifdef CLOCK_REALTIME
+        if (clk_id == RUBY_CLOCK_REALTIME) {
+            c = CLOCK_REALTIME;
+            goto gettime;
+        }
+#endif
+
+#ifdef CLOCK_MONOTONIC
+        if (clk_id == RUBY_CLOCK_MONOTONIC) {
+            c = CLOCK_MONOTONIC;
+            goto gettime;
+        }
+#endif
+
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+        if (clk_id == RUBY_CLOCK_PROCESS_CPUTIME_ID) {
+            c = CLOCK_PROCESS_CPUTIME_ID;
+            goto gettime;
+        }
+#endif
+
+#ifdef CLOCK_THREAD_CPUTIME_ID
+        if (clk_id == RUBY_CLOCK_THREAD_CPUTIME_ID) {
+            c = CLOCK_THREAD_CPUTIME_ID;
+            goto gettime;
+        }
+#endif
+
         /*
          * Non-clock_gettime clocks are provided by symbol clk_id.
          */
@@ -8440,7 +8496,6 @@ rb_clock_gettime(int argc, VALUE *argv, VALUE _)
         }
 
 #ifdef __APPLE__
-#define RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC ID2SYM(id_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC)
         if (clk_id == RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC) {
 	    const mach_timebase_info_data_t *info = get_mach_timebase_info();
             uint64_t t = mach_absolute_time();
@@ -8453,11 +8508,11 @@ rb_clock_gettime(int argc, VALUE *argv, VALUE _)
         }
 #endif
     }
-    else {
+    else if (NUMERIC_CLOCKID) {
 #if defined(HAVE_CLOCK_GETTIME)
         struct timespec ts;
-        clockid_t c;
         c = NUM2CLOCKID(clk_id);
+      gettime:
         ret = clock_gettime(c, &ts);
         if (ret == -1)
             rb_sys_fail("clock_gettime");
@@ -8519,16 +8574,47 @@ rb_clock_gettime(int argc, VALUE *argv, VALUE _)
 static VALUE
 rb_clock_getres(int argc, VALUE *argv, VALUE _)
 {
+    int ret;
+
     struct timetick tt;
     timetick_int_t numerators[2];
     timetick_int_t denominators[2];
     int num_numerators = 0;
     int num_denominators = 0;
+    clockid_t c;
 
     VALUE unit = (rb_check_arity(argc, 1, 2) == 2) ? argv[1] : Qnil;
     VALUE clk_id = argv[0];
 
     if (SYMBOL_P(clk_id)) {
+#ifdef CLOCK_REALTIME
+        if (clk_id == RUBY_CLOCK_REALTIME) {
+            c = CLOCK_REALTIME;
+            goto getres;
+        }
+#endif
+
+#ifdef CLOCK_MONOTONIC
+        if (clk_id == RUBY_CLOCK_MONOTONIC) {
+            c = CLOCK_MONOTONIC;
+            goto getres;
+        }
+#endif
+
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+        if (clk_id == RUBY_CLOCK_PROCESS_CPUTIME_ID) {
+            c = CLOCK_PROCESS_CPUTIME_ID;
+            goto getres;
+        }
+#endif
+
+#ifdef CLOCK_THREAD_CPUTIME_ID
+        if (clk_id == RUBY_CLOCK_THREAD_CPUTIME_ID) {
+            c = CLOCK_THREAD_CPUTIME_ID;
+            goto getres;
+        }
+#endif
+
 #ifdef RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME
         if (clk_id == RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME) {
             tt.giga_count = 0;
@@ -8595,11 +8681,12 @@ rb_clock_getres(int argc, VALUE *argv, VALUE _)
         }
 #endif
     }
-    else {
+    else if (NUMERIC_CLOCKID) {
 #if defined(HAVE_CLOCK_GETRES)
         struct timespec ts;
-        clockid_t c = NUM2CLOCKID(clk_id);
-        int ret = clock_getres(c, &ts);
+        c = NUM2CLOCKID(clk_id);
+      getres:
+        ret = clock_getres(c, &ts);
         if (ret == -1)
             rb_sys_fail("clock_getres");
         tt.count = (int32_t)ts.tv_nsec;
@@ -8949,31 +9036,49 @@ InitVM_process(void)
 
     rb_define_module_function(rb_mProcess, "times", rb_proc_times, 0);
 
-#ifdef CLOCK_REALTIME
+#if defined(RUBY_CLOCK_REALTIME)
+#elif defined(RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME)
+# define RUBY_CLOCK_REALTIME RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME
+#elif defined(RUBY_TIME_BASED_CLOCK_REALTIME)
+# define RUBY_CLOCK_REALTIME RUBY_TIME_BASED_CLOCK_REALTIME
+#endif
+#if defined(CLOCK_REALTIME) && defined(CLOCKID2NUM)
     /* see Process.clock_gettime */
     rb_define_const(rb_mProcess, "CLOCK_REALTIME", CLOCKID2NUM(CLOCK_REALTIME));
-#elif defined(RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME)
-    /* see Process.clock_gettime */
-    rb_define_const(rb_mProcess, "CLOCK_REALTIME", RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME);
+#elif defined(RUBY_CLOCK_REALTIME)
+    rb_define_const(rb_mProcess, "CLOCK_REALTIME", RUBY_CLOCK_REALTIME);
 #endif
-#ifdef CLOCK_MONOTONIC
+
+#if defined(RUBY_CLOCK_MONOTONIC)
+#elif defined(RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC)
+# define RUBY_CLOCK_MONOTONIC RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC
+#endif
+#if defined(CLOCK_MONOTONIC) && defined(CLOCKID2NUM)
     /* see Process.clock_gettime */
     rb_define_const(rb_mProcess, "CLOCK_MONOTONIC", CLOCKID2NUM(CLOCK_MONOTONIC));
-#elif defined(RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC)
-    /* see Process.clock_gettime */
-    rb_define_const(rb_mProcess, "CLOCK_MONOTONIC", RUBY_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC);
+#elif defined(RUBY_CLOCK_MONOTONIC)
+    rb_define_const(rb_mProcess, "CLOCK_MONOTONIC", RUBY_CLOCK_MONOTONIC);
 #endif
-#ifdef CLOCK_PROCESS_CPUTIME_ID
+
+#if defined(RUBY_CLOCK_PROCESS_CPUTIME_ID)
+#elif defined(RUBY_GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID)
+# define RUBY_CLOCK_PROCESS_CPUTIME_ID RUBY_GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID
+#endif
+#if defined(CLOCK_PROCESS_CPUTIME_ID) && defined(CLOCKID2NUM)
     /* see Process.clock_gettime */
     rb_define_const(rb_mProcess, "CLOCK_PROCESS_CPUTIME_ID", CLOCKID2NUM(CLOCK_PROCESS_CPUTIME_ID));
-#elif defined(RUBY_GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID)
-    /* see Process.clock_gettime */
-    rb_define_const(rb_mProcess, "CLOCK_PROCESS_CPUTIME_ID", RUBY_GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID);
+#elif defined(RUBY_CLOCK_PROCESS_CPUTIME_ID)
+    rb_define_const(rb_mProcess, "CLOCK_PROCESS_CPUTIME_ID", RUBY_CLOCK_PROCESS_CPUTIME_ID);
 #endif
-#ifdef CLOCK_THREAD_CPUTIME_ID
+
+#if defined(CLOCK_THREAD_CPUTIME_ID) && defined(CLOCKID2NUM)
     /* see Process.clock_gettime */
     rb_define_const(rb_mProcess, "CLOCK_THREAD_CPUTIME_ID", CLOCKID2NUM(CLOCK_THREAD_CPUTIME_ID));
+#elif defined(RUBY_CLOCK_THREAD_CPUTIME_ID)
+    rb_define_const(rb_mProcess, "CLOCK_THREAD_CPUTIME_ID", RUBY_CLOCK_THREAD_CPUTIME_ID);
 #endif
+
+#ifdef CLOCKID2NUM
 #ifdef CLOCK_VIRTUAL
     /* see Process.clock_gettime */
     rb_define_const(rb_mProcess, "CLOCK_VIRTUAL", CLOCKID2NUM(CLOCK_VIRTUAL));
@@ -9054,6 +9159,7 @@ InitVM_process(void)
     /* see Process.clock_gettime */
     rb_define_const(rb_mProcess, "CLOCK_TAI", CLOCKID2NUM(CLOCK_TAI));
 #endif
+#endif
     rb_define_module_function(rb_mProcess, "clock_gettime", rb_clock_gettime, -1);
     rb_define_module_function(rb_mProcess, "clock_getres", rb_clock_getres, -1);
 
@@ -9120,45 +9226,58 @@ InitVM_process(void)
 void
 Init_process(void)
 {
-    id_in = rb_intern_const("in");
-    id_out = rb_intern_const("out");
-    id_err = rb_intern_const("err");
-    id_pid = rb_intern_const("pid");
-    id_uid = rb_intern_const("uid");
-    id_gid = rb_intern_const("gid");
-    id_close = rb_intern_const("close");
-    id_child = rb_intern_const("child");
+#define define_id(name) id_##name = rb_intern_const(#name)
+    define_id(in);
+    define_id(out);
+    define_id(err);
+    define_id(pid);
+    define_id(uid);
+    define_id(gid);
+    define_id(close);
+    define_id(child);
 #ifdef HAVE_SETPGID
-    id_pgroup = rb_intern_const("pgroup");
+    define_id(pgroup);
 #endif
 #ifdef _WIN32
-    id_new_pgroup = rb_intern_const("new_pgroup");
+    define_id(new_pgroup);
 #endif
-    id_unsetenv_others = rb_intern_const("unsetenv_others");
-    id_chdir = rb_intern_const("chdir");
-    id_umask = rb_intern_const("umask");
-    id_close_others = rb_intern_const("close_others");
-    id_nanosecond = rb_intern_const("nanosecond");
-    id_microsecond = rb_intern_const("microsecond");
-    id_millisecond = rb_intern_const("millisecond");
-    id_second = rb_intern_const("second");
-    id_float_microsecond = rb_intern_const("float_microsecond");
-    id_float_millisecond = rb_intern_const("float_millisecond");
-    id_float_second = rb_intern_const("float_second");
-    id_GETTIMEOFDAY_BASED_CLOCK_REALTIME = rb_intern_const("GETTIMEOFDAY_BASED_CLOCK_REALTIME");
-    id_TIME_BASED_CLOCK_REALTIME = rb_intern_const("TIME_BASED_CLOCK_REALTIME");
+    define_id(unsetenv_others);
+    define_id(chdir);
+    define_id(umask);
+    define_id(close_others);
+    define_id(nanosecond);
+    define_id(microsecond);
+    define_id(millisecond);
+    define_id(second);
+    define_id(float_microsecond);
+    define_id(float_millisecond);
+    define_id(float_second);
+    define_id(GETTIMEOFDAY_BASED_CLOCK_REALTIME);
+    define_id(TIME_BASED_CLOCK_REALTIME);
+#ifdef CLOCK_REALTIME
+    define_id(CLOCK_REALTIME);
+#endif
+#ifdef CLOCK_MONOTONIC
+    define_id(CLOCK_MONOTONIC);
+#endif
+#ifdef CLOCK_PROCESS_CPUTIME_ID
+    define_id(CLOCK_PROCESS_CPUTIME_ID);
+#endif
+#ifdef CLOCK_THREAD_CPUTIME_ID
+    define_id(CLOCK_THREAD_CPUTIME_ID);
+#endif
 #ifdef HAVE_TIMES
-    id_TIMES_BASED_CLOCK_MONOTONIC = rb_intern_const("TIMES_BASED_CLOCK_MONOTONIC");
-    id_TIMES_BASED_CLOCK_PROCESS_CPUTIME_ID = rb_intern_const("TIMES_BASED_CLOCK_PROCESS_CPUTIME_ID");
+    define_id(TIMES_BASED_CLOCK_MONOTONIC);
+    define_id(TIMES_BASED_CLOCK_PROCESS_CPUTIME_ID);
 #endif
 #ifdef RUSAGE_SELF
-    id_GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID = rb_intern_const("GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID");
+    define_id(GETRUSAGE_BASED_CLOCK_PROCESS_CPUTIME_ID);
 #endif
-    id_CLOCK_BASED_CLOCK_PROCESS_CPUTIME_ID = rb_intern_const("CLOCK_BASED_CLOCK_PROCESS_CPUTIME_ID");
+    define_id(CLOCK_BASED_CLOCK_PROCESS_CPUTIME_ID);
 #ifdef __APPLE__
-    id_MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC = rb_intern_const("MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC");
+    define_id(MACH_ABSOLUTE_TIME_BASED_CLOCK_MONOTONIC);
 #endif
-    id_hertz = rb_intern_const("hertz");
+    define_id(hertz);
 
     InitVM(process);
 }

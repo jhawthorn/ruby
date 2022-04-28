@@ -259,6 +259,58 @@ rb_class_boot(VALUE super)
     return (VALUE)klass;
 }
 
+static VALUE *
+class_superclasses_including_self(VALUE klass)
+{
+    if (FL_TEST_RAW(klass, RCLASS_SUPERCLASSES_INCLUDE_SELF))
+        return RCLASS_SUPERCLASSES(klass);
+
+    size_t depth = RCLASS_SUPERCLASS_DEPTH(klass);
+    VALUE *superclasses = xmalloc(sizeof(VALUE) * (depth + 1));
+    if (depth > 0)
+        memcpy(superclasses, RCLASS_SUPERCLASSES(klass), sizeof(VALUE) * depth);
+    superclasses[depth] = klass;
+
+    RCLASS_SUPERCLASSES(klass) = superclasses;
+    FL_SET_RAW(klass, RCLASS_SUPERCLASSES_INCLUDE_SELF);
+    return superclasses;
+}
+
+void
+rb_class_update_superclasses(VALUE klass)
+{
+    VALUE super = RCLASS_SUPER(klass);
+
+    if (!RB_TYPE_P(klass, T_CLASS)) return;
+    if (super == Qundef) return;
+
+    // If the superclass array is already built
+    if (RCLASS_SUPERCLASSES(klass))
+        return;
+
+    // find the proper superclass
+    while (super != Qfalse && !RB_TYPE_P(super, T_CLASS)) {
+        super = RCLASS_SUPER(super);
+    }
+
+    // For BasicObject and uninitialized classes, depth=0 and ary=NULL
+    if (super == Qfalse)
+        return;
+
+    // Sometimes superclasses are set before the full ancestry tree is built
+    // This happens during metaclass construction
+    if (super != rb_cBasicObject && !RCLASS_SUPERCLASS_DEPTH(super)) {
+        rb_class_update_superclasses(super);
+
+        // If it is still unset we need to try later
+        if (!RCLASS_SUPERCLASS_DEPTH(super))
+            return;
+    }
+
+    RCLASS_SUPERCLASSES(klass) = class_superclasses_including_self(super);
+    RCLASS_SUPERCLASS_DEPTH(klass) = RCLASS_SUPERCLASS_DEPTH(super) + 1;
+}
+
 void
 rb_check_inheritable(VALUE super)
 {
@@ -436,7 +488,7 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
 
     if (!FL_TEST(CLASS_OF(clone), FL_SINGLETON)) {
         RBASIC_SET_CLASS(clone, rb_singleton_class_clone(orig));
-        rb_singleton_class_attached(RBASIC(clone)->klass, (VALUE)clone);
+        rb_singleton_class_attached(METACLASS_OF(clone), (VALUE)clone);
     }
     RCLASS_ALLOCATOR(clone) = RCLASS_ALLOCATOR(orig);
     copy_tables(clone, orig);
@@ -469,7 +521,7 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
             if (BUILTIN_TYPE(p) != T_ICLASS) {
                 rb_bug("non iclass between module/class and origin");
             }
-            clone_p = class_alloc(RBASIC(p)->flags, RBASIC(p)->klass);
+            clone_p = class_alloc(RBASIC(p)->flags, METACLASS_OF(p));
             RCLASS_SET_SUPER(prev_clone_p, clone_p);
             prev_clone_p = clone_p;
             RCLASS_M_TBL(clone_p) = RCLASS_M_TBL(p);
@@ -493,7 +545,7 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
                 add_subclass = FALSE;
             }
             if (add_subclass) {
-                rb_module_add_to_subclasses_list(RBASIC(p)->klass, clone_p);
+                rb_module_add_to_subclasses_list(METACLASS_OF(p), clone_p);
             }
             p = RCLASS_SUPER(p);
         }
@@ -515,6 +567,8 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
         else {
             rb_bug("no origin for class that has origin");
         }
+
+        rb_class_update_superclasses(clone);
     }
 
     return clone;
@@ -530,7 +584,7 @@ rb_singleton_class_clone(VALUE obj)
 VALUE
 rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach)
 {
-    const VALUE klass = RBASIC(obj)->klass;
+    const VALUE klass = METACLASS_OF(obj);
 
     // Note that `rb_singleton_class()` can create situations where `klass` is
     // attached to an object other than `obj`. In which case `obj` does not have
@@ -579,7 +633,7 @@ rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach)
 	    rb_id_table_foreach(RCLASS_M_TBL(klass), clone_method_i, &arg);
 	}
         if (klass_of_clone_is_new) {
-            rb_singleton_class_attached(RBASIC(clone)->klass, clone);
+            rb_singleton_class_attached(METACLASS_OF(clone), clone);
         }
 	FL_SET(clone, FL_SINGLETON);
 
@@ -667,6 +721,9 @@ make_metaclass(VALUE klass)
     while (RB_TYPE_P(super, T_ICLASS)) super = RCLASS_SUPER(super);
     RCLASS_SET_SUPER(metaclass, super ? ENSURE_EIGENCLASS(super) : rb_cClass);
 
+    // Full class ancestry may not have been filled until we reach here.
+    rb_class_update_superclasses(METACLASS_OF(metaclass));
+
     return metaclass;
 }
 
@@ -679,7 +736,7 @@ make_metaclass(VALUE klass)
 static inline VALUE
 make_singleton_class(VALUE obj)
 {
-    VALUE orig_class = RBASIC(obj)->klass;
+    VALUE orig_class = METACLASS_OF(obj);
     VALUE klass = rb_class_boot(orig_class);
 
     FL_SET(klass, FL_SINGLETON);
@@ -812,7 +869,7 @@ rb_define_class_id(ID id, VALUE super)
 
     if (!super) super = rb_cObject;
     klass = rb_class_new(super);
-    rb_make_metaclass(klass, RBASIC(super)->klass);
+    rb_make_metaclass(klass, METACLASS_OF(super));
 
     return klass;
 }
@@ -1008,7 +1065,7 @@ rb_include_class_new(VALUE module, VALUE super)
 
     RCLASS_SET_ORIGIN(klass, klass);
     if (BUILTIN_TYPE(module) == T_ICLASS) {
-	module = RBASIC(module)->klass;
+	module = METACLASS_OF(module);
     }
     RUBY_ASSERT(!RB_TYPE_P(module, T_ICLASS));
     if (!RCLASS_IV_TBL(module)) {
@@ -1054,24 +1111,32 @@ rb_include_module(VALUE klass, VALUE module)
     if (RB_TYPE_P(klass, T_MODULE)) {
         rb_subclass_entry_t *iclass = RCLASS_SUBCLASSES(klass);
         // skip the placeholder subclass entry at the head of the list
-        if (iclass && !iclass->klass) {
+        if (iclass) {
+            RUBY_ASSERT(!iclass->klass);
             iclass = iclass->next;
         }
 
         int do_include = 1;
         while (iclass) {
             VALUE check_class = iclass->klass;
-            while (check_class) {
-                if (RB_TYPE_P(check_class, T_ICLASS) &&
-                        (RBASIC(check_class)->klass == module)) {
-                    do_include = 0;
+            /* During lazy sweeping, iclass->klass could be a dead object that
+             * has not yet been swept. */
+            if (!rb_objspace_garbage_object_p(check_class)) {
+                while (check_class) {
+                    RUBY_ASSERT(!rb_objspace_garbage_object_p(check_class));
+
+                    if (RB_TYPE_P(check_class, T_ICLASS) &&
+                            (METACLASS_OF(check_class) == module)) {
+                        do_include = 0;
+                    }
+                    check_class = RCLASS_SUPER(check_class);
                 }
-                check_class = RCLASS_SUPER(check_class);
+
+                if (do_include) {
+                    include_modules_at(iclass->klass, RCLASS_ORIGIN(iclass->klass), module, TRUE);
+                }
             }
 
-            if (do_include) {
-                include_modules_at(iclass->klass, RCLASS_ORIGIN(iclass->klass), module, TRUE);
-            }
             iclass = iclass->next;
         }
     }
@@ -1106,11 +1171,20 @@ module_in_super_chain(const VALUE klass, VALUE module)
     return false;
 }
 
+// For each ID key in the class constant table, we're going to clear the VM's
+// inline constant caches associated with it.
+static enum rb_id_table_iterator_result
+clear_constant_cache_i(ID id, VALUE value, void *data)
+{
+    rb_clear_constant_cache_for_id(id);
+    return ID_TABLE_CONTINUE;
+}
+
 static int
 do_include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super, bool check_cyclic)
 {
     VALUE p, iclass, origin_stack = 0;
-    int method_changed = 0, constant_changed = 0, add_subclass;
+    int method_changed = 0, add_subclass;
     long origin_len;
     VALUE klass_origin = RCLASS_ORIGIN(klass);
     VALUE original_klass = klass;
@@ -1190,7 +1264,7 @@ do_include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super
 
 	if (add_subclass) {
 	    VALUE m = module;
-            if (BUILTIN_TYPE(m) == T_ICLASS) m = RBASIC(m)->klass;
+            if (BUILTIN_TYPE(m) == T_ICLASS) m = METACLASS_OF(m);
             rb_module_add_to_subclasses_list(m, iclass);
 	}
 
@@ -1203,12 +1277,11 @@ do_include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super
 	}
 
         tbl = RCLASS_CONST_TBL(module);
-	if (tbl && rb_id_table_size(tbl)) constant_changed = 1;
+	if (tbl && rb_id_table_size(tbl))
+	    rb_id_table_foreach(tbl, clear_constant_cache_i, NULL);
       skip:
 	module = RCLASS_SUPER(module);
     }
-
-    if (constant_changed) rb_clear_constant_cache();
 
     return method_changed;
 }
@@ -1298,7 +1371,7 @@ rb_prepend_module(VALUE klass, VALUE module)
     if (RB_TYPE_P(klass, T_MODULE)) {
         rb_subclass_entry_t *iclass = RCLASS_SUBCLASSES(klass);
         // skip the placeholder subclass entry at the head of the list if it exists
-        if (iclass && iclass->next) {
+        if (iclass) {
             RUBY_ASSERT(!iclass->klass);
             iclass = iclass->next;
         }
@@ -1307,17 +1380,22 @@ rb_prepend_module(VALUE klass, VALUE module)
         struct rb_id_table *klass_m_tbl = RCLASS_M_TBL(klass);
         struct rb_id_table *klass_origin_m_tbl = RCLASS_M_TBL(klass_origin);
         while (iclass) {
-            if (klass_had_no_origin && klass_origin_m_tbl == RCLASS_M_TBL(iclass->klass)) {
-                // backfill an origin iclass to handle refinements and future prepends
-                rb_id_table_foreach(RCLASS_M_TBL(iclass->klass), clear_module_cache_i, (void *)iclass->klass);
-                RCLASS_M_TBL(iclass->klass) = klass_m_tbl;
-                VALUE origin = rb_include_class_new(klass_origin, RCLASS_SUPER(iclass->klass));
-                RCLASS_SET_SUPER(iclass->klass, origin);
-                RCLASS_SET_INCLUDER(origin, RCLASS_INCLUDER(iclass->klass));
-                RCLASS_SET_ORIGIN(iclass->klass, origin);
-                RICLASS_SET_ORIGIN_SHARED_MTBL(origin);
+            /* During lazy sweeping, iclass->klass could be a dead object that
+             * has not yet been swept. */
+            if (!rb_objspace_garbage_object_p(iclass->klass)) {
+                if (klass_had_no_origin && klass_origin_m_tbl == RCLASS_M_TBL(iclass->klass)) {
+                    // backfill an origin iclass to handle refinements and future prepends
+                    rb_id_table_foreach(RCLASS_M_TBL(iclass->klass), clear_module_cache_i, (void *)iclass->klass);
+                    RCLASS_M_TBL(iclass->klass) = klass_m_tbl;
+                    VALUE origin = rb_include_class_new(klass_origin, RCLASS_SUPER(iclass->klass));
+                    RCLASS_SET_SUPER(iclass->klass, origin);
+                    RCLASS_SET_INCLUDER(origin, RCLASS_INCLUDER(iclass->klass));
+                    RCLASS_SET_ORIGIN(iclass->klass, origin);
+                    RICLASS_SET_ORIGIN_SHARED_MTBL(origin);
+                }
+                include_modules_at(iclass->klass, iclass->klass, module, FALSE);
             }
-            include_modules_at(iclass->klass, iclass->klass, module, FALSE);
+
             iclass = iclass->next;
         }
     }
@@ -1354,7 +1432,7 @@ rb_mod_included_modules(VALUE mod)
 
     for (p = RCLASS_SUPER(mod); p; p = RCLASS_SUPER(p)) {
         if (p != origin && RCLASS_ORIGIN(p) == p && BUILTIN_TYPE(p) == T_ICLASS) {
-	    VALUE m = RBASIC(p)->klass;
+	    VALUE m = METACLASS_OF(p);
 	    if (RB_TYPE_P(m, T_MODULE))
 		rb_ary_push(ary, m);
 	}
@@ -1389,7 +1467,7 @@ rb_mod_include_p(VALUE mod, VALUE mod2)
     Check_Type(mod2, T_MODULE);
     for (p = RCLASS_SUPER(mod); p; p = RCLASS_SUPER(p)) {
         if (BUILTIN_TYPE(p) == T_ICLASS && !FL_TEST(p, RICLASS_IS_ORIGIN)) {
-	    if (RBASIC(p)->klass == mod2) return Qtrue;
+	    if (METACLASS_OF(p) == mod2) return Qtrue;
 	}
     }
     return Qfalse;
@@ -1426,7 +1504,7 @@ rb_mod_ancestors(VALUE mod)
         if (p == refined_class) break;
         if (p != RCLASS_ORIGIN(p)) continue;
 	if (BUILTIN_TYPE(p) == T_ICLASS) {
-	    rb_ary_push(ary, RBASIC(p)->klass);
+	    rb_ary_push(ary, METACLASS_OF(p));
 	}
         else {
 	    rb_ary_push(ary, p);
@@ -2006,7 +2084,7 @@ singleton_class_of(VALUE obj)
         }
     }
 
-    klass = RBASIC(obj)->klass;
+    klass = METACLASS_OF(obj);
     if (!(FL_TEST(klass, FL_SINGLETON) &&
           rb_attr_get(klass, id_attached) == obj)) {
 	rb_serial_t serial = RCLASS_SERIAL(klass);
@@ -2047,7 +2125,7 @@ rb_singleton_class_get(VALUE obj)
     if (SPECIAL_CONST_P(obj)) {
 	return rb_special_singleton_class(obj);
     }
-    klass = RBASIC(obj)->klass;
+    klass = METACLASS_OF(obj);
     if (!FL_TEST(klass, FL_SINGLETON)) return Qnil;
     if (rb_attr_get(klass, id_attached) != obj) return Qnil;
     return klass;

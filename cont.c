@@ -62,6 +62,9 @@ static VALUE rb_cFiberPool;
 #define FIBER_POOL_INITIAL_SIZE 32
 #define FIBER_POOL_ALLOCATION_MAXIMUM_SIZE 1024
 #endif
+#ifdef RB_EXPERIMENTAL_FIBER_POOL
+#define FIBER_POOL_ALLOCATION_FREE
+#endif
 
 enum context_type {
     CONTINUATION_CONTEXT = 0,
@@ -260,7 +263,7 @@ static ID fiber_initialize_keywords[2] = {0};
 /*
  * FreeBSD require a first (i.e. addr) argument of mmap(2) is not NULL
  * if MAP_STACK is passed.
- * http://www.FreeBSD.org/cgi/query-pr.cgi?pr=158755
+ * https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=158755
  */
 #if defined(MAP_STACK) && !defined(__FreeBSD__) && !defined(__FreeBSD_kernel__)
 #define FIBER_STACK_FLAGS (MAP_PRIVATE | MAP_ANON | MAP_STACK)
@@ -1215,7 +1218,7 @@ show_vm_pcs(const rb_control_frame_t *cfp,
     while (cfp != end_of_cfp) {
         int pc = 0;
         if (cfp->iseq) {
-            pc = cfp->pc - cfp->iseq->body->iseq_encoded;
+            pc = cfp->pc - ISEQ_BODY(cfp->iseq)->iseq_encoded;
         }
         fprintf(stderr, "%2d pc: %d\n", i++, pc);
         cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
@@ -2816,7 +2819,7 @@ fiber_pool_free(void *ptr)
     struct fiber_pool * fiber_pool = ptr;
     RUBY_FREE_ENTER("fiber_pool");
 
-    fiber_pool_free_allocations(fiber_pool->allocations);
+    fiber_pool_allocation_free(fiber_pool->allocations);
     ruby_xfree(fiber_pool);
 
     RUBY_FREE_LEAVE("fiber_pool");
@@ -2842,9 +2845,9 @@ static const rb_data_type_t FiberPoolDataType = {
 static VALUE
 fiber_pool_alloc(VALUE klass)
 {
-    struct fiber_pool * fiber_pool = RB_ALLOC(struct fiber_pool);
+    struct fiber_pool *fiber_pool;
 
-    return TypedData_Wrap_Struct(klass, &FiberPoolDataType, fiber_pool);
+    return TypedData_Make_Struct(klass, struct fiber_pool, &FiberPoolDataType, fiber_pool);
 }
 
 static VALUE
@@ -2858,7 +2861,7 @@ rb_fiber_pool_initialize(int argc, VALUE* argv, VALUE self)
     rb_scan_args(argc, argv, "03", &size, &count, &vm_stack_size);
 
     if (NIL_P(size)) {
-        size = INT2NUM(th->vm->default_params.fiber_machine_stack_size);
+        size = SIZET2NUM(th->vm->default_params.fiber_machine_stack_size);
     }
 
     if (NIL_P(count)) {
@@ -2866,7 +2869,7 @@ rb_fiber_pool_initialize(int argc, VALUE* argv, VALUE self)
     }
 
     if (NIL_P(vm_stack_size)) {
-        vm_stack_size = INT2NUM(th->vm->default_params.fiber_vm_stack_size);
+        vm_stack_size = SIZET2NUM(th->vm->default_params.fiber_vm_stack_size);
     }
 
     TypedData_Get_Struct(self, struct fiber_pool, &FiberPoolDataType, fiber_pool);
@@ -3279,7 +3282,7 @@ Init_Cont(void)
 #endif
 
 #ifdef RB_EXPERIMENTAL_FIBER_POOL
-    rb_cFiberPool = rb_define_class("Pool", rb_cFiber);
+    rb_cFiberPool = rb_define_class_under(rb_cFiber, "Pool", rb_cObject);
     rb_define_alloc_func(rb_cFiberPool, fiber_pool_alloc);
     rb_define_method(rb_cFiberPool, "initialize", rb_fiber_pool_initialize, -1);
 #endif

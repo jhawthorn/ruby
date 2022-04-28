@@ -68,6 +68,10 @@
 # include <setjmp.h>
 #endif
 
+#if defined(__linux__) || defined(__FreeBSD__)
+# define RB_THREAD_T_HAS_NATIVE_ID
+#endif
+
 #include "ruby/internal/stdbool.h"
 #include "ccan/list/list.h"
 #include "id.h"
@@ -81,7 +85,6 @@
 #include "ruby/st.h"
 #include "ruby_atomic.h"
 #include "vm_opts.h"
-#include "darray.h"
 
 #include "ruby/thread_native.h"
 #include THREAD_IMPL_H
@@ -229,43 +232,13 @@ struct iseq_inline_constant_cache_entry {
     VALUE flags;
 
     VALUE value;              // v0
-    union ic_serial_entry ic_serial; // v1, v2
+    VALUE _unused1;           // v1
+    VALUE _unused2;           // v2
     const rb_cref_t *ic_cref; // v3
 };
 STATIC_ASSERT(sizeof_iseq_inline_constant_cache_entry,
               (offsetof(struct iseq_inline_constant_cache_entry, ic_cref) +
 	       sizeof(const rb_cref_t *)) <= sizeof(struct RObject));
-
-#if SIZEOF_SERIAL_T <= SIZEOF_VALUE
-
-#define GET_IC_SERIAL(ice) (ice)->ic_serial.raw
-#define SET_IC_SERIAL(ice, v) (ice)->ic_serial.raw = (v)
-
-#else
-
-static inline rb_serial_t
-get_ic_serial(const struct iseq_inline_constant_cache_entry *ice)
-{
-    union ic_serial_entry tmp;
-    tmp.data[0] = ice->ic_serial.data[0];
-    tmp.data[1] = ice->ic_serial.data[1];
-    return tmp.raw;
-}
-
-#define GET_IC_SERIAL(ice) get_ic_serial(ice)
-
-static inline void
-set_ic_serial(struct iseq_inline_constant_cache_entry *ice, rb_serial_t v)
-{
-    union ic_serial_entry tmp;
-    tmp.raw = v;
-    ice->ic_serial.data[0] = tmp.data[0];
-    ice->ic_serial.data[1] = tmp.data[1];
-}
-
-#define SET_IC_SERIAL(ice, v) set_ic_serial((ice), (v))
-
-#endif
 
 struct iseq_inline_constant_cache {
     struct iseq_inline_constant_cache_entry *entry;
@@ -353,17 +326,12 @@ pathobj_realpath(VALUE pathobj)
 /* Forward declarations */
 struct rb_mjit_unit;
 
-// List of YJIT block versions
-typedef rb_darray(struct yjit_block_version *) rb_yjit_block_array_t;
-typedef rb_darray(rb_yjit_block_array_t) rb_yjit_block_array_array_t;
-
 struct rb_shape;
 
 #ifndef rb_shape_t
 typedef struct rb_shape rb_shape_t;
 #define rb_shape_t rb_shape_t
 #endif
-typedef rb_darray(rb_shape_t *)rb_shape_array_t;
 
 struct rb_iseq_constant_body {
     enum iseq_type {
@@ -509,7 +477,11 @@ struct rb_iseq_constant_body {
     struct rb_mjit_unit *jit_unit;
 #endif
 
-    rb_yjit_block_array_array_t yjit_blocks; // empty, or has a size equal to iseq_size
+#if USE_YJIT
+    // YJIT stores some data on each iseq.
+    // Note: Cannot use YJIT_BUILD here since yjit.h includes this header.
+    void *yjit_payload;
+#endif
 };
 
 /* T_IMEMO/iseq */
@@ -535,6 +507,8 @@ struct rb_iseq_struct {
     } aux;
 };
 
+#define ISEQ_BODY(iseq) ((iseq)->body)
+
 #ifndef USE_LAZY_LOAD
 #define USE_LAZY_LOAD 0
 #endif
@@ -547,7 +521,7 @@ static inline const rb_iseq_t *
 rb_iseq_check(const rb_iseq_t *iseq)
 {
 #if USE_LAZY_LOAD
-    if (iseq->body == NULL) {
+    if (ISEQ_BODY(iseq) == NULL) {
 	rb_iseq_complete((rb_iseq_t *)iseq);
     }
 #endif
@@ -639,7 +613,7 @@ typedef struct rb_vm_struct {
     VALUE self;
 
     struct {
-        struct list_head set;
+        struct ccan_list_head set;
         unsigned int cnt;
         unsigned int blocking_cnt;
 
@@ -669,9 +643,9 @@ typedef struct rb_vm_struct {
 
     rb_serial_t fork_gen;
     rb_nativethread_lock_t waitpid_lock;
-    struct list_head waiting_pids; /* PID > 0: <=> struct waitpid_state */
-    struct list_head waiting_grps; /* PID <= 0: <=> struct waitpid_state */
-    struct list_head waiting_fds; /* <=> struct waiting_fd */
+    struct ccan_list_head waiting_pids; /* PID > 0: <=> struct waitpid_state */
+    struct ccan_list_head waiting_grps; /* PID <= 0: <=> struct waitpid_state */
+    struct ccan_list_head waiting_fds; /* <=> struct waiting_fd */
 
     /* set in single-threaded processes only: */
     volatile int ubf_async_safe;
@@ -718,7 +692,7 @@ typedef struct rb_vm_struct {
     int src_encoding_index;
 
     /* workqueue (thread-safe, NOT async-signal-safe) */
-    struct list_head workqueue; /* <=> rb_workqueue_job.jnode */
+    struct ccan_list_head workqueue; /* <=> rb_workqueue_job.jnode */
     rb_nativethread_lock_t workqueue_lock;
 
     VALUE orig_progname, progname;
@@ -738,6 +712,12 @@ typedef struct rb_vm_struct {
 
     struct rb_id_table *negative_cme_table;
     st_table *overloaded_cme_table; // cme -> overloaded_cme
+
+    // This id table contains a mapping from ID to ICs. It does this with ID
+    // keys and nested st_tables as values. The nested tables have ICs as keys
+    // and Qtrue as values. It is used when inline constant caches need to be
+    // invalidated or ISEQs are being freed.
+    struct rb_id_table *constant_cache;
 
 #ifndef VM_GLOBAL_CC_CACHE_TABLE_SIZE
 #define VM_GLOBAL_CC_CACHE_TABLE_SIZE 1023
@@ -1010,17 +990,17 @@ struct rb_ext_config {
 
 typedef struct rb_ractor_struct rb_ractor_t;
 
-#if defined(__linux__) || defined(__FreeBSD__)
-# define RB_THREAD_T_HAS_NATIVE_ID
-#endif
+struct rb_native_thread;
 
 typedef struct rb_thread_struct {
-    struct list_node lt_node; // managed by a ractor
+    struct ccan_list_node lt_node; // managed by a ractor
     VALUE self;
     rb_ractor_t *ractor;
     rb_vm_t *vm;
-
+    struct rb_native_thread *nt;
     rb_execution_context_t *ec;
+
+    struct rb_thread_sched_item sched;
 
     VALUE last_status; /* $? */
 
@@ -1032,15 +1012,10 @@ typedef struct rb_thread_struct {
     VALUE top_wrapper;
 
     /* thread control */
-    rb_nativethread_id_t thread_id;
-#ifdef NON_SCALAR_THREAD_ID
-    rb_thread_id_string_t thread_id_string;
-#endif
-#ifdef RB_THREAD_T_HAS_NATIVE_ID
-    int tid;
-#endif
+
     BITFIELD(enum rb_thread_status, status, 2);
     /* bit flags */
+    unsigned int locking_native_thread : 1;
     unsigned int to_kill : 1;
     unsigned int abort_on_exception: 1;
     unsigned int report_on_exception: 1;
@@ -1048,7 +1023,6 @@ typedef struct rb_thread_struct {
     int8_t priority; /* -3 .. 3 (RUBY_THREAD_PRIORITY_{MIN,MAX}) */
     uint32_t running_time_us; /* 12500..800000 */
 
-    native_thread_data_t native_thread_data;
     void *blocking_region_buffer;
 
     VALUE thgroup;
@@ -1249,7 +1223,7 @@ typedef rb_control_frame_t *
 #define GC_GUARDED_PTR_REF(p) VM_TAGGED_PTR_REF((p), 0x03)
 #define GC_GUARDED_PTR_P(p)   (((VALUE)(p)) & 0x01)
 
-enum {
+enum vm_frame_env_flags {
     /* Frame/Environment flag bits:
      *   MMMM MMMM MMMM MMMM ____ _FFF FFFF EEEX (LSB)
      *
@@ -1776,8 +1750,6 @@ VALUE rb_vm_call_kw(rb_execution_context_t *ec, VALUE recv, VALUE id, int argc,
                  const VALUE *argv, const rb_callable_method_entry_t *me, int kw_splat);
 MJIT_STATIC void rb_vm_pop_frame(rb_execution_context_t *ec);
 
-void rb_gvl_destroy(rb_global_vm_lock_t *gvl);
-
 void rb_thread_start_timer_thread(void);
 void rb_thread_stop_timer_thread(void);
 void rb_thread_reset_timer_thread(void);
@@ -1786,11 +1758,11 @@ void rb_thread_wakeup_timer_thread(int);
 static inline void
 rb_vm_living_threads_init(rb_vm_t *vm)
 {
-    list_head_init(&vm->waiting_fds);
-    list_head_init(&vm->waiting_pids);
-    list_head_init(&vm->workqueue);
-    list_head_init(&vm->waiting_grps);
-    list_head_init(&vm->ractor.set);
+    ccan_list_head_init(&vm->waiting_fds);
+    ccan_list_head_init(&vm->waiting_pids);
+    ccan_list_head_init(&vm->workqueue);
+    ccan_list_head_init(&vm->waiting_grps);
+    ccan_list_head_init(&vm->ractor.set);
 }
 
 typedef int rb_backtrace_iter_func(void *, VALUE, int, VALUE);

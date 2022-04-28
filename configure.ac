@@ -34,6 +34,7 @@ m4_include([tool/m4/ruby_prepend_option.m4])dnl
 m4_include([tool/m4/ruby_prog_gnu_ld.m4])dnl
 m4_include([tool/m4/ruby_replace_funcs.m4])dnl
 m4_include([tool/m4/ruby_replace_type.m4])dnl
+m4_include([tool/m4/ruby_require_funcs.m4])dnl
 m4_include([tool/m4/ruby_rm_recursive.m4])dnl
 m4_include([tool/m4/ruby_setjmp_type.m4])dnl
 m4_include([tool/m4/ruby_stack_grow_direction.m4])dnl
@@ -169,38 +170,42 @@ AC_ARG_VAR([STRIP],    [Strip command])
 # We don't want to bother things like `ccache gcc`, `clang -shared-libgcc`, ...
 set rb_dummy ${CC}
 rb_CC=$2
+AC_DEFUN([RUBY_CHECK_PROG_FOR_CC], [
+    rb_prog=`echo "${rb_CC}" | sed "$2"`
+    AC_CHECK_PROG([$1], [$rb_prog], [$rb_prog])
+])
 AS_CASE(["/${rb_CC} "],
 [*@<:@\ /@:>@"cc "*], [
     # Don't try g++/clang++ when CC=cc
-    AC_CHECK_TOOLS([CXX],    [cl.exe CC c++])
+    AC_CHECK_PROGS([CXX],    [cl.exe CC c++])
 ],
 [*icc*],              [
     # Intel C++ has interprocedural optimizations.  It tends to come with its
     # own linker etc.
-    AC_CHECK_TOOL([AR],      [`echo "${rb_CC}" | sed s/icc/xiar/`])
-    AC_CHECK_TOOL([CXX],     [`echo "${rb_CC}" | sed s/icc/icpc/`])
-    AC_CHECK_TOOL([LD],      [`echo "${rb_CC}" | sed s/icc/xild/`])
+    RUBY_CHECK_PROG_FOR_CC([AR],      [s/icc/xiar/])
+    RUBY_CHECK_PROG_FOR_CC([CXX],     [s/icc/icpc/])
+    RUBY_CHECK_PROG_FOR_CC([LD],      [s/icc/xild/])
 ],
 [*gcc*],              [
-    # Dito for GCC.
-    AC_CHECK_TOOL([LD],      [`echo "${rb_CC}" | sed s/gcc/ld/`])
-    AC_CHECK_TOOL([AR],      [`echo "${rb_CC}" | sed s/gcc/gcc-ar/`])
-    AC_CHECK_TOOL([CXX],     [`echo "${rb_CC}" | sed s/gcc/g++/`])
-    AC_CHECK_TOOL([NM],      [`echo "${rb_CC}" | sed s/gcc/gcc-nm/`])
-    AC_CHECK_TOOL([RANLIB],  [`echo "${rb_CC}" | sed s/gcc/gcc-ranlib/`])
+    # Ditto for GCC.
+    RUBY_CHECK_PROG_FOR_CC([LD],      [s/gcc/ld/])
+    RUBY_CHECK_PROG_FOR_CC([AR],      [s/gcc/gcc-ar/])
+    RUBY_CHECK_PROG_FOR_CC([CXX],     [s/gcc/g++/])
+    RUBY_CHECK_PROG_FOR_CC([NM],      [s/gcc/gcc-nm/])
+    RUBY_CHECK_PROG_FOR_CC([RANLIB],  [s/gcc/gcc-ranlib/])
 ],
 [*clang*],            [
-    # Dito for LLVM.  Note however that llvm-as is a LLVM-IR to LLVM bitcode
+    # Ditto for LLVM.  Note however that llvm-as is a LLVM-IR to LLVM bitcode
     # assembler that does not target your machine native binary.
     : ${LD:="${CC}"}         # ... try -fuse-ld=lld ?
-    AC_CHECK_TOOL([AR],      [`echo "${rb_CC}" | sed s/clang/llvm-ar/`])
-#   AC_CHECK_TOOL([AS],      [`echo "${rb_CC}" | sed s/clang/llvm-as/`])
-    AC_CHECK_TOOL([CXX],     [`echo "${rb_CC}" | sed s/clang/clang++/`])
-    AC_CHECK_TOOL([NM],      [`echo "${rb_CC}" | sed s/clang/llvm-nm/`])
-    AC_CHECK_TOOL([OBJCOPY], [`echo "${rb_CC}" | sed s/clang/llvm-objcopy/`])
-    AC_CHECK_TOOL([OBJDUMP], [`echo "${rb_CC}" | sed s/clang/llvm-objdump/`])
-    AC_CHECK_TOOL([RANLIB],  [`echo "${rb_CC}" | sed s/clang/llvm-ranlib/`])
-    AC_CHECK_TOOL([STRIP],   [`echo "${rb_CC}" | sed s/clang/llvm-strip/`])
+    RUBY_CHECK_PROG_FOR_CC([AR],      [s/clang/llvm-ar/])
+#   RUBY_CHECK_PROG_FOR_CC([AS],      [s/clang/llvm-as/])
+    RUBY_CHECK_PROG_FOR_CC([CXX],     [s/clang/clang++/])
+    RUBY_CHECK_PROG_FOR_CC([NM],      [s/clang/llvm-nm/])
+    RUBY_CHECK_PROG_FOR_CC([OBJCOPY], [s/clang/llvm-objcopy/])
+    RUBY_CHECK_PROG_FOR_CC([OBJDUMP], [s/clang/llvm-objdump/])
+    RUBY_CHECK_PROG_FOR_CC([RANLIB],  [s/clang/llvm-ranlib/])
+    RUBY_CHECK_PROG_FOR_CC([STRIP],   [s/clang/llvm-strip/])
 ])
 AS_UNSET(rb_CC)
 AS_UNSET(rb_dummy)
@@ -1263,15 +1268,6 @@ AC_CHECK_LIB(crypt, crypt)      # glibc (GNU/Linux, GNU/Hurd, GNU/kFreeBSD)
 AC_CHECK_LIB(dl, dlopen)	# Dynamic linking for SunOS/Solaris and SYSV
 AC_CHECK_LIB(socket, shutdown)  # SunOS/Solaris
 
-AS_IF([test -n "${PKG_CONFIG}" && ${PKG_CONFIG} --exists capstone], [
-   CAPSTONE_CFLAGS=`${PKG_CONFIG} --cflags capstone`
-   CAPSTONE_LIB_L=`${PKG_CONFIG} --libs-only-L capstone`
-   LDFLAGS="$LDFLAGS $CAPSTONE_LIB_L"
-   CFLAGS="$CFLAGS $CAPSTONE_CFLAGS"
-])
-
-AC_CHECK_LIB(capstone, cs_open) # Capstone disassembler for debugging YJIT
-
 dnl Checks for header files.
 AC_HEADER_DIRENT
 dnl AC_HEADER_STDC has been checked in AC_USE_SYSTEM_EXTENSIONS
@@ -1673,7 +1669,19 @@ AS_IF([test "$GCC" = yes], [
     ])
     ])
     AS_IF([test "$rb_cv_func___builtin_unreachable" = yes], [
-	AC_DEFINE_UNQUOTED(UNREACHABLE, [__builtin_unreachable()])
+	AC_DEFINE(HAVE___BUILTIN_UNREACHABLE)
+    ])
+
+    AC_CACHE_CHECK(for __assume, rb_cv_func___assume,
+    [RUBY_WERROR_FLAG([
+        AC_LINK_IFELSE([AC_LANG_PROGRAM([[]],
+            [[__assume(1);]])],
+            [rb_cv_func___assume=yes],
+            [rb_cv_func___assume=no])
+    ])
+    ])
+    AS_IF([test "$rb_cv_func___assume" = yes], [
+	AC_DEFINE(HAVE___ASSUME)
     ])
 }
 
@@ -1927,17 +1935,11 @@ AS_CASE(["$target_os"],[freebsd*],[
 	 AC_REPLACE_FUNCS(close)
 	 ])
 
-AC_DEFUN([RUBY_REQUIRE_FUNC], [
-    AC_CHECK_FUNCS([$1])
-    AS_IF([test "$ac_cv_func_[]AS_TR_SH($1)" = yes], [],
-          [AC_MSG_ERROR($1[() must be supported])])
-])
-
 # dup and dup2 are always available except for WASI
 AS_CASE(["$target_os"],
     [wasi*], [],
     [
-        m4_map_args_w([dup dup2], [RUBY_REQUIRE_FUNC(], [)])
+        RUBY_REQUIRE_FUNCS(dup dup2)
     ]
 )
 
@@ -2269,7 +2271,7 @@ AS_IF([test "x$rb_cv_atan2_inf_c99" = xyes], [AC_DEFINE(ATAN2_INF_C99)])
 # Some platform need -lrt for clock_gettime, but the other don't.
 AS_IF([test x"$ac_cv_func_clock_gettime" != xyes], [
     # glibc 2.17 moves clock_* functions from librt to the main C library.
-    # http://sourceware.org/ml/libc-announce/2012/msg00001.html
+    # https://sourceware.org/legacy-ml/libc-announce/2012/msg00001.html
     AC_CHECK_LIB(rt, clock_gettime)
     AS_IF([test x"$ac_cv_lib_rt_clock_gettime" = xyes], [
 	AC_DEFINE(HAVE_CLOCK_GETTIME, 1)
@@ -2367,7 +2369,7 @@ AS_IF([test "$rb_cv_negative_time_t" = yes], [
 ])
 
 # [ruby-dev:40910] overflow of time on FreeBSD
-# http://www.freebsd.org/cgi/query-pr.cgi?pr=145341
+# https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=145341
 AC_CACHE_CHECK(for localtime(3) overflow correctly, rb_cv_localtime_overflow,
   [AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #include <stdlib.h>
@@ -2446,7 +2448,7 @@ AC_CHECK_TYPES([sig_t],[],[],[@%:@include <signal.h>])
 AS_IF([test "$ac_cv_func_getpgid" = no], [
   # AC_FUNC_GETPGRP fails when cross-compiling with old autoconf.
   # autoconf is changed between 2.52d and 2.52f?
-  # http://lists.gnu.org/archive/html/bug-gnu-utils/2001-09/msg00181.html
+  # https://lists.gnu.org/archive/html/bug-gnu-utils/2001-09/msg00181.html
   # "autoconf cleanup for AC_FUNC_GETPGRP and GETPGRP_VOID"
 AC_FUNC_GETPGRP
 ])
@@ -3747,6 +3749,47 @@ AS_IF([test x"$MJIT_SUPPORT" = "xyes"],
 
 AC_SUBST(MJIT_SUPPORT)
 
+AC_ARG_ENABLE(yjit,
+        AS_HELP_STRING([--enable-yjit],
+        [enable experimental in-process JIT compiler that requires Rust build tools [default=no]]),
+        [YJIT_SUPPORT=$enableval], [YJIT_SUPPORT=no])
+
+CARGO=
+CARGO_BUILD_ARGS=
+YJIT_LIBS=
+AS_CASE(["${YJIT_SUPPORT}"],
+[yes|dev], [
+    AS_IF([test x"$enable_jit_support" = "xno"],
+        AC_MSG_ERROR([--disable-jit-support but --enable-yjit. YJIT requires JIT support])
+    )
+    AC_CHECK_TOOL(RUSTC, [rustc], [no])
+    AS_IF([test x"$RUSTC" = "xno"],
+        AC_MSG_ERROR([rustc is required. Installation instructions available at https://www.rust-lang.org/tools/install])
+    )
+    AS_IF([test x"$YJIT_SUPPORT" = "xyes"],
+            [rb_rust_target_subdir=release
+             CARGO_BUILD_ARGS='--release'],
+            [rb_rust_target_subdir=debug
+             CARGO_BUILD_ARGS='--features stats,disasm,asm_comments'
+             AC_CHECK_TOOL(CARGO, [cargo], [no])
+             AS_IF([test x"$CARGO" = "xno"],
+                AC_MSG_ERROR([cargo is required. Installation instructions available at https://www.rust-lang.org/tools/install])
+             )
+             AC_DEFINE(RUBY_DEBUG, 1)])
+    YJIT_LIBS="yjit/target/${rb_rust_target_subdir}/libyjit.a"
+    YJIT_OBJ='yjit.$(OBJEXT)'
+    AC_DEFINE(USE_YJIT, 1)
+], [AC_DEFINE(USE_YJIT, 0)])
+
+
+dnl These variables end up in ::RbConfig::CONFIG
+AC_SUBST(YJIT_SUPPORT)dnl what flavor of YJIT the Ruby build includes
+AC_SUBST(RUSTC)dnl Rust compiler command
+AC_SUBST(CARGO)dnl Cargo command for Rust builds
+AC_SUBST(CARGO_BUILD_ARGS)dnl for selecting Rust build profiles
+AC_SUBST(YJIT_LIBS)dnl for optionally building the Rust parts of YJIT
+AC_SUBST(YJIT_OBJ)dnl for optionally building the C parts of YJIT
+
 AC_ARG_ENABLE(install-static-library,
 	AS_HELP_STRING([--disable-install-static-library], [do not install static ruby library]),
 	[INSTALL_STATIC_LIBRARY=$enableval
@@ -4399,6 +4442,7 @@ config_summary "warnflags"           "$warnflags"
 config_summary "strip command"       "$STRIP"
 config_summary "install doc"         "$DOCTARGETS"
 config_summary "JIT support"         "$MJIT_SUPPORT"
+config_summary "YJIT support"        "$YJIT_SUPPORT"
 config_summary "man page type"       "$MANTYPE"
 config_summary "search path"         "$search_path"
 config_summary "static-linked-ext"   ${EXTSTATIC:+"yes"}

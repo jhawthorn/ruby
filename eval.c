@@ -695,17 +695,18 @@ rb_interrupt(void)
 enum {raise_opt_cause, raise_max_opt}; /*< \private */
 
 static int
-extract_raise_opts(int argc, const VALUE *argv, VALUE *opts)
+extract_raise_opts(int argc, VALUE *argv, VALUE *opts)
 {
     int i;
     if (argc > 0) {
-	VALUE opt = argv[argc-1];
-	if (RB_TYPE_P(opt, T_HASH)) {
+	VALUE opt;
+	argc = rb_scan_args(argc, argv, "*:", NULL, &opt);
+	if (!NIL_P(opt)) {
 	    if (!RHASH_EMPTY_P(opt)) {
 		ID keywords[1];
 		CONST_ID(keywords[0], "cause");
 		rb_get_kwargs(opt, keywords, 0, -1-raise_max_opt, opts);
-		if (RHASH_EMPTY_P(opt)) --argc;
+		if (!RHASH_EMPTY_P(opt)) argv[argc++] = opt;
 		return argc;
 	    }
 	}
@@ -1815,10 +1816,10 @@ errinfo_place(const rb_execution_context_t *ec)
 
     while (RUBY_VM_VALID_CONTROL_FRAME_P(cfp, end_cfp)) {
 	if (VM_FRAME_RUBYFRAME_P(cfp)) {
-	    if (cfp->iseq->body->type == ISEQ_TYPE_RESCUE) {
+            if (ISEQ_BODY(cfp->iseq)->type == ISEQ_TYPE_RESCUE) {
 		return &cfp->ep[VM_ENV_INDEX_LAST_LVAR];
 	    }
-	    else if (cfp->iseq->body->type == ISEQ_TYPE_ENSURE &&
+            else if (ISEQ_BODY(cfp->iseq)->type == ISEQ_TYPE_ENSURE &&
 		     !THROW_DATA_P(cfp->ep[VM_ENV_INDEX_LAST_LVAR]) &&
 		     !FIXNUM_P(cfp->ep[VM_ENV_INDEX_LAST_LVAR])) {
 		return &cfp->ep[VM_ENV_INDEX_LAST_LVAR];

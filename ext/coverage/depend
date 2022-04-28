@@ -16,6 +16,7 @@ coverage.o: $(hdrdir)/ruby/backward/2/stdalign.h
 coverage.o: $(hdrdir)/ruby/backward/2/stdarg.h
 coverage.o: $(hdrdir)/ruby/defines.h
 coverage.o: $(hdrdir)/ruby/intern.h
+coverage.o: $(hdrdir)/ruby/internal/abi.h
 coverage.o: $(hdrdir)/ruby/internal/anyargs.h
 coverage.o: $(hdrdir)/ruby/internal/arithmetic.h
 coverage.o: $(hdrdir)/ruby/internal/arithmetic/char.h
@@ -164,7 +165,6 @@ coverage.o: $(top_srcdir)/ccan/check_type/check_type.h
 coverage.o: $(top_srcdir)/ccan/container_of/container_of.h
 coverage.o: $(top_srcdir)/ccan/list/list.h
 coverage.o: $(top_srcdir)/ccan/str/str.h
-coverage.o: $(top_srcdir)/darray.h
 coverage.o: $(top_srcdir)/gc.h
 coverage.o: $(top_srcdir)/internal.h
 coverage.o: $(top_srcdir)/internal/array.h

@@ -4,7 +4,7 @@ require_relative 'helper'
 require 'rubygems/commands/setup_command'
 
 class TestGemCommandsSetupCommand < Gem::TestCase
-  bundler_gemspec = File.expand_path("../../../bundler/lib/bundler/version.rb", __FILE__)
+  bundler_gemspec = File.expand_path('../../bundler/lib/bundler/version.rb', __dir__)
   if File.exist?(bundler_gemspec)
     BUNDLER_VERS = File.read(bundler_gemspec).match(/VERSION = "(#{Gem::Version::VERSION_PATTERN})"/)[1]
   else
@@ -274,6 +274,8 @@ class TestGemCommandsSetupCommand < Gem::TestCase
     spec.executables.each do |e|
       assert_path_exist File.join destdir, @gemhome.gsub(/^[a-zA-Z]:/, ''), 'gems', spec.full_name, spec.bindir, e
     end
+  ensure
+    FileUtils.chmod "+w", @gemhome
   end
 
   def test_install_default_bundler_gem_with_destdir_and_prefix_flags

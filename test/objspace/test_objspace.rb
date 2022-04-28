@@ -147,6 +147,18 @@ class TestObjSpace < Test::Unit::TestCase
     end;
   end
 
+  def test_reachable_objects_during_iteration
+    opts = %w[--disable-gem --disable=frozen-string-literal -robjspace]
+    assert_separately opts, "#{<<-"begin;"}\n#{<<-'end;'}"
+    begin;
+      ObjectSpace.each_object{|o|
+        o.inspect
+        ObjectSpace.reachable_objects_from(Class)
+      }
+    end;
+  end
+
+
   def test_reachable_objects_from_root
     root_objects = ObjectSpace.reachable_objects_from_root
 
@@ -300,6 +312,28 @@ class TestObjSpace < Test::Unit::TestCase
     assert_match(/"file":"#{Regexp.escape __FILE__}", "line":#{line}/, info)
     assert_match(/"method":"#{loc.base_label}"/, info)
     JSON.parse(info) if defined?(JSON)
+  end
+
+  def test_dump_array
+    # Empty array
+    info = ObjectSpace.dump([])
+    assert_include(info, '"length":0, "embedded":true')
+    assert_not_include(info, '"shared":true')
+
+    # Non-embed array
+    arr = (1..10).to_a
+    info = ObjectSpace.dump(arr)
+    assert_include(info, '"length":10')
+    assert_not_include(info, '"embedded":true')
+    assert_not_include(info, '"shared":true')
+
+    # Shared array
+    arr1 = (1..10).to_a
+    arr = []
+    arr.replace(arr1)
+    info = ObjectSpace.dump(arr)
+    assert_include(info, '"length":10, "shared":true')
+    assert_not_include(info, '"embedded":true')
   end
 
   def test_dump_control_char
@@ -505,8 +539,28 @@ class TestObjSpace < Test::Unit::TestCase
     end
   end
 
+  def assert_test_string_entry_correct_in_dump_all(output)
+    # `TEST STRING` appears twice in the output of `ObjectSpace.dump_all`
+    # 1. To create the T_STRING object for the literal string "TEST STRING"
+    # 2. When it is assigned to the `str` variable with a new encoding
+    #
+    # This test makes assertions on the assignment to `str`, so we look for
+    # the second appearance of /TEST STRING/ in the output
+    test_string_in_dump_all = output.grep(/TEST STRING/)
+    assert_equal(test_string_in_dump_all.size, 2)
+
+    entry_hash = JSON.parse(test_string_in_dump_all[1])
+
+    assert_equal(entry_hash["bytesize"], 11)
+    assert_equal(entry_hash["value"], "TEST STRING")
+    assert_equal(entry_hash["encoding"], "UTF-8")
+    assert_equal(entry_hash["file"], "-")
+    assert_equal(entry_hash["line"], 4)
+    assert_equal(entry_hash["method"], "dump_my_heap_please")
+    assert_not_nil(entry_hash["generation"])
+  end
+
   def test_dump_all
-    entry = /"bytesize":11, "value":"TEST STRING", "encoding":"UTF-8", "file":"-", "line":4, "method":"dump_my_heap_please", "generation":/
     opts = %w[--disable-gem --disable=frozen-string-literal -robjspace]
 
     assert_in_out_err(opts, "#{<<-"begin;"}#{<<-'end;'}") do |output, error|
@@ -520,8 +574,8 @@ class TestObjSpace < Test::Unit::TestCase
 
         puts dump_my_heap_please
       end;
-      assert_equal 'nil', output.pop
-      assert_match(entry, output.grep(/TEST STRING/).join("\n"))
+
+      assert_test_string_entry_correct_in_dump_all(output)
     end
 
     assert_in_out_err(%w[-robjspace], "#{<<-"begin;"}#{<<-'end;'}") do |(output), (error)|
@@ -538,7 +592,8 @@ class TestObjSpace < Test::Unit::TestCase
       assert_nil(error)
       dump = File.readlines(output)
       File.unlink(output)
-      assert_match(entry, dump.grep(/TEST STRING/).join("\n"))
+
+      assert_test_string_entry_correct_in_dump_all(dump)
     end
 
     if defined?(JSON)

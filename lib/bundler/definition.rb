@@ -433,7 +433,7 @@ module Bundler
 
       raise ProductionError, "Your bundle only supports platforms #{@platforms.map(&:to_s)} " \
         "but your local platform is #{Bundler.local_platform}. " \
-        "Add the current platform to the lockfile with `bundle lock --add-platform #{Bundler.local_platform}` and try again."
+        "Add the current platform to the lockfile with\n`bundle lock --add-platform #{Bundler.local_platform}` and try again."
     end
 
     def add_platform(platform)
@@ -736,27 +736,10 @@ module Bundler
 
     def metadata_dependencies
       @metadata_dependencies ||= begin
-        ruby_versions = ruby_version_requirements(@ruby_version)
         [
-          Dependency.new("Ruby\0", ruby_versions),
+          Dependency.new("Ruby\0", RubyVersion.system.gem_version),
           Dependency.new("RubyGems\0", Gem::VERSION),
         ]
-      end
-    end
-
-    def ruby_version_requirements(ruby_version)
-      return [] unless ruby_version
-      if ruby_version.patchlevel
-        [ruby_version.to_gem_version_with_patchlevel]
-      else
-        ruby_version.versions.map do |version|
-          requirement = Gem::Requirement.new(version)
-          if requirement.exact?
-            "~> #{version}.0"
-          else
-            requirement
-          end
-        end
       end
     end
 
@@ -786,6 +769,7 @@ module Bundler
       else
         { :default => Source::RubygemsAggregate.new(sources, source_map) }.merge(source_map.direct_requirements)
       end
+      source_requirements.merge!(source_map.locked_requirements) unless @remote
       metadata_dependencies.each do |dep|
         source_requirements[dep.name] = sources.metadata_source
       end
@@ -832,7 +816,7 @@ module Bundler
     end
 
     def source_map
-      @source_map ||= SourceMap.new(sources, dependencies)
+      @source_map ||= SourceMap.new(sources, dependencies, @locked_specs)
     end
   end
 end

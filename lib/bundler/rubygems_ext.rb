@@ -4,14 +4,23 @@ require "pathname"
 
 require "rubygems/specification"
 
-# Possible use in Gem::Specification#source below and require
-# shouldn't be deferred.
+# We can't let `Gem::Source` be autoloaded in the `Gem::Specification#source`
+# redefinition below, so we need to load it upfront. The reason is that if
+# Bundler monkeypatches are loaded before RubyGems activates an executable (for
+# example, through `ruby -rbundler -S irb`), gem activation might end up calling
+# the redefined `Gem::Specification#source` and triggering the `Gem::Source`
+# autoload. That would result in requiring "rubygems/source" inside another
+# require, which would trigger a monitor error and cause the `autoload` to
+# eventually fail. A better solution is probably to completely avoid autoloading
+# `Gem::Source` from the redefined `Gem::Specification#source`.
 require "rubygems/source"
 
 require_relative "match_platform"
 
 module Gem
   class Specification
+    include ::Bundler::MatchPlatform
+
     attr_accessor :remote, :location, :relative_loaded_from
 
     remove_method :source
@@ -24,11 +33,7 @@ module Gem
     alias_method :rg_loaded_from,   :loaded_from
 
     def full_gem_path
-      # this cannot check source.is_a?(Bundler::Plugin::API::Source)
-      # because that _could_ trip the autoload, and if there are unresolved
-      # gems at that time, this method could be called inside another require,
-      # thus raising with that constant being undefined. Better to check a method
-      if source.respond_to?(:path) || (source.respond_to?(:bundler_plugin_api_source?) && source.bundler_plugin_api_source?)
+      if source.respond_to?(:root)
         Pathname.new(loaded_from).dirname.expand_path(source.root).to_s.tap{|x| x.untaint if RUBY_VERSION < "2.7" }
       else
         rg_full_gem_path
@@ -62,6 +67,23 @@ module Gem
       full_gem_path
     end
 
+    unless const_defined?(:LATEST_RUBY_WITHOUT_PATCH_VERSIONS)
+      LATEST_RUBY_WITHOUT_PATCH_VERSIONS = Gem::Version.new("2.1")
+
+      alias_method :rg_required_ruby_version=, :required_ruby_version=
+      def required_ruby_version=(req)
+        self.rg_required_ruby_version = req
+
+        @required_ruby_version.requirements.map! do |op, v|
+          if v >= LATEST_RUBY_WITHOUT_PATCH_VERSIONS && v.release.segments.size == 4
+            [op == "~>" ? "=" : op, Gem::Version.new(v.segments.tap {|s| s.delete_at(3) }.join("."))]
+          else
+            [op, v]
+          end
+        end
+      end
+    end
+
     def groups
       @groups ||= []
     end
@@ -80,6 +102,17 @@ module Gem
       end
       gemfile
     end
+
+    # Backfill missing YAML require when not defined. Fixed since 3.1.0.pre1.
+    module YamlBackfiller
+      def to_yaml(opts = {})
+        Gem.load_yaml unless defined?(::YAML)
+
+        super(opts)
+      end
+    end
+
+    prepend YamlBackfiller
 
     def nondevelopment_dependencies
       dependencies - development_dependencies
@@ -226,11 +259,5 @@ module Gem
         Dir.glob(File.join(base_path.to_s.gsub(/[\[\]]/, '\\\\\\&'), glob)).map! {|f| File.expand_path(f) }
       end
     end
-  end
-end
-
-module Gem
-  class Specification
-    include ::Bundler::MatchPlatform
   end
 end

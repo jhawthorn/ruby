@@ -473,8 +473,8 @@ module Test
         real_file = worker.real_file and warn "running file: #{real_file}"
         @need_quit = true
         warn ""
-        warn "Some worker was crashed. It seems ruby interpreter's bug"
-        warn "or, a bug of test/unit/parallel.rb. try again without -j"
+        warn "A test worker crashed. It might be an interpreter bug or"
+        warn "a bug in test/unit/parallel.rb. Try again without the -j"
         warn "option."
         warn ""
         if File.exist?('core')
@@ -684,7 +684,7 @@ module Test
 
             if !(_io = IO.select(@ios, nil, nil, timeout))
               timeout = Time.now - @worker_timeout
-              quit_workers {|w| w.response_at < timeout}&.map {|w|
+              quit_workers {|w| w.response_at&.<(timeout) }&.map {|w|
                 rep << {file: w.real_file, result: nil, testcase: w.current[0], error: w.current}
               }
             elsif _io.first.any? {|io|
@@ -745,7 +745,19 @@ module Test
             end
             unless error.empty?
               puts "\n""Retrying hung up testcases..."
-              error.map! {|r| ::Object.const_get(r[:testcase])}
+              error = error.map do |r|
+                begin
+                  ::Object.const_get(r[:testcase])
+                rescue NameError
+                  # testcase doesn't specify the correct case, so show `r` for information
+                  require 'pp'
+
+                  $stderr.puts "Retrying is failed because the file and testcase is not consistent:"
+                  PP.pp r, $stderr
+                  @errors += 1
+                  nil
+                end
+              end.compact
               verbose = @verbose
               job_status = options[:job_status]
               options[:verbose] = @verbose = true

@@ -1785,7 +1785,7 @@ expr		: command_call
 		  p_top_expr_body
 		    {
 			pop_pvtbl(p, $<tbl>3);
-			p->ctxt.in_kwarg = $<ctxt>1.in_kwarg;
+			p->ctxt.in_kwarg = $<ctxt>2.in_kwarg;
 		    /*%%%*/
 			$$ = NEW_CASE3($1, NEW_IN($4, NEW_TRUE(&@4), NEW_FALSE(&@4), &@4), &@$);
 		    /*% %*/
@@ -4356,9 +4356,6 @@ p_args_tail	: p_rest
 p_find		: p_rest ',' p_args_post ',' p_rest
 		    {
 			$$ = new_find_pattern_tail(p, $1, $3, $5, &@$);
-
-			if (rb_warning_category_enabled_p(RB_WARN_CATEGORY_EXPERIMENTAL))
-			    rb_warn0L_experimental(nd_line($$), "Find pattern is experimental, and the behavior may change in future versions of Ruby!");
 		    }
 		;
 
@@ -4425,7 +4422,7 @@ p_kw		: p_kw_label p_expr
 		    {
 			error_duplicate_pattern_key(p, get_id($1), &@1);
 		    /*%%%*/
-			$$ = list_append(p, NEW_LIST(NEW_LIT(ID2SYM($1), &@$), &@$), $2);
+			$$ = list_append(p, NEW_LIST(NEW_LIT(ID2SYM($1), &@1), &@$), $2);
 		    /*% %*/
 		    /*% ripper: rb_ary_new_from_args(2, get_value($1), get_value($2)) %*/
 		    }
@@ -5474,7 +5471,7 @@ kwrest_mark	: tPOW
 		| tDSTAR
 		;
 
-f_no_kwarg	: kwrest_mark keyword_nil
+f_no_kwarg	: p_kwnorest
 		    {
 		    /*%%%*/
 		    /*% %*/
@@ -5740,9 +5737,7 @@ operation	: tIDENTIFIER
 		| tFID
 		;
 
-operation2	: tIDENTIFIER
-		| tCONSTANT
-		| tFID
+operation2	: operation
 		| op
 		;
 
@@ -10999,9 +10994,9 @@ is_private_local_id(ID name)
 static int
 shadowing_lvar_0(struct parser_params *p, ID name)
 {
-    if (is_private_local_id(name)) return 1;
     if (dyna_in_block(p)) {
 	if (dvar_curr(p, name)) {
+	    if (is_private_local_id(name)) return 1;
 	    yyerror0("duplicated argument name");
 	}
 	else if (dvar_defined(p, name) || local_id(p, name)) {
@@ -11014,6 +11009,7 @@ shadowing_lvar_0(struct parser_params *p, ID name)
     }
     else {
 	if (local_id(p, name)) {
+	    if (is_private_local_id(name)) return 1;
 	    yyerror0("duplicated argument name");
 	}
     }
@@ -12086,6 +12082,7 @@ new_args_tail(struct parser_params *p, NODE *kw_args, ID kw_rest_arg, ID block, 
 	struct vtable *vtargs = p->lvtbl->args;
 	NODE *kwn = kw_args;
 
+        if (block) block = vtargs->tbl[vtargs->pos-1];
 	vtable_pop(vtargs, !!block + !!kw_rest_arg);
 	required_kw_vars = kw_vars = &vtargs->tbl[vtargs->pos];
 	while (kwn) {

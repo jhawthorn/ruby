@@ -27,6 +27,8 @@ CC_WRAPPER = @XCC_WRAPPER@
 CC = @CC@
 CPP = @CPP@
 LD = @LD@
+RUSTC = @RUSTC@
+CARGO = @CARGO@
 YACC = bison
 PURIFY =
 AUTOCONF = autoconf
@@ -106,6 +108,11 @@ MJIT_MIN_HEADER_NAME = rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h
 MJIT_MIN_HEADER = $(MJIT_HEADER_BUILD_DIR)/$(MJIT_MIN_HEADER_NAME)
 MJIT_HEADER_BUILD_DIR = $(EXTOUT)/include/$(arch)
 MJIT_TABS=@MJIT_TABS@
+YJIT_SUPPORT=@YJIT_SUPPORT@
+YJIT_LIBS=@YJIT_LIBS@
+YJIT_OBJ=@YJIT_OBJ@
+CARGO_TARGET_DIR=@abs_top_builddir@/yjit/target
+CARGO_BUILD_ARGS=@CARGO_BUILD_ARGS@
 LDFLAGS = @STATIC@ $(CFLAGS) @LDFLAGS@
 EXE_LDFLAGS = $(LDFLAGS)
 EXTLDFLAGS = @EXTLDFLAGS@
@@ -120,7 +127,7 @@ XDLDFLAGS = @DLDFLAGS@
 DLDFLAGS = @LIBRUBY_DLDFLAGS@ $(XLDFLAGS) $(ARCH_FLAG)
 SOLIBS = @SOLIBS@
 ENABLE_DEBUG_ENV = @ENABLE_DEBUG_ENV@
-MAINLIBS = @MAINLIBS@
+MAINLIBS = @YJIT_LIBS@ @MAINLIBS@
 ARCHMINIOBJS = @MINIOBJS@
 DLNOBJ = @DLNOBJ@
 ENCOBJS = @ENCOBJS@
@@ -147,8 +154,7 @@ RUNRUBY = @RUNRUBY@ $(RUN_OPTS)
 # RUNRUBY_DEBUGGER:: debugging option for runruby.rb
 RUNRUBY_DEBUGGER = --debugger='gdb -x run.gdb --quiet --args'
 XRUBY = @XRUBY@
-BTESTRUBY = @BTESTRUBY@\
-	$(MINIRUBYOPT)
+BTESTRUBY = @BTESTRUBY@ -r./$(arch)-fake
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
@@ -266,6 +272,15 @@ DESTDIR       = @DESTDIR@
 configure_args = @configure_args@
 #### End of variables
 
+# Shell short-circuiting for dodging syntax error on older shells, e.g.
+# Solaris. Hack: make sends <backslash><newline> to the shell per POSIX, and
+# two backslashes stops escaping the newline.
+YJIT_BUILD_ONLY0 = $(YJIT_SUPPORT:no=exit; \\)
+YJIT_BUILD_ONLY1 = $(YJIT_BUILD_ONLY0:dev=)
+YJIT_BUILD_ONLY  = $(YJIT_BUILD_ONLY1:yes=)
+
+ABI_VERSION_HDR = $(hdrdir)/ruby/internal/abi.h
+
 .SUFFIXES: .inc .h .c .y .i .$(ASMEXT) .$(DTRACE_EXT)
 
 all:
@@ -290,11 +305,21 @@ PRE_LIBRUBY_UPDATE = [ -n "$(LIBRUBY_SO_UPDATE)" ] || $(gnumake:yes=exec) $(RM) 
 # We must `rm' the library each time this rule is invoked because "updating" a
 # MAB library on Apple/NeXT (see --enable-fat-binary in configure) is not
 # supported.
+#
+# In YJIT builds, merge libyjit.a with libruby_static.a
 $(LIBRUBY_A):
 		@$(RM) $@
 		@-[ -z "$(EXTSTATIC)" ] || $(PRE_LIBRUBY_UPDATE)
 		$(ECHO) linking static-library $@
 		$(Q) $(AR) $(ARFLAGS) $@ $(LIBRUBY_A_OBJS) $(INITOBJS)
+		$(Q) $(YJIT_BUILD_ONLY)\
+		  set -eu && \
+		  echo 'merging $(YJIT_LIBS) into $@' && \
+		  $(RMALL)    '$(CARGO_TARGET_DIR)/libyjit/' && \
+		  $(MAKEDIRS) '$(CARGO_TARGET_DIR)/libyjit/' && \
+		  $(CP) '$(YJIT_LIBS)' '$(CARGO_TARGET_DIR)/libyjit/' && \
+		  (cd '$(CARGO_TARGET_DIR)/libyjit/' && $(AR) -x libyjit.a) && \
+		  $(AR) $(ARFLAGS) $@ `find '$(CARGO_TARGET_DIR)/libyjit/' -name '*.o'` ;
 		@-$(RANLIB) $@ 2> /dev/null || true
 
 verify-static-library: $(LIBRUBY_A)
@@ -354,7 +379,7 @@ install-cross: $(arch)-fake.rb $(RBCONFIG) rbconfig.rb $(arch_hdrdir)/ruby/confi
 
 Makefile:	$(srcdir)/template/Makefile.in $(srcdir)/enc/Makefile.in
 
-$(MKFILES): config.status $(srcdir)/version.h
+$(MKFILES): config.status $(srcdir)/version.h $(ABI_VERSION_HDR)
 		@[ -f $@ ] && mv $@ $@.old
 		MAKE=$(MAKE) $(SHELL) ./config.status $@
 		@cmp $@ $@.old > /dev/null 2>&1 && echo $@ unchanged && exit 0; \
@@ -376,7 +401,7 @@ reconfig-exec-0 = test -t 1 && { : $${CONFIGURE_TTY=yes}; export CONFIGURE_TTY; 
 reconfig-exec-1 = set -x; "$$@"
 
 reconfig config.status:	$(srcdir)/$(CONFIGURE) $(srcdir)/enc/Makefile.in \
-			$(srcdir)/include/ruby/version.h
+			$(hdrdir)/ruby/version.h $(ABI_VERSION_HDR)
 	@PWD= MINIRUBY="$(MINIRUBY)"; export MINIRUBY; \
 	set $(SHELL) $($@-args); $(reconfig-exec-$(V))
 

@@ -424,6 +424,27 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal([2, 3], m.offset(3))
   end
 
+  def test_match_byteoffset_begin_end
+    m = /(?<x>b..)/.match("foobarbaz")
+    assert_equal([3, 6], m.byteoffset("x"))
+    assert_equal(3, m.begin("x"))
+    assert_equal(6, m.end("x"))
+    assert_raise(IndexError) { m.byteoffset("y") }
+    assert_raise(IndexError) { m.byteoffset(2) }
+    assert_raise(IndexError) { m.begin(2) }
+    assert_raise(IndexError) { m.end(2) }
+
+    m = /(?<x>q..)?/.match("foobarbaz")
+    assert_equal([nil, nil], m.byteoffset("x"))
+    assert_equal(nil, m.begin("x"))
+    assert_equal(nil, m.end("x"))
+
+    m = /\A\u3042(.)(.)?(.)\z/.match("\u3042\u3043\u3044")
+    assert_equal([3, 6], m.byteoffset(1))
+    assert_equal([nil, nil], m.byteoffset(2))
+    assert_equal([6, 9], m.byteoffset(3))
+  end
+
   def test_match_to_s
     m = /(?<x>b..)/.match("foobarbaz")
     assert_equal("bar", m.to_s)
@@ -467,6 +488,7 @@ class TestRegexp < Test::Unit::TestCase
     assert_nil(m[5])
     assert_raise(IndexError) { m[:foo] }
     assert_raise(TypeError) { m[nil] }
+    assert_equal(["baz", nil], m[-2, 3])
   end
 
   def test_match_values_at
@@ -536,6 +558,8 @@ class TestRegexp < Test::Unit::TestCase
   def test_initialize
     assert_raise(ArgumentError) { Regexp.new }
     assert_equal(/foo/, assert_warning(/ignored/) {Regexp.new(/foo/, Regexp::IGNORECASE)})
+    assert_equal(/foo/, assert_no_warning(/ignored/) {Regexp.new(/foo/)})
+    assert_equal(/foo/, assert_no_warning(/ignored/) {Regexp.new(/foo/, timeout: nil)})
 
     assert_equal(Encoding.find("US-ASCII"), Regexp.new("b..", nil, "n").encoding)
     assert_equal("bar", "foobarbaz"[Regexp.new("b..", nil, "n")])
@@ -1184,6 +1208,11 @@ class TestRegexp < Test::Unit::TestCase
 
     assert_no_match(/^\p{age=12.0}$/u, "\u32FF")
     assert_match(/^\p{age=12.1}$/u, "\u32FF")
+    assert_no_match(/^\p{age=13.0}$/u, "\u{10570}")
+    assert_match(/^\p{age=14.0}$/u, "\u{10570}")
+    assert_match(/^\p{age=14.0}$/u, "\u9FFF")
+    assert_match(/^\p{age=14.0}$/u, "\u{2A6DF}")
+    assert_match(/^\p{age=14.0}$/u, "\u{2B738}")
   end
 
   MatchData_A = eval("class MatchData_\u{3042} < MatchData; self; end")
@@ -1396,6 +1425,21 @@ class TestRegexp < Test::Unit::TestCase
     end
   end
 
+  def test_bug18631
+    assert_kind_of MatchData, /(?<x>a)(?<x>aa)\k<x>/.match("aaaaa")
+    assert_kind_of MatchData, /(?<x>a)(?<x>aa)\k<x>/.match("aaaa")
+    assert_kind_of MatchData, /(?<x>a)(?<x>aa)\k<x>/.match("aaaab")
+  end
+
+  def test_invalid_group
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+    begin;
+      assert_raise_with_message(RegexpError, /invalid conditional pattern/) do
+        Regexp.new("((?(1)x|x|)x)+")
+      end
+    end;
+  end
+
   # This assertion is for porting x2() tests in testpy.py of Onigmo.
   def assert_match_at(re, str, positions, msg = nil)
     re = Regexp.new(re) unless re.is_a?(Regexp)
@@ -1424,5 +1468,44 @@ class TestRegexp < Test::Unit::TestCase
       errs.map {|str, match| "\t#{'not ' unless match}match #{str.inspect}"}.join(",\n")
     }
     assert_empty(errs, msg)
+  end
+
+  def test_s_timeout
+    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
+    begin;
+      timeout = EnvUtil.apply_timeout_scale(0.2)
+
+      Regexp.timeout = timeout
+      assert_equal(timeout, Regexp.timeout)
+
+      t = Time.now
+      assert_raise_with_message(Regexp::TimeoutError, "regexp match timeout") do
+        # A typical ReDoS case
+        /^(a*)*$/ =~ "a" * 1000000 + "x"
+      end
+      t = Time.now - t
+
+      assert_in_delta(timeout, t, timeout / 2)
+    end;
+  end
+
+  def test_timeout
+    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
+    begin;
+      dummy_timeout = EnvUtil.apply_timeout_scale(10)
+      timeout = EnvUtil.apply_timeout_scale(0.2)
+
+      Regexp.timeout = dummy_timeout # This should be ignored
+
+      re = Regexp.new("^a*b?a*$", timeout: timeout)
+
+      t = Time.now
+      assert_raise_with_message(Regexp::TimeoutError, "regexp match timeout") do
+        re =~ "a" * 1000000 + "x"
+      end
+      t = Time.now - t
+
+      assert_in_delta(timeout, t, timeout / 2)
+    end;
   end
 end

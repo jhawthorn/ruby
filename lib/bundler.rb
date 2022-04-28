@@ -370,7 +370,7 @@ EOF
 
       if env.key?("RUBYLIB")
         rubylib = env["RUBYLIB"].split(File::PATH_SEPARATOR)
-        rubylib.delete(File.expand_path("..", __FILE__))
+        rubylib.delete(__dir__)
         env["RUBYLIB"] = rubylib.join(File::PATH_SEPARATOR)
       end
 
@@ -561,7 +561,7 @@ EOF
 
     def load_marshal(data)
       Marshal.load(data)
-    rescue StandardError => e
+    rescue TypeError => e
       raise MarshalError, "#{e.class}: #{e.message}"
     end
 
@@ -654,7 +654,7 @@ EOF
     private
 
     def eval_yaml_gemspec(path, contents)
-      require_relative "bundler/psyched_yaml"
+      Kernel.require "psych"
 
       Gem::Specification.from_yaml(contents)
     rescue ::Psych::SyntaxError, ArgumentError, Gem::EndOfYAMLException, Gem::Exception

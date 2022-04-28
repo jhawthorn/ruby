@@ -12,12 +12,10 @@ begin
 rescue LoadError
 end
 
-require 'rdoc'
+require_relative '../../rdoc'
 
-##
-# For RubyGems backwards compatibility
-
-require_relative 'formatter'
+require_relative 'formatter' # For RubyGems backwards compatibility
+# TODO: Fix weird documentation with `require_relative`
 
 ##
 # The RI driver implements the command-line ri tool.

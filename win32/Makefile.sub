@@ -148,7 +148,7 @@ PLATFORM_DIR = win32
 arch = $(ARCH)-$(PLATFORM)
 sitearch = $(ARCH)-$(RT)
 !if !defined(ruby_version)
-ruby_version = $(MAJOR).$(MINOR).0
+ruby_version = $(MAJOR).$(MINOR).0+$(ABI_VERSION)
 !endif
 !if !defined(RUBY_VERSION_NAME)
 RUBY_VERSION_NAME = $(RUBY_BASE_NAME)-$(ruby_version)
@@ -156,7 +156,7 @@ RUBY_VERSION_NAME = $(RUBY_BASE_NAME)-$(ruby_version)
 RUBY_PROGRAM_VERSION = $(MAJOR).$(MINOR).$(TEENY)
 
 !ifndef RUBY_SO_NAME
-RUBY_SO_NAME = $(RT)-$(RUBY_BASE_NAME)$(ruby_version:.=)
+RUBY_SO_NAME = $(RT)-$(RUBY_BASE_NAME)$(MAJOR)$(MINOR)0
 !if "$(ARCH)" != "i386"
 RUBY_SO_NAME = $(ARCH)-$(RUBY_SO_NAME)
 !endif
@@ -385,7 +385,7 @@ BOOTSTRAPRUBY = $(BASERUBY)
 BOOTSTRAPRUBY = $(MINIRUBY)
 XRUBY = $(RUNRUBY)
 !endif
-BTESTRUBY = $(MINIRUBY)
+BTESTRUBY = $(MINIRUBY) -r./$(arch)-fake
 !ifndef RUBY
 RUBY = ruby
 !endif
@@ -539,6 +539,8 @@ ACTIONS_GROUP = @:: $(empty)
 ACTIONS_ENDGROUP = @::
 !endif
 
+ABI_VERSION_HDR = $(hdrdir)/ruby/internal/abi.h
+
 !include $(srcdir)/common.mk
 
 !ifdef SCRIPTPROGRAMS
@@ -571,6 +573,7 @@ update-src::
 
 .PHONY: reconfig
 reconfig $(MKFILES): $(srcdir)/common.mk $(srcdir)/version.h \
+	    $(hdrdir)/ruby/version.h $(ABI_VERSION_HDR) \
 	    $(win_srcdir)/Makefile.sub $(win_srcdir)/configure.bat \
 	    $(win_srcdir)/setup.mak $(win_srcdir)/enc-setup.mak \
 	    $(srcdir)/enc/Makefile.in
@@ -702,8 +705,9 @@ $(CONFIG_H): $(MKFILES) $(srcdir)/win32/Makefile.sub $(win_srcdir)/Makefile.sub
 #define ALWAYS_INLINE(x) __forceinline x
 #define WARN_UNUSED_RESULT(x) x
 #define MAYBE_UNUSED(x) x
-#define UNREACHABLE __assume(0)
-#define ASSUME(x) __assume(!!(x))
+!if !defined(VS2022_FP_BUG)
+#define HAVE___ASSUME 1
+!endif
 #define FUNC_STDCALL(x) __stdcall x
 #define FUNC_CDECL(x) __cdecl x
 #define FUNC_FASTCALL(x) __fastcall x
