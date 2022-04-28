@@ -1670,7 +1670,7 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
 void
 set_shape(VALUE obj, rb_shape_t* shape)
 {
-//    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", SHAPE_ID(shape), &obj, &shape);
+    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", SHAPE_ID(shape), (void *)obj, (void *)shape);
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     set_shape_id(obj, SHAPE_ID(shape));
     if (SHAPE_ID(shape) == 313) {
