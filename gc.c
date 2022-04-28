@@ -1880,6 +1880,9 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 {
     ASSERT_vm_locking();
 
+    if (BUILTIN_TYPE(obj) == T_IMEMO && imemo_type(obj) == imemo_shape && SHAPE_ID(obj) == 22) {
+        fprintf(stderr, "shape with id: %d at %p\n", SHAPE_ID(obj), (VALUE *)obj);
+    }
     RVALUE *p = (RVALUE *)obj;
 
     asan_unpoison_object(obj, false);
@@ -3443,9 +3446,10 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
-                if (SHAPE_ID(shape) == 313) {
-                    fprintf(stderr, "freeing shape: %d\n", SHAPE_ID(shape));
-                }
+                fprintf(stderr, "freeing shape %p id: %d\n", shape, SHAPE_ID(shape));
+                if (SHAPE_ID(shape) == 21 || SHAPE_ID(shape) == 22 || SHAPE_ID(shape) == 23)
+                    printf("hello %d\n", SHAPE_ID(shape));
+
                 if(shape->edges) {
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
                     rb_id_table_free(shape->edges);

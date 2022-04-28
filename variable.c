@@ -1700,11 +1700,8 @@ set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
-    if (shape_id == 313) {
-        fprintf(stderr, "setting shape 313 %p\n", shape);
-    }
     vm->shape_list[shape_id] = shape;
-    set_shape_in_bitmap(shape_id);
+//    set_shape_in_bitmap(shape_id);
 }
 
 rb_shape_t*
@@ -1820,31 +1817,27 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
     rb_shape_t *res;
     RB_VM_LOCK_ENTER();
     {
-        // Check to see if egdges hash exists
-        // If not, create a new edges hash
-        // Check if id is in hash
-        // If not, allocate a new shape and insert
-        // If so, return existing shape
-        if (!shape->edges) {
-            shape->edges = rb_id_table_create(0);
+        // We don't need `res` specifically at the end of this
+        // rb_id_table_lookup, we could just use a void (it's about to get set
+        // to shape anyways) - how can we do this?
+        if (rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
+            // If shape already contains the ivar that is being set, we'll return shape
+            res = shape;
         }
+        else {
+            if (!shape->edges)
+                shape->edges = rb_id_table_create(0);
 
-        fprintf(stderr, "from %lu via: %d", id);
-        if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res)) {
-            fprintf(stderr, "couldn't find id in edges %lu\n", id);
-            RUBY_ASSERT(shape->iv_table);
-            // Why aren't we doing shape allocation here???
-            // How can the edge be in iv table but not in edges?
-            if (!rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
-                fprintf(stderr, "couldn't find id in iv_table %lu\n", id);
+            // Lookup the shape in edges - if there's already an edge and a corresponding shape for it,
+            // we can return that. Otherwise, we'll need to get a new shape
+            if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res)) {
                 shape_id_t next_shape_id = get_next_shape_id();
-                // DO we want a get_next_shape that gives us back whatever the
-                // shape is? Even a no_cache_shape, then we don't have to set ID
-                // etc
+
                 if (next_shape_id == MAX_SHAPE_ID) {
                     res = get_no_cache_shape();
                 }
                 else {
+                    RUBY_ASSERT(next_shape_id < MAX_SHAPE_ID);
                     rb_shape_t * new_shape = rb_shape_alloc(next_shape_id,
                             id,
                             shape,
@@ -1853,36 +1846,24 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
 
+                    set_shape_by_id(next_shape_id, new_shape);
+
                     //  Only insert if the id is an ivar
                     if (tt == SHAPE_IVAR) {
                         rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
                     }
                     else {
+                        // tt == SHAPE_FROZEN
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
-                    set_shape_by_id(next_shape_id, new_shape);
-
-                    // TODO: Need to do this earlier, before we allocate the new shape
-                    if (SHAPE_ID(new_shape) > MAX_SHAPE_ID) {
-                        fprintf(stderr, "Too many shapes\n");
-                        abort();
-                    }
                     res = new_shape;
+                    fprintf(stderr, "shape is at %p with id %d and parent_id %d\n", new_shape, next_shape_id, SHAPE_ID(shape));
                 }
             }
-            else {
-                fprintf(stderr, "found id %lu in iv table\n", id);
-            }
-        }
-        else {
-            fprintf(stderr, "found id %lu in edges\n", id);
         }
     }
     RB_VM_LOCK_LEAVE();
-    if(res->edge_name != id) {
-        rb_bug("uh oh 1887\n");
-    }
     return res;
 }
 
