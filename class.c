@@ -229,10 +229,6 @@ class_alloc(VALUE flags, VALUE klass)
     RCLASS_SERIAL(obj) = rb_next_class_serial();
     RB_OBJ_WRITE(obj, &RCLASS_REFINED_CLASS(obj), Qnil);
     RCLASS_ALLOCATOR(obj) = 0;
-    if (0x100b3c760 == (uintptr_t)obj) {
-        fprintf(stderr, "break here!!\n");
-    }
-    fprintf(stderr, "new class at %p with shape id %d\n", (void *)obj, SHAPE_ID(obj));
 
     return (VALUE)obj;
 }

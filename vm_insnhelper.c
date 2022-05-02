@@ -1298,6 +1298,8 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
         rb_shape_t* shape = get_shape(obj);
+        if (rb_objspace_garbage_object_p(shape))
+            rb_bug("trash.\n");
         rb_shape_t* next_shape = get_next_shape(shape, id);
         set_shape(obj, next_shape);
 
@@ -1339,6 +1341,20 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     }
                 }
                 else {
+                    if (id == rb_intern("@cache")) {
+                        fprintf(stderr, "miss slow path, writing %d -> %d on iseq %p\n", SHAPE_ID(shape), SHAPE_ID(next_shape), (void *)iseq);
+                        rb_obj_info_dump((VALUE)iseq);
+                        rb_obj_info_dump((VALUE)next_shape);
+                        if(get_shape_by_id(SHAPE_ID(next_shape))) {
+                            fprintf(stderr, "this was a real shape\n");
+                            fprintf(stderr, "not garbage: %lu\n", rb_objspace_garbage_object_p(next_shape));
+                        }
+                        RUBY_ASSERT(!rb_objspace_garbage_object_p(next_shape));
+                        if (!next_shape->edges) {
+                            next_shape->edges = rb_id_table_create(0);
+                        }
+                        rb_id_table_insert(next_shape->edges, rb_intern("__iseq__"), (VALUE)iseq);
+                    }
                     vm_ic_attr_index_set(iseq, ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
@@ -1436,7 +1452,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                 // TODO: We should directly set it for speed
                 rb_vm_t *vm = GET_VM();
                 if (!vm->shape_list[shape_dest_id]) {
-                    fprintf(stderr, "couldn't find iseq: %p shape_id: %d\n", iseq, shape_dest_id);
+                    fprintf(stderr, "couldn't find shape on iseq: %p with shape_id: %d\n", iseq, shape_dest_id);
                     abort();
                 }
                 set_shape(obj, get_shape_by_id(shape_dest_id));
@@ -1577,8 +1593,9 @@ vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC i
     shape_id_t shape_source_id = vm_ic_attr_index_shape_source_id(ic);
     uint32_t index = vm_ic_attr_index(ic);
     shape_id_t shape_dest_id = vm_ic_attr_index_shape_dest_id(ic);
-    if (vm_setivar(obj, id, val, iseq, shape_source_id, shape_dest_id, index) == Qundef)
+    if (vm_setivar(obj, id, val, iseq, shape_source_id, shape_dest_id, index) == Qundef) {
         vm_setivar_slowpath_ivar(obj, id, val, iseq, ic);
+    }
 }
 
 void

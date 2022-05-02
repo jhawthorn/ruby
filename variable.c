@@ -1609,6 +1609,7 @@ shape_id_t get_shape_id(VALUE obj)
 
                   if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
                       shape_id = ivtbl->shape_id;
+                      RUBY_ASSERT(get_shape_by_id(shape_id));
                   }
                   else if (OBJ_FROZEN(obj)) {
                       shape_id = FROZEN_ROOT_SHAPE_ID;
@@ -1670,12 +1671,9 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
 void
 set_shape(VALUE obj, rb_shape_t* shape)
 {
-    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", SHAPE_ID(shape), (void *)obj, (void *)shape);
+//    fprintf(stderr, "setting shape id: %d, on obj %p at shape addr %p\n", SHAPE_ID(shape), (void *)obj, (void *)shape);
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
     set_shape_id(obj, SHAPE_ID(shape));
-    if (SHAPE_ID(shape) == 313) {
-        fprintf(stderr, "setting shape %p %d on obj %p\n", shape, SHAPE_ID(shape), (void *)obj);
-    }
     RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
 }
 
@@ -1789,8 +1787,6 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb
     set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
     shape->parent = parent;
-    if (shape_id == 313)
-        fprintf(stderr, "allocated shape %d\n", shape_id);
     RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
     shape->iv_table = iv_table;
     return shape;
@@ -1817,10 +1813,12 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
     rb_shape_t *res;
     RB_VM_LOCK_ENTER();
     {
+        if(rb_objspace_garbage_object_p(shape))
+            rb_bug("PRE not a real shape\n");
         // We don't need `res` specifically at the end of this
         // rb_id_table_lookup, we could just use a void (it's about to get set
         // to shape anyways) - how can we do this?
-        if (rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
+        if (!rb_objspace_garbage_object_p((VALUE)shape) && rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
             // If shape already contains the ivar that is being set, we'll return shape
             res = shape;
         }
@@ -1858,18 +1856,21 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                     }
 
                     res = new_shape;
-                    fprintf(stderr, "shape is at %p with id %d and parent_id %d\n", new_shape, next_shape_id, SHAPE_ID(shape));
                 }
             }
         }
     }
     RB_VM_LOCK_LEAVE();
+    if(rb_objspace_garbage_object_p(shape))
+        rb_bug("not a real shape\n");
     return res;
 }
 
 rb_shape_t*
 get_next_shape(rb_shape_t* shape, ID id)
 {
+    if (rb_objspace_garbage_object_p(shape))
+        rb_bug("get outta here\n");
     return get_next_shape_internal(shape, id, SHAPE_IVAR);
 }
 
@@ -1928,9 +1929,14 @@ void transition_shape_frozen(VALUE obj)
 
 void transition_shape(VALUE obj, ID id)
 {
+    if (rb_objspace_garbage_object_p(obj))
+        rb_bug("trash obj.\n");
     rb_shape_t* shape = get_shape(obj);
-    RUBY_ASSERT(shape);
+    if (rb_objspace_garbage_object_p(shape))
+        rb_bug("trash 1930.\n");
     rb_shape_t* next_shape = get_next_shape(shape, id);
+    // C(rb_objspace_garbage_object_p(obj), "G"),
+    RUBY_ASSERT(!rb_objspace_garbage_object_p(next_shape));
     set_shape(obj, next_shape);
 }
 

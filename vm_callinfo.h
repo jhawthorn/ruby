@@ -496,9 +496,8 @@ vm_ic_attr_index_set(const rb_iseq_t *iseq, const struct iseq_inline_iv_cache_en
     // VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     // VM_ASSERT(cc != vm_ic_empty());
     // *(uint64_t *)&ic->entry = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
-    if (source_shape_id == 313 || dest_shape_id == 313) {
-        fprintf(stderr, "setting iseq: %p, source: %d, dest: %d on ic: %p\n", iseq, source_shape_id, dest_shape_id, ic);
-    }
+    if(rb_objspace_garbage_object_p(get_shape_by_id_without_assertion(dest_shape_id)))
+        rb_bug("not a real shape\n");
     *(uint16_t *)&ic->source_shape_id = source_shape_id;
     *(uint16_t *)&ic->dest_shape_id = dest_shape_id;
     *(uint32_t *)&ic->attr_index = index + 1;
@@ -509,8 +508,6 @@ vm_ic_attr_index_initialize(const struct iseq_inline_iv_cache_entry *ic, shape_i
 {
     // VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     // VM_ASSERT(cc != vm_ic_empty());
-    if (shape_id == 313)
-        fprintf(stderr, "init setting shape_id %d on ic: %p\n", shape_id, ic);
     *(uint16_t *)&ic->source_shape_id = shape_id;
     *(uint16_t *)&ic->dest_shape_id = shape_id;
     *(uint32_t *)&ic->attr_index = 0;

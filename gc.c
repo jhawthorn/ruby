@@ -394,7 +394,7 @@ static ruby_gc_params_t gc_params = {
 #ifdef RUBY_DEVEL
 #define RGENGC_DEBUG       -1
 #else
-#define RGENGC_DEBUG       0
+#define RGENGC_DEBUG       3
 #endif
 #endif
 #if RGENGC_DEBUG < 0 && !defined(_MSC_VER)
@@ -1893,9 +1893,6 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 {
     ASSERT_vm_locking();
 
-    if (BUILTIN_TYPE(obj) == T_IMEMO && imemo_type(obj) == imemo_shape && SHAPE_ID(obj) == 22) {
-        fprintf(stderr, "shape with id: %d at %p\n", SHAPE_ID(obj), (VALUE *)obj);
-    }
     RVALUE *p = (RVALUE *)obj;
 
     asan_unpoison_object(obj, false);
@@ -1906,6 +1903,8 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
     p->as.free.next = page->freelist;
     page->freelist = p;
     asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
+    RUBY_ASSERT(obj);
+    RUBY_ASSERT(GET_HEAP_PAGE(obj) == page);
 
     if (RGENGC_CHECK_MODE &&
         /* obj should belong to page */
@@ -1919,10 +1918,58 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
     gc_report(3, objspace, "heap_page_add_freeobj: add %p to freelist\n", (void *)obj);
 }
 
+static void
+jem_assertions(struct heap_page *page)
+{
+    /*
+    asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
+
+    short slot_size = page->slot_size;
+
+    uintptr_t page_start = (uintptr_t)page->start;
+    uintptr_t page_end = page_start + page->total_slots * slot_size;
+    VALUE obj;
+    for (obj = (VALUE)page_start; obj != (VALUE)page_end; obj += slot_size) {
+        if (BUILTIN_TYPE(obj) == T_NONE) {
+            RVALUE *freeobj = page->freelist;
+            bool found = false;
+            while(freeobj && !found) {
+                if (freeobj == (RVALUE *)obj) {
+                    found = true;
+                    break;
+                }
+                freeobj = freeobj->as.free.next;
+            }
+            if (!found)
+                rb_bug("didn't find obj %p in page %p\n", obj, page);
+        }
+    }
+
+    short freelist_len = 0;
+    RVALUE *ptr = page->freelist;
+    while (ptr) {
+        freelist_len++;
+        ptr = ptr->as.free.next;
+    }
+    if (freelist_len != page->free_slots) {
+        rb_bug("1954 inconsistent freelist length: expected %d but was %d", page->free_slots, freelist_len);
+    }
+
+    asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
+    */
+}
+
 static inline void
 heap_add_freepage(rb_heap_t *heap, struct heap_page *page)
 {
     asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
+    // JEM TODO: add these assertions everywhere that they could have to exist -
+    // as in, wherever there's one, be sure to add in another one too. Somewhere
+    // they're getting out of sync and that shouldn't be the case
+    // Or maybe just make a function that checks that they're the same - the
+    // free_slots count and the number of objs actually in the freelist - and
+    // then figure out why that's happening
+    jem_assertions(page);
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
 
@@ -1939,6 +1986,7 @@ static inline void
 heap_add_poolpage(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
     asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
+    jem_assertions(page);
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
 
@@ -2168,12 +2216,17 @@ heap_page_allocate(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
     page->size_pool = size_pool;
     page_body->header.page = page;
 
+    uint32_t count = 0;
     for (p = start; p != end; p += stride) {
 	gc_report(3, objspace, "assign_heap_page: %p is added to freelist\n", (void *)p);
 	heap_page_add_freeobj(objspace, page, (VALUE)p);
+        count++;
     }
     page->free_slots = limit;
+    if (limit != count)
+        rb_bug("limit and count should be the same\n");
 
+    jem_assertions(page);
     asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
     return page;
 }
@@ -2533,6 +2586,8 @@ heap_next_free_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_
     heap->free_pages = page->free_next;
 
     GC_ASSERT(page->free_slots != 0);
+    jem_assertions(page);
+
     RUBY_DEBUG_LOG("page:%p freelist:%p cnt:%d", (void *)page, (void *)page->freelist, page->free_slots);
 
     asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
@@ -2549,6 +2604,7 @@ ractor_cache_set_page(rb_ractor_newobj_cache_t *cache, size_t size_pool_idx,
     rb_ractor_newobj_size_pool_cache_t *size_pool_cache = &cache->size_pool_caches[size_pool_idx];
 
     GC_ASSERT(size_pool_cache->freelist == NULL);
+    jem_assertions(page);
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
 
@@ -3243,6 +3299,9 @@ remove_child_shapes_parent_id(VALUE value, void *ref)
     return ID_TABLE_CONTINUE;
 }
 
+static ID id_cache;
+static ID id_iseq;
+
 static int
 obj_free(rb_objspace_t *objspace, VALUE obj)
 {
@@ -3585,11 +3644,14 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             {
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_id_table_free(shape->iv_table);
-                fprintf(stderr, "freeing shape %p id: %d\n", shape, SHAPE_ID(shape));
-                if (SHAPE_ID(shape) == 21 || SHAPE_ID(shape) == 22 || SHAPE_ID(shape) == 23)
-                    printf("hello %d\n", SHAPE_ID(shape));
-
+                if (shape->edge_name == id_cache) {
+                    rb_iseq_t * iseq;
+                    rb_id_table_lookup(shape->edges, id_iseq, (VALUE *)&iseq);
+                    fprintf(stderr, "ARGHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH shape id: %d iseq addr: %p\n", SHAPE_ID(shape), iseq);
+                    fprintf(stderr, "hi mom!\n", SHAPE_ID(shape), iseq);
+                }
                 if(shape->edges) {
+                    rb_id_table_delete(shape->edges, id_iseq);
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
                     rb_id_table_free(shape->edges);
                     shape->edges = NULL;
@@ -3597,6 +3659,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 set_shape_by_id(SHAPE_ID(shape), NULL);
 
                 rb_shape_t *parent = shape->parent;
+                fprintf(stderr, "freeing shape %d name %s\n", SHAPE_ID(shape), rb_id2name(shape->edge_name));
 
                 // The case where we have a non-garbage parent, but not parent->edges is
                 // when a _new_ shape has reused an old shape's slot
@@ -4269,7 +4332,6 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         asan_unpoison_object(zombie, false);
         next_zombie = RZOMBIE(zombie)->next;
         page = GET_HEAP_PAGE(zombie);
-
 	run_final(objspace, zombie);
 
         RB_VM_LOCK_ENTER();
@@ -5297,6 +5359,7 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, 
         gc_pin(objspace, src);
         free_page->free_slots--;
     }
+    jem_assertions(free_page);
 
     return true;
 }
@@ -5536,8 +5599,14 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
     do {
         VALUE vp = (VALUE)p;
         GC_ASSERT(vp % BASE_SLOT_SIZE == 0);
+        struct heap_page *page;
 
         asan_unpoison_object(vp, false);
+        ccan_list_for_each(&heap->pages, page, page_node) {
+            if(page != sweep_page) {
+                jem_assertions(page);
+            }
+        }
         if (bitset & 1) {
             switch (BUILTIN_TYPE(vp)) {
                 default: /* majority case */
@@ -5582,14 +5651,25 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     break;
             }
         }
+        struct heap_page *vpp_page = GET_HEAP_PAGE(vp);
         p += slot_size;
         bitset >>= slot_bits;
+        ccan_list_for_each(&heap->pages, page, page_node) {
+            if(page != sweep_page) {
+                jem_assertions(page);
+            }
+        }
     } while (bitset);
 }
 
 static inline void
 gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context *ctx)
 {
+    struct heap_page *free_page = heap->free_pages;
+    while (free_page) {
+        jem_assertions(free_page);
+        free_page = free_page->free_next;
+    }
     struct heap_page *sweep_page = ctx->page;
 
     int i;
@@ -5624,6 +5704,14 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     }
     p += (BITS_BITLENGTH - NUM_IN_PAGE(p)) * BASE_SLOT_SIZE;
 
+    free_page = heap->free_pages;
+    while (free_page) {
+        jem_assertions(free_page);
+        free_page = free_page->free_next;
+        if (free_page == sweep_page)
+            free_page = free_page->free_next;
+    }
+
     for (i=1; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
         bitset = ~bits[i];
         if (bitset) {
@@ -5632,9 +5720,17 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         p += BITS_BITLENGTH * BASE_SLOT_SIZE;
     }
 
+    free_page = heap->free_pages;
+    while (free_page) {
+        jem_assertions(free_page);
+        free_page = free_page->free_next;
+        if (free_page == sweep_page)
+            free_page = free_page->free_next;
+    }
     if (!heap->compact_cursor) {
         gc_setup_mark_bits(sweep_page);
     }
+
 
 #if GC_PROFILE_MORE_DETAIL
     if (gc_prof_enabled(objspace)) {
@@ -5649,6 +5745,12 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
 		   ctx->freed_slots, ctx->empty_slots, ctx->final_slots);
 
     sweep_page->free_slots += ctx->freed_slots + ctx->empty_slots;
+    jem_assertions(sweep_page);
+    free_page = heap->free_pages;
+    while (free_page) {
+        jem_assertions(free_page);
+        free_page = free_page->free_next;
+    }
     objspace->profile.total_freed_objects += ctx->freed_slots;
 
     if (heap_pages_deferred_final && !finalizing) {
@@ -5666,7 +5768,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         ptr = ptr->as.free.next;
     }
     if (freelist_len != sweep_page->free_slots) {
-        rb_bug("inconsistent freelist length: expected %d but was %d", sweep_page->free_slots, freelist_len);
+        rb_bug("5759 inconsistent freelist length: expected %d but was %d", sweep_page->free_slots, freelist_len);
     }
 #endif
 
@@ -5740,6 +5842,7 @@ heap_page_freelist_append(struct heap_page *page, RVALUE *freelist)
         }
         asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
     }
+    // jem_assertions(page);
 }
 
 static void
@@ -7801,10 +7904,12 @@ check_children_i(const VALUE child, void *ptr)
 
 static int
 verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
+        struct heap_page *page,
                               struct verify_internal_consistency_struct *data)
 {
     VALUE obj;
     rb_objspace_t *objspace = data->objspace;
+    fprintf(stderr, "hi mom \n");
 
     for (obj = (VALUE)page_start; obj != (VALUE)page_end; obj += stride) {
         void *poisoned = asan_poisoned_object_p(obj);
@@ -7845,6 +7950,19 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride,
 		GC_ASSERT((RBASIC(obj)->flags & ~FL_SEEN_OBJ_ID) == T_ZOMBIE);
 		data->zombie_object_count++;
 	    }
+	    if (BUILTIN_TYPE(obj) == T_NONE) {
+                RVALUE *freeobj = page->freelist;
+                bool found = false;
+                while(freeobj && !found) {
+                    if (freeobj == (RVALUE *)obj) {
+                        found = true;
+                        break;
+                    }
+                    freeobj = freeobj->as.free.next;
+                }
+                if (!found)
+                    rb_bug("didn't find obj %p in page %p\n", obj, page);
+            }
 	}
         if (poisoned) {
             GC_ASSERT(BUILTIN_TYPE(obj) == T_NONE);
@@ -7993,7 +8111,7 @@ gc_verify_internal_consistency_(rb_objspace_t *objspace)
         uintptr_t start = (uintptr_t)page->start;
         uintptr_t end = start + page->total_slots * slot_size;
 
-        verify_internal_consistency_i((void *)start, (void *)end, slot_size, &data);
+        verify_internal_consistency_i((void *)start, (void *)end, slot_size, page, &data);
     }
 
     if (data.err_count != 0) {
@@ -14117,6 +14235,8 @@ Init_GC(void)
     OBJ_FREEZE(gc_constants);
     /* internal constants */
     rb_define_const(rb_mGC, "INTERNAL_CONSTANTS", gc_constants);
+    id_cache = rb_intern("@cache");
+    id_iseq = rb_intern("__iseq__");
 
     rb_mProfiler = rb_define_module_under(rb_mGC, "Profiler");
     rb_define_singleton_method(rb_mProfiler, "enabled?", gc_profile_enable_get, 0);
