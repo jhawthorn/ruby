@@ -300,12 +300,26 @@ struct rb_callcache {
 #define VM_CALLCACHE_UNMARKABLE IMEMO_FL_USER0
 #define VM_CALLCACHE_ON_STACK   IMEMO_FL_USER1
 
+extern const struct rb_callcache *rb_vm_empty_cc(void);
+extern const struct rb_callcache *rb_vm_empty_cc_for_super(void);
+
+#define vm_cc_empty() rb_vm_empty_cc()
+
+static inline void
+vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
+{
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    VM_ASSERT(cc != vm_cc_empty());
+    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)(shape_id) << 48) | ((uint64_t)(shape_id) << 32) | 0;
+}
+
 static inline const struct rb_callcache *
 vm_cc_new(VALUE klass,
           const struct rb_callable_method_entry_struct *cme,
           vm_call_handler call)
 {
     const struct rb_callcache *cc = (const struct rb_callcache *)rb_imemo_new(imemo_callcache, (VALUE)cme, (VALUE)call, 0, klass);
+    vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
     RB_DEBUG_COUNTER_INC(cc_new);
     return cc;
 }
@@ -460,10 +474,6 @@ vm_cc_valid_p(const struct rb_callcache *cc, const rb_callable_method_entry_t *c
     }
 }
 
-extern const struct rb_callcache *rb_vm_empty_cc(void);
-extern const struct rb_callcache *rb_vm_empty_cc_for_super(void);
-#define vm_cc_empty() rb_vm_empty_cc()
-
 /* callcache: mutate */
 
 static inline void
@@ -483,21 +493,11 @@ vm_cc_attr_index_set(const struct rb_callcache *cc, int index, shape_id_t source
 }
 
 static inline void
-vm_cc_attr_index_initialize(const struct rb_callcache *cc, shape_id_t shape_id)
-{
-    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    VM_ASSERT(cc != vm_cc_empty());
-    *(uint64_t *)&cc->aux_.attr_index = ((uint64_t)(shape_id) << 48) | ((uint64_t)(shape_id) << 32) | 0;
-}
-
-static inline void
 vm_ic_attr_index_set(const rb_iseq_t *iseq, const struct iseq_inline_iv_cache_entry *ic, int index, shape_id_t source_shape_id, shape_id_t dest_shape_id)
 {
     // VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     // VM_ASSERT(cc != vm_ic_empty());
     // *(uint64_t *)&ic->entry = ((uint64_t)source_shape_id << 48) | ((uint64_t)dest_shape_id << 32) | (index + 1);
-    if(rb_objspace_garbage_object_p(get_shape_by_id_without_assertion(dest_shape_id)))
-        rb_bug("not a real shape\n");
     *(uint16_t *)&ic->source_shape_id = source_shape_id;
     *(uint16_t *)&ic->dest_shape_id = dest_shape_id;
     *(uint32_t *)&ic->attr_index = index + 1;

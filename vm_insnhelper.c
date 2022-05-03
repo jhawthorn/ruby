@@ -1341,20 +1341,6 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     }
                 }
                 else {
-                    if (id == rb_intern("@cache")) {
-                        fprintf(stderr, "miss slow path, writing %d -> %d on iseq %p\n", SHAPE_ID(shape), SHAPE_ID(next_shape), (void *)iseq);
-                        rb_obj_info_dump((VALUE)iseq);
-                        rb_obj_info_dump((VALUE)next_shape);
-                        if(get_shape_by_id(SHAPE_ID(next_shape))) {
-                            fprintf(stderr, "this was a real shape\n");
-                            fprintf(stderr, "not garbage: %lu\n", rb_objspace_garbage_object_p(next_shape));
-                        }
-                        RUBY_ASSERT(!rb_objspace_garbage_object_p(next_shape));
-                        if (!next_shape->edges) {
-                            next_shape->edges = rb_id_table_create(0);
-                        }
-                        rb_id_table_insert(next_shape->edges, rb_intern("__iseq__"), (VALUE)iseq);
-                    }
                     vm_ic_attr_index_set(iseq, ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
@@ -3290,20 +3276,24 @@ vm_call_ivar(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_call
 }
 
 static VALUE
-vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling)
+vm_call_attrset2(rb_execution_context_t *ec, rb_control_frame_t *cfp, const struct rb_callcache *cc, VALUE obj)
 {
-    const struct rb_callcache *cc = calling->cc;
     RB_DEBUG_COUNTER_INC(ccf_attrset);
     VALUE val = *(cfp->sp - 1);
     cfp->sp -= 2;
     shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
     uint32_t index = vm_cc_attr_index(cc);
     shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
-    VALUE obj = calling->recv;
     ID id = vm_cc_cme(cc)->def->body.attr.id;
     VALUE res = vm_setivar(obj, id, val, NULL, shape_source_id, shape_dest_id, index);
     if (res == Qundef) res = vm_setivar_slowpath_attr(obj, id, val, cc);
     return res;
+}
+
+static VALUE
+vm_call_attrset(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling)
+{
+    return vm_call_attrset2(ec, cfp, calling->cc, calling->recv);
 }
 
 bool
@@ -3872,11 +3862,17 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 
 	rb_check_arity(calling->argc, 1, 1);
-        if (vm_cc_markable(cc))
+        if (vm_cc_markable(cc)) {
             vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+        } else {
+            cc = &VM_CC_ON_STACK(cc->klass,
+                    cc->call_,
+                    { .attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
+                    cc->cme_);
+        }
         const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
         VM_CALL_METHOD_ATTR(v,
-                            vm_call_attrset(ec, cfp, calling),
+                            vm_call_attrset2(ec, cfp, cc, calling->recv),
                             CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         return v;
 

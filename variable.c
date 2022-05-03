@@ -1698,6 +1698,8 @@ set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
+    if (shape && rb_objspace_garbage_object_p((VALUE)shape))
+        rb_bug("get outta here\n");
     vm->shape_list[shape_id] = shape;
 //    set_shape_in_bitmap(shape_id);
 }
@@ -1709,6 +1711,8 @@ get_shape_by_id_without_assertion(shape_id_t shape_id)
 
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
+    if (rb_objspace_garbage_object_p((VALUE)shape))
+        rb_bug("get outta here\n");
     return shape;
 }
 
@@ -1717,8 +1721,11 @@ get_shape_by_id(shape_id_t shape_id)
 {
     RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
 
+
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
+    if (rb_objspace_garbage_object_p((VALUE)shape))
+        rb_bug("get outta here\n");
     if (!IMEMO_TYPE_P(shape, imemo_shape)) {
         fprintf(stderr, "-----looking for shape_id: %d\n", shape_id);
         rb_bug("1669");
@@ -1810,15 +1817,15 @@ get_next_shape_id(void)
 static rb_shape_t*
 get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 {
-    rb_shape_t *res;
+    rb_shape_t *res = NULL;
     RB_VM_LOCK_ENTER();
     {
-        if(rb_objspace_garbage_object_p(shape))
+        if(rb_objspace_garbage_object_p((VALUE)shape))
             rb_bug("PRE not a real shape\n");
         // We don't need `res` specifically at the end of this
         // rb_id_table_lookup, we could just use a void (it's about to get set
         // to shape anyways) - how can we do this?
-        if (!rb_objspace_garbage_object_p((VALUE)shape) && rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
+        if (rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
             // If shape already contains the ivar that is being set, we'll return shape
             res = shape;
         }
@@ -1828,7 +1835,10 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 
             // Lookup the shape in edges - if there's already an edge and a corresponding shape for it,
             // we can return that. Otherwise, we'll need to get a new shape
-            if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res)) {
+            if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res) || rb_objspace_garbage_object_p((VALUE)res)) {
+                if (res) {
+                    res->parent = NULL;
+                }
                 shape_id_t next_shape_id = get_next_shape_id();
 
                 if (next_shape_id == MAX_SHAPE_ID) {
@@ -1843,6 +1853,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
+//                    fprintf(stderr, "new shape id: %d addr: %p edge_name %lu parent %p\n",next_shape_id, new_shape, id, shape);
 
                     set_shape_by_id(next_shape_id, new_shape);
 
@@ -1861,16 +1872,14 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
         }
     }
     RB_VM_LOCK_LEAVE();
-    if(rb_objspace_garbage_object_p(shape))
-        rb_bug("not a real shape\n");
+    if(rb_objspace_garbage_object_p((VALUE)res))
+        rb_bug("shape is garbage object\n");
     return res;
 }
 
 rb_shape_t*
 get_next_shape(rb_shape_t* shape, ID id)
 {
-    if (rb_objspace_garbage_object_p(shape))
-        rb_bug("get outta here\n");
     return get_next_shape_internal(shape, id, SHAPE_IVAR);
 }
 
@@ -1887,6 +1896,8 @@ void transition_shape_frozen(VALUE obj)
 {
     rb_shape_t* shape = get_shape(obj);
     RUBY_ASSERT(shape);
+    if(rb_objspace_garbage_object_p((VALUE)shape))
+        rb_bug("shape is garbage object\n");
 
     rb_shape_t* next_shape;
 
@@ -1932,11 +1943,11 @@ void transition_shape(VALUE obj, ID id)
     if (rb_objspace_garbage_object_p(obj))
         rb_bug("trash obj.\n");
     rb_shape_t* shape = get_shape(obj);
-    if (rb_objspace_garbage_object_p(shape))
+    if (rb_objspace_garbage_object_p((VALUE)shape))
         rb_bug("trash 1930.\n");
     rb_shape_t* next_shape = get_next_shape(shape, id);
     // C(rb_objspace_garbage_object_p(obj), "G"),
-    RUBY_ASSERT(!rb_objspace_garbage_object_p(next_shape));
+    RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
     set_shape(obj, next_shape);
 }
 

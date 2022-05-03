@@ -169,7 +169,6 @@ iseq_clear_ic_references(const rb_iseq_t *iseq)
 void
 rb_iseq_free(const rb_iseq_t *iseq)
 {
-    fprintf(stderr, "freeing iseq: %p\n");
     RUBY_FREE_ENTER("iseq");
 
     if (iseq && ISEQ_BODY(iseq)) {
