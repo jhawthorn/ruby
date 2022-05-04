@@ -1274,15 +1274,6 @@ struct check_shape {
     bool found;
 };
 
-static void
-check_shapes(VALUE obj, void *data_ptr)
-{
-    struct check_shape *ctx = (struct check_shape *) data_ptr;
-    if (get_shape(obj) == ctx->shape) {
-        ctx->found = true;
-    }
-}
-
 ALWAYS_INLINE(static VALUE vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr));
 NOINLINE(static VALUE vm_setivar_slowpath_ivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic));
 NOINLINE(static VALUE vm_setivar_slowpath_attr(VALUE obj, ID id, VALUE val, const struct rb_callcache *cc));
@@ -1298,7 +1289,7 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
         rb_shape_t* shape = get_shape(obj);
-        if (rb_objspace_garbage_object_p(shape))
+        if (rb_objspace_garbage_object_p((VALUE)shape))
             rb_bug("trash.\n");
         rb_shape_t* next_shape = get_next_shape(shape, id);
         set_shape(obj, next_shape);
@@ -1344,31 +1335,6 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                     vm_ic_attr_index_set(iseq, ic, (int)index, SHAPE_ID(shape), SHAPE_ID(next_shape));
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)shape);
                     RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)next_shape);
-                    /*
-                     * So here's what's going on:
-                     * We think the shape is reachable from the iseq, and
-                     * someone else is cutting the reference to the shape from
-                     * the iseq, so it's not being found later
-                     *
-                     * To confirm, we want to fix this code up so that it flags
-                     * if the shape _isnt_ reachable from the iseq. Expectation
-                     * is no flag will be thrown
-                     *
-                     * If the expectation is met, then we will want to get a
-                     * reproducable error so we can watch the memory address of
-                     * the iseq and see who is cutting the reference
-                     *
-                     * Update - confirmed, that the shape is always in the right
-                     * place here, now just need to figure out how to
-                     * get the core dumps to debhave as expected
-                     */
-                    struct check_shape ctx;
-                    ctx.shape = next_shape;
-                    ctx.found = 0;
-                    rb_objspace_reachable_objects_from((VALUE)iseq, check_shapes, &ctx);
-                    if (!ctx.found) {
-                        rb_bug("couldn't find the shape we just set");
-                    }
                 }
             }
             else {

@@ -1699,7 +1699,7 @@ set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
     rb_vm_t *vm = GET_VM();
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
     if (shape && rb_objspace_garbage_object_p((VALUE)shape))
-        rb_bug("get outta here\n");
+        rb_bug("1702 get outta here\n");
     vm->shape_list[shape_id] = shape;
 //    set_shape_in_bitmap(shape_id);
 }
@@ -1712,7 +1712,7 @@ get_shape_by_id_without_assertion(shape_id_t shape_id)
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
     if (rb_objspace_garbage_object_p((VALUE)shape))
-        rb_bug("get outta here\n");
+        rb_bug("1715 get outta here\n");
     return shape;
 }
 
@@ -1721,11 +1721,10 @@ get_shape_by_id(shape_id_t shape_id)
 {
     RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);
 
-
     rb_vm_t *vm = GET_VM();
     rb_shape_t *shape = vm->shape_list[shape_id];
     if (rb_objspace_garbage_object_p((VALUE)shape))
-        rb_bug("get outta here\n");
+        rb_bug("1728 get outta here\n");
     if (!IMEMO_TYPE_P(shape, imemo_shape)) {
         fprintf(stderr, "-----looking for shape_id: %d\n", shape_id);
         rb_bug("1669");
@@ -1742,7 +1741,10 @@ rb_shape_t* get_shape(VALUE obj)
 rb_shape_t*
 get_parent_shape(VALUE obj)
 {
-    return get_shape(obj)->parent;
+    rb_shape_t *parent = get_shape(obj)->parent;
+    if (rb_objspace_garbage_object_p((VALUE)parent))
+        rb_bug("1746 parent is trash\n");
+    return parent;
 }
 
 rb_shape_t*
@@ -1873,7 +1875,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
     }
     RB_VM_LOCK_LEAVE();
     if(rb_objspace_garbage_object_p((VALUE)res))
-        rb_bug("shape is garbage object\n");
+        rb_bug("1878 res is garbage object\n");
     return res;
 }
 
