@@ -64,6 +64,7 @@ rb_shape_t* get_shape_by_id_without_assertion(shape_id_t shape_id);
 rb_shape_t* get_shape(VALUE obj);
 rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
 rb_shape_t* get_root_shape();
+rb_shape_t* get_frozen_root_shape();
 bool root_shape_p(rb_shape_t* shape);
 void set_shape(VALUE obj, rb_shape_t* shape);
 int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE * value);

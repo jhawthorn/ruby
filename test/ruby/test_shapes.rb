@@ -52,6 +52,10 @@ class TestShapes < Test::Unit::TestCase
     assert_equal(ObjectSpace.shape_id(o), ObjectSpace.shape_id(o.dup))
   end
 
+  def test_special_const
+    assert(RubyVM.debug_shape(true))
+  end
+
   def test_inheritance
     # TODO around Example2 in here
 

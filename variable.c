@@ -1589,6 +1589,9 @@ shape_id_t get_shape_id(VALUE obj)
 {
     shape_id_t shape_id = ROOT_SHAPE_ID;
 
+    if (RB_SPECIAL_CONST_P(obj))
+        return SHAPE_ID(get_frozen_root_shape());
+
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
       case T_CLASS:
