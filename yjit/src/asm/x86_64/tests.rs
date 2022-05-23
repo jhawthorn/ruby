@@ -7,7 +7,7 @@ use std::fmt;
 impl<'a> fmt::LowerHex for super::CodeBlock {
     fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
         for pos in 0..self.write_pos {
-            let byte = self.read_byte(pos);
+            let byte = unsafe { self.mem_block.add(pos).read() };
             fmtr.write_fmt(format_args!("{:02x}", byte))?;
         }
         Ok(())
@@ -222,7 +222,7 @@ fn test_mov_unsigned() {
 
     // MOV RAX, imm64, will not move down into EAX since it does not fit into 32 bits
     check_bytes("48b80000000001000000", |cb| mov(cb, RAX, uimm_opnd(u32::MAX as u64 + 1)));
-    check_bytes("48b8ffffffffffffffff", |cb| mov(cb, RAX, uimm_opnd(u64::MAX.into())));
+    check_bytes("48b8ffffffffffffffff", |cb| mov(cb, RAX, uimm_opnd(u64::MAX)));
     check_bytes("49b8ffffffffffffffff", |cb| mov(cb, R8, uimm_opnd(u64::MAX)));
 
     // MOV r8, imm8
@@ -404,7 +404,6 @@ fn test_xor() {
 #[cfg(feature = "disasm")]
 fn basic_capstone_usage() -> std::result::Result<(), capstone::Error> {
     // Test drive Capstone with simple input
-    extern crate capstone;
     use capstone::prelude::*;
     let cs = Capstone::new()
         .x86()

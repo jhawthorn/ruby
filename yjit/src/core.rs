@@ -10,8 +10,7 @@ use std::cell::*;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::mem::size_of;
-use std::ptr;
-use std::rc::{Rc, Weak};
+use std::rc::{Rc};
 use InsnOpnd::*;
 use TempMapping::*;
 
@@ -35,7 +34,10 @@ pub enum Type {
     Array,
     Hash,
     ImmSymbol,
+
+    #[allow(unused)]
     HeapSymbol,
+
     String,
 }
 
@@ -219,12 +221,6 @@ pub struct BlockId {
     pub idx: u32,
 }
 
-/// Null block id constant
-pub const BLOCKID_NULL: BlockId = BlockId {
-    iseq: ptr::null(),
-    idx: 0,
-};
-
 /// Branch code shape enumeration
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum BranchShape {
@@ -248,10 +244,11 @@ struct Branch {
     end_addr: Option<CodePtr>,
 
     // Context right after the branch instruction
+    #[allow(unused)] // set but not read at the moment
     src_ctx: Context,
 
     // Branch target blocks and their contexts
-    targets: [BlockId; 2],
+    targets: [Option<BlockId>; 2],
     target_ctxs: [Context; 2],
     blocks: [Option<BlockRef>; 2],
 
@@ -408,7 +405,7 @@ impl IseqPayload {
         let version_map = mem::take(&mut self.version_map);
 
         // Turn it into an iterator that owns the blocks and return
-        version_map.into_iter().flat_map(|versions| versions)
+        version_map.into_iter().flatten()
     }
 }
 
@@ -422,7 +419,6 @@ pub unsafe fn load_iseq_payload(iseq: IseqPtr) -> Option<&'static mut IseqPayloa
 
 /// Get the payload object associated with an iseq. Create one if none exists.
 fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload {
-    use core::ffi::c_void;
     type VoidPtr = *mut c_void;
 
     let payload_non_null = unsafe {
@@ -510,7 +506,9 @@ pub extern "C" fn rb_yjit_iseq_mark(payload: *mut c_void) {
             for branch in &block.outgoing {
                 let branch = branch.borrow();
                 for target in &branch.targets {
-                    unsafe { rb_gc_mark_movable(target.iseq.into()) };
+                    if let Some(target) = target {
+                        unsafe { rb_gc_mark_movable(target.iseq.into()) };
+                    }
                 }
             }
 
@@ -566,7 +564,9 @@ pub extern "C" fn rb_yjit_iseq_update_references(payload: *mut c_void) {
             for branch in &block.outgoing {
                 let mut branch = branch.borrow_mut();
                 for target in &mut branch.targets {
-                    target.iseq = unsafe { rb_gc_location(target.iseq.into()) }.as_iseq();
+                    if let Some(target) = target {
+                        target.iseq = unsafe { rb_gc_location(target.iseq.into()) }.as_iseq();
+                    }
                 }
             }
 
@@ -801,10 +801,12 @@ impl Block {
         self.ctx
     }
 
+    #[allow(unused)]
     pub fn get_start_addr(&self) -> Option<CodePtr> {
         self.start_addr
     }
 
+    #[allow(unused)]
     pub fn get_end_addr(&self) -> Option<CodePtr> {
         self.end_addr
     }
@@ -1020,11 +1022,7 @@ impl Context {
 
     /// Get the currently tracked type for a local variable
     pub fn get_local_type(&self, idx: usize) -> Type {
-        if idx > MAX_LOCAL_TYPES {
-            return Type::Unknown;
-        }
-
-        return self.local_types[idx];
+        *self.local_types.get(idx).unwrap_or(&Type::Unknown)
     }
 
     /// Upgrade (or "learn") the type of an instruction operand
@@ -1253,6 +1251,7 @@ impl Context {
 impl BlockId {
     /// Print Ruby source location for debugging
     #[cfg(debug_assertions)]
+    #[allow(dead_code)]
     pub fn dump_src_loc(&self) {
         unsafe { rb_yjit_dump_iseq_loc(self.iseq, self.idx) }
     }
@@ -1319,12 +1318,8 @@ fn gen_block_series_body(
         };
 
         // Get id and context for the new block
-        let requested_id = last_branch.targets[0];
+        let requested_id = last_branch.targets[0].expect("block id must be filled");
         let requested_ctx = &last_branch.target_ctxs[0];
-        assert_ne!(
-            last_branch.targets[0], BLOCKID_NULL,
-            "block id must be filled"
-        );
 
         // Generate new block using context from the last branch.
         let result = gen_single_block(requested_id, requested_ctx, ec, cb, ocb);
@@ -1479,7 +1474,7 @@ fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) ->
         src_ctx: *src_ctx,
 
         // Branch target blocks and their contexts
-        targets: [BLOCKID_NULL, BLOCKID_NULL],
+        targets: [None, None],
         target_ctxs: [Context::default(), Context::default()],
         blocks: [None, None],
 
@@ -1529,7 +1524,7 @@ fn branch_stub_hit_body(branch_ptr: *const c_void, target_idx: u32, ec: EcPtr) -
     let branch_size_on_entry = branch.code_size();
 
     let target_idx: usize = target_idx.as_usize();
-    let target = branch.targets[target_idx];
+    let target = branch.targets[target_idx].unwrap();
     let target_ctx = branch.target_ctxs[target_idx];
 
     let target_branch_shape = match target_idx {
@@ -1720,14 +1715,12 @@ pub fn gen_branch(
     ctx1: Option<&Context>,
     gen_fn: BranchGenFn,
 ) {
-    assert!(target0 != BLOCKID_NULL);
-
     let branchref = make_branch_entry(jit.get_block(), src_ctx, gen_fn);
 
     // Get the branch targets or stubs
     let dst_addr0 = get_branch_target(target0, ctx0, &branchref, 0, ocb);
-    let dst_addr1 = if ctx1.is_some() {
-        get_branch_target(target1.unwrap(), ctx1.unwrap(), &branchref, 1, ocb)
+    let dst_addr1 = if let Some(ctx) = ctx1 {
+        get_branch_target(target1.unwrap(), ctx, &branchref, 1, ocb)
     } else {
         None
     };
@@ -1738,13 +1731,11 @@ pub fn gen_branch(
     branch.dst_addrs[0] = dst_addr0;
     branch.dst_addrs[1] = dst_addr1;
 
-    branch.targets[0] = target0;
-    if target1.is_some() {
-        branch.targets[1] = target1.unwrap();
-    }
+    branch.targets[0] = Some(target0);
+    branch.targets[1] = target1;
     branch.target_ctxs[0] = *ctx0;
-    branch.target_ctxs[1] = if ctx1.is_some() {
-        *ctx1.unwrap()
+    branch.target_ctxs[1] = if let Some(&ctx) = ctx1 {
+        ctx
     } else {
         Context::default()
     };
@@ -1770,12 +1761,10 @@ fn gen_jump_branch(
 }
 
 pub fn gen_direct_jump(jit: &JITState, ctx: &Context, target0: BlockId, cb: &mut CodeBlock) {
-    assert!(target0 != BLOCKID_NULL);
-
     let branchref = make_branch_entry(jit.get_block(), ctx, gen_jump_branch);
     let mut branch = branchref.borrow_mut();
 
-    branch.targets[0] = target0;
+    branch.targets[0] = Some(target0);
     branch.target_ctxs[0] = *ctx;
 
     let maybe_block = find_block_version(target0, ctx);
@@ -1815,12 +1804,11 @@ pub fn defer_compilation(
         panic!("Double defer!");
     }
 
-    let mut next_ctx = cur_ctx.clone();
+    let mut next_ctx = *cur_ctx;
 
-    if next_ctx.chain_depth >= u8::MAX {
+    if next_ctx.chain_depth == u8::MAX {
         panic!("max block version chain depth reached!");
     }
-
     next_ctx.chain_depth += 1;
 
     let block_rc = jit.get_block();
@@ -1828,12 +1816,13 @@ pub fn defer_compilation(
     let mut branch = branch_rc.borrow_mut();
     let block = block_rc.borrow();
 
-    branch.target_ctxs[0] = next_ctx;
-    branch.targets[0] = BlockId {
+    let blockid = BlockId {
         iseq: block.blockid.iseq,
         idx: jit.get_insn_idx(),
     };
-    branch.dst_addrs[0] = get_branch_target(branch.targets[0], &next_ctx, &branch_rc, 0, ocb);
+    branch.target_ctxs[0] = next_ctx;
+    branch.targets[0] = Some(blockid);
+    branch.dst_addrs[0] = get_branch_target(blockid, &next_ctx, &branch_rc, 0, ocb);
 
     // Call the branch generation function
     branch.start_addr = Some(cb.get_write_ptr());

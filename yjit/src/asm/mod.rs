@@ -1,5 +1,7 @@
-use std::collections::BTreeMap;
 use std::mem;
+
+#[cfg(feature = "asm_comments")]
+use std::collections::BTreeMap;
 
 // Lots of manual vertical alignment in there that rustfmt doesn't handle well.
 #[rustfmt::skip]
@@ -23,6 +25,7 @@ impl CodePtr {
         *ptr as i64
     }
 
+    #[allow(unused)]
     fn into_usize(&self) -> usize {
         let CodePtr(ptr) = self;
         *ptr as usize
@@ -35,21 +38,6 @@ impl From<*mut u8> for CodePtr {
         return CodePtr(value);
     }
 }
-
-/// Compute an offset in bytes of a given struct field
-macro_rules! offset_of {
-    ($struct_type:ty, $field_name:tt) => {{
-        // Null pointer to our struct type
-        let foo = (0 as *const $struct_type);
-
-        unsafe {
-            let ptr_field = (&(*foo).$field_name as *const _ as usize);
-            let ptr_base = (foo as usize);
-            ptr_field - ptr_base
-        }
-    }};
-}
-pub(crate) use offset_of;
 
 //
 // TODO: need a field_size_of macro, to compute the size of a struct field in bytes
@@ -71,6 +59,7 @@ struct LabelRef {
 pub struct CodeBlock {
     // Block of non-executable memory used for dummy code blocks
     // This memory is owned by this block and lives as long as the block
+    #[allow(unused)]
     dummy_block: Vec<u8>,
 
     // Pointer to memory we are writing into
@@ -92,6 +81,7 @@ pub struct CodeBlock {
     label_refs: Vec<LabelRef>,
 
     // Comments for assembly instructions, if that feature is enabled
+    #[cfg(feature = "asm_comments")]
     asm_comments: BTreeMap<usize, Vec<String>>,
 
     // Keep track of the current aligned write position.
@@ -109,6 +99,7 @@ pub struct CodeBlock {
 }
 
 impl CodeBlock {
+    #[cfg(test)]
     pub fn new_dummy(mem_size: usize) -> Self {
         // Allocate some non-executable memory
         let mut dummy_block = vec![0; mem_size];
@@ -122,6 +113,7 @@ impl CodeBlock {
             label_addrs: Vec::new(),
             label_names: Vec::new(),
             label_refs: Vec::new(),
+            #[cfg(feature = "asm_comments")]
             asm_comments: BTreeMap::new(),
             current_aligned_write_pos: ALIGNED_WRITE_POSITION_NONE,
             page_size: 4096,
@@ -129,6 +121,7 @@ impl CodeBlock {
         }
     }
 
+    #[cfg(not(test))]
     pub fn new(mem_block: *mut u8, mem_size: usize, page_size: usize) -> Self {
         Self {
             dummy_block: vec![0; 0],
@@ -138,6 +131,7 @@ impl CodeBlock {
             label_addrs: Vec::new(),
             label_names: Vec::new(),
             label_refs: Vec::new(),
+            #[cfg(feature = "asm_comments")]
             asm_comments: BTreeMap::new(),
             current_aligned_write_pos: ALIGNED_WRITE_POSITION_NONE,
             page_size,
@@ -152,21 +146,23 @@ impl CodeBlock {
 
     /// Add an assembly comment if the feature is on.
     /// If not, this becomes an inline no-op.
-    #[inline]
+    #[cfg(feature = "asm_comments")]
     pub fn add_comment(&mut self, comment: &str) {
-        if cfg!(feature = "asm_comments") {
-            let cur_ptr = self.get_write_ptr().into_usize();
+        let cur_ptr = self.get_write_ptr().into_usize();
 
-            // If there's no current list of comments for this line number, add one.
-            let this_line_comments = self.asm_comments.entry(cur_ptr).or_default();
+        // If there's no current list of comments for this line number, add one.
+        let this_line_comments = self.asm_comments.entry(cur_ptr).or_default();
 
-            // Unless this comment is the same as the last one at this same line, add it.
-            if this_line_comments.last().map(String::as_str) != Some(comment) {
-                this_line_comments.push(comment.to_string());
-            }
+        // Unless this comment is the same as the last one at this same line, add it.
+        if this_line_comments.last().map(String::as_str) != Some(comment) {
+            this_line_comments.push(comment.to_string());
         }
     }
+    #[cfg(not(feature = "asm_comments"))]
+    #[inline]
+    pub fn add_comment(&mut self, _: &str) {}
 
+    #[cfg(feature = "asm_comments")]
     pub fn comments_at(&self, pos: usize) -> Option<&Vec<String>> {
         self.asm_comments.get(&pos)
     }
@@ -215,7 +211,7 @@ impl CodeBlock {
     // Get a direct pointer into the executable memory block
     pub fn get_ptr(&self, offset: usize) -> CodePtr {
         unsafe {
-            let ptr = self.mem_block.offset(offset as isize);
+            let ptr = self.mem_block.add(offset);
             CodePtr(ptr)
         }
     }
@@ -234,12 +230,6 @@ impl CodeBlock {
         } else {
             self.dropped_bytes = true;
         }
-    }
-
-    // Read a single byte at the given position
-    pub fn read_byte(&self, pos: usize) -> u8 {
-        assert!(pos < self.mem_size);
-        unsafe { self.mem_block.add(pos).read() }
     }
 
     // Write multiple bytes starting from the current position

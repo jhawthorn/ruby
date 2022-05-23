@@ -28,7 +28,14 @@ pub const REG0: X86Opnd = RAX;
 pub const REG0_32: X86Opnd = EAX;
 pub const REG0_8: X86Opnd = AL;
 pub const REG1: X86Opnd = RCX;
-pub const REG1_32: X86Opnd = ECX;
+// pub const REG1_32: X86Opnd = ECX;
+
+// A block that can be invalidated needs space to write a jump.
+// We'll reserve a minimum size for any block that could
+// be invalidated. In this case the JMP takes 5 bytes, but
+// gen_send_general will always MOV the receiving object
+// into place, so 2 bytes are always written automatically.
+pub const JUMP_SIZE_IN_BYTES:usize = 3;
 
 /// Status returned by code generation functions
 #[derive(PartialEq, Debug)]
@@ -106,10 +113,6 @@ impl JITState {
         self.opcode
     }
 
-    pub fn set_opcode(self: &mut JITState, opcode: usize) {
-        self.opcode = opcode;
-    }
-
     pub fn add_gc_object_offset(self: &mut JITState, ptr_offset: u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
@@ -118,15 +121,11 @@ impl JITState {
     pub fn get_pc(self: &JITState) -> *mut VALUE {
         self.pc
     }
-
-    pub fn set_pc(self: &mut JITState, pc: *mut VALUE) {
-        self.pc = pc;
-    }
 }
 
 use crate::codegen::JCCKinds::*;
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, unused)]
 pub enum JCCKinds {
     JCC_JNE,
     JCC_JNZ,
@@ -663,7 +662,7 @@ fn jump_to_next_insn(
 ) {
     // Reset the depth since in current usages we only ever jump to to
     // chain_depth > 0 from the same instruction.
-    let mut reset_depth = current_context.clone();
+    let mut reset_depth = *current_context;
     reset_depth.reset_chain_depth();
 
     let jump_block = BlockId {
@@ -749,8 +748,7 @@ pub fn gen_single_block(
         }
 
         // In debug mode, verify our existing assumption
-        #[cfg(debug_assertions)]
-        if get_option!(verify_ctx) && jit_at_current_insn(&jit) {
+        if cfg!(debug_assertions) && get_option!(verify_ctx) && jit_at_current_insn(&jit) {
             verify_ctx(&jit, &ctx);
         }
 
@@ -1486,7 +1484,7 @@ fn gen_get_ep(cb: &mut CodeBlock, reg: X86Opnd, level: u32) {
         // See GET_PREV_EP(ep) macro
         // VALUE *prev_ep = ((VALUE *)((ep)[VM_ENV_DATA_INDEX_SPECVAL] & ~0x03))
         let offs = (SIZEOF_VALUE as i32) * (VM_ENV_DATA_INDEX_SPECVAL as i32);
-        mov(cb, reg, mem_opnd(64, REG0, offs));
+        mov(cb, reg, mem_opnd(64, reg, offs));
         and(cb, reg, imm_opnd(!0x03));
     }
 }
@@ -1808,7 +1806,7 @@ fn jit_chain_guard(
     };
 
     if (ctx.get_chain_depth() as i32) < depth_limit {
-        let mut deeper = ctx.clone();
+        let mut deeper = *ctx;
         deeper.increment_chain_depth();
         let bid = BlockId {
             iseq: jit.iseq,
@@ -1881,7 +1879,7 @@ fn gen_get_ivar(
     side_exit: CodePtr,
 ) -> CodegenStatus {
     let comptime_val_klass = comptime_receiver.class_of();
-    let starting_context = ctx.clone(); // make a copy for use with jit_chain_guard
+    let starting_context = *ctx; // make a copy for use with jit_chain_guard
 
     // Check if the comptime class uses a custom allocator
     let custom_allocator = unsafe { rb_get_alloc_func(comptime_val_klass) };
@@ -2008,7 +2006,7 @@ fn gen_get_ivar(
         );
 
         // Check that the extended table is big enough
-        if ivar_index >= ROBJECT_EMBED_LEN_MAX + 1 {
+        if ivar_index > ROBJECT_EMBED_LEN_MAX {
             // Check that the slot is inside the extended table (num_slots > index)
             let num_slots = mem_opnd(32, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV);
 
@@ -2260,16 +2258,19 @@ fn guard_two_fixnums(ctx: &mut Context, cb: &mut CodeBlock, side_exit: CodePtr) 
     let arg0_type = ctx.get_opnd_type(StackOpnd(1));
 
     if arg0_type.is_heap() || arg1_type.is_heap() {
+        add_comment(cb, "arg is heap object");
         jmp_ptr(cb, side_exit);
         return;
     }
 
     if arg0_type != Type::Fixnum && arg0_type.is_specific() {
+        add_comment(cb, "arg0 not fixnum");
         jmp_ptr(cb, side_exit);
         return;
     }
 
-    if arg1_type != Type::Fixnum && arg0_type.is_specific() {
+    if arg1_type != Type::Fixnum && arg1_type.is_specific() {
+        add_comment(cb, "arg1 not fixnum");
         jmp_ptr(cb, side_exit);
         return;
     }
@@ -2552,7 +2553,7 @@ fn gen_opt_aref(
     }
 
     // Remember the context on entry for adding guard chains
-    let starting_context = ctx.clone();
+    let starting_context = *ctx;
 
     // Specialize base on compile time values
     let comptime_idx = jit_peek_at_stack(jit, ctx, 0);
@@ -2997,6 +2998,16 @@ fn gen_opt_empty_p(
     gen_opt_send_without_block(jit, ctx, cb, ocb)
 }
 
+fn gen_opt_succ(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    cb: &mut CodeBlock,
+    ocb: &mut OutlinedCb,
+) -> CodegenStatus {
+    // Delegate to send, call the method on the recv
+    gen_opt_send_without_block(jit, ctx, cb, ocb)
+}
+
 fn gen_opt_str_freeze(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -3407,6 +3418,32 @@ fn jit_guard_known_klass(
             jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
             ctx.upgrade_opnd_type(insn_opnd, Type::Flonum);
         }
+    } else if unsafe { known_klass == rb_cString } && sample_instance.string_p() {
+        assert!(!val_type.is_imm());
+        if val_type != Type::String {
+            assert!(val_type.is_unknown());
+
+            // Need the check for immediate, because trying to look up the klass field of an immediate will segfault
+            if !val_type.is_heap() {
+                add_comment(cb, "guard not immediate (for string)");
+                assert!(Qfalse.as_i32() < Qnil.as_i32());
+                test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK as i64));
+                jit_chain_guard(JCC_JNZ, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+                cmp(cb, REG0, imm_opnd(Qnil.into()));
+                jit_chain_guard(JCC_JBE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+            }
+
+            add_comment(cb, "guard object is string");
+            let klass_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_KLASS);
+            mov(cb, REG1, uimm_opnd(unsafe { rb_cString }.into()));
+            cmp(cb, klass_opnd, REG1);
+            jit_chain_guard(JCC_JNE, jit, ctx, cb, ocb, max_chain_depth, side_exit);
+
+            // Upgrading here causes an error with invalidation writing past end of block
+            ctx.upgrade_opnd_type(insn_opnd, Type::String);
+        } else {
+            add_comment(cb, "skip guard - known to be a string");
+        }
     } else if unsafe {
         FL_TEST(known_klass, VALUE(RUBY_FL_SINGLETON)) != VALUE(0)
             && sample_instance == rb_attr_get(known_klass, id__attached__ as ID)
@@ -3632,6 +3669,91 @@ fn jit_rb_str_to_s(
     false
 }
 
+// Codegen for rb_str_concat()
+// Frequently strings are concatenated using "out_str << next_str".
+// This is common in Erb and similar templating languages.
+fn jit_rb_str_concat(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    cb: &mut CodeBlock,
+    ocb: &mut OutlinedCb,
+    _ci: *const rb_callinfo,
+    _cme: *const rb_callable_method_entry_t,
+    _block: Option<IseqPtr>,
+    _argc: i32,
+    _known_recv_class: *const VALUE,
+) -> bool {
+    let comptime_arg = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_arg_type = ctx.get_opnd_type(StackOpnd(0));
+
+    // String#<< can take an integer codepoint as an argument, but we don't optimise that.
+    // Also, a non-string argument would have to call .to_str on itself before being treated
+    // as a string, and that would require saving pc/sp, which we don't do here.
+    if comptime_arg_type != Type::String {
+        return false;
+    }
+
+    // Generate a side exit
+    let side_exit = get_side_exit(jit, ocb, ctx);
+
+    // Guard that the argument is of class String at runtime.
+    let arg_opnd = ctx.stack_opnd(0);
+    mov(cb, REG0, arg_opnd);
+    if !jit_guard_known_klass(
+        jit,
+        ctx,
+        cb,
+        ocb,
+        unsafe { rb_cString },
+        StackOpnd(0),
+        comptime_arg,
+        SEND_MAX_DEPTH,
+        side_exit,
+    ) {
+        return false;
+    }
+
+    let concat_arg = ctx.stack_pop(1);
+    let recv = ctx.stack_pop(1);
+
+    // Test if string encodings differ. If different, use rb_str_append. If the same,
+    // use rb_yjit_str_simple_append, which calls rb_str_cat.
+    add_comment(cb, "<< on strings");
+
+    // Both rb_str_append and rb_yjit_str_simple_append take identical args
+    mov(cb, C_ARG_REGS[0], recv);
+    mov(cb, C_ARG_REGS[1], concat_arg);
+
+    // Take receiver's object flags XOR arg's flags. If any
+    // string-encoding flags are different between the two,
+    // the encodings don't match.
+    mov(cb, REG0, recv);
+    mov(cb, REG1, concat_arg);
+    mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS));
+    xor(cb, REG0, mem_opnd(64, REG1, RUBY_OFFSET_RBASIC_FLAGS));
+    test(cb, REG0, uimm_opnd(RUBY_ENCODING_MASK as u64));
+
+    let enc_mismatch = cb.new_label("enc_mismatch".to_string());
+    jne_label(cb, enc_mismatch);
+
+    // If encodings match, call the simple append function and jump to return
+    call_ptr(cb, REG0, rb_yjit_str_simple_append as *const u8);
+    let ret_label: usize = cb.new_label("stack_return".to_string());
+    jmp_label(cb, ret_label);
+
+    // If encodings are different, use a slower encoding-aware concatenate
+    cb.write_label(enc_mismatch);
+    call_ptr(cb, REG0, rb_str_append as *const u8);
+    // Drop through to return
+
+    cb.write_label(ret_label);
+    let stack_ret = ctx.stack_push(Type::String);
+    mov(cb, stack_ret, RAX);
+
+    cb.link_labels();
+    true
+}
+
 fn jit_thread_s_current(
     _jit: &mut JITState,
     ctx: &mut Context,
@@ -3747,9 +3869,14 @@ fn gen_send_cfunc(
     // Delegate to codegen for C methods if we have it.
     if kw_arg.is_null() {
         let codegen_p = lookup_cfunc_codegen(unsafe { (*cme).def });
-        if codegen_p.is_some() {
-            let known_cfunc_codegen = codegen_p.unwrap();
+        if let Some(known_cfunc_codegen) = codegen_p {
+            let start_pos = cb.get_write_ptr().raw_ptr() as usize;
             if known_cfunc_codegen(jit, ctx, cb, ocb, ci, cme, block, argc, recv_known_klass) {
+                let written_bytes = cb.get_write_ptr().raw_ptr() as usize - start_pos;
+                if written_bytes < JUMP_SIZE_IN_BYTES {
+                    add_comment(cb, "Writing NOPs to leave room for later invalidation code");
+                    nop(cb, (JUMP_SIZE_IN_BYTES - written_bytes) as u32);
+                }
                 // cfunc codegen generated code. Terminate the block so
                 // there isn't multiple calls in the same block.
                 jump_to_next_insn(jit, ctx, cb, ocb);
@@ -3894,7 +4021,6 @@ fn gen_send_cfunc(
         // Copy the arguments from the stack to the C argument registers
         // self is the 0th argument and is at index argc from the stack top
         for i in 0..=passed_argc as usize {
-            // "as usize?" Yeah, you can't index an array by an i32.
             let stack_opnd = mem_opnd(64, RAX, -(argc + 1 - (i as i32)) * SIZEOF_VALUE_I32);
             let c_arg_reg = C_ARG_REGS[i];
             mov(cb, c_arg_reg, stack_opnd);
@@ -4323,9 +4449,7 @@ fn gen_send_iseq(
                     // Next we're going to do some bookkeeping on our end so
                     // that we know the order that the arguments are
                     // actually in now.
-                    let tmp = caller_kwargs[kwarg_idx];
-                    caller_kwargs[kwarg_idx] = caller_kwargs[swap_idx];
-                    caller_kwargs[swap_idx] = tmp;
+                    caller_kwargs.swap(kwarg_idx, swap_idx);
 
                     break;
                 }
@@ -4465,7 +4589,7 @@ fn gen_send_iseq(
     // Pop arguments and receiver in return context, push the return value
     // After the return, sp_offset will be 1. The codegen for leave writes
     // the return value in case of JIT-to-JIT return.
-    let mut return_ctx = ctx.clone();
+    let mut return_ctx = *ctx;
     return_ctx.stack_pop((argc + 1).try_into().unwrap());
     return_ctx.stack_push(Type::Unknown);
     return_ctx.set_sp_offset(1);
@@ -5498,6 +5622,98 @@ fn gen_getblockparamproxy(
     KeepCompiling
 }
 
+fn gen_getblockparam(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    cb: &mut CodeBlock,
+    ocb: &mut OutlinedCb,
+) -> CodegenStatus {
+    // EP level
+    let level = jit_get_arg(jit, 1).as_u32();
+
+    // Save the PC and SP because we might allocate
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
+
+    // A mirror of the interpreter code. Checking for the case
+    // where it's pushing rb_block_param_proxy.
+    let side_exit = get_side_exit(jit, ocb, ctx);
+
+    // Load environment pointer EP from CFP
+    gen_get_ep(cb, REG1, level);
+
+    // Bail when VM_ENV_FLAGS(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM) is non zero
+    let flag_check = mem_opnd(
+        64,
+        REG1,
+        (SIZEOF_VALUE as i32) * (VM_ENV_DATA_INDEX_FLAGS as i32),
+    );
+    // FIXME: This is testing bits in the same place that the WB check is testing.
+    // We should combine these at some point
+    test(
+        cb,
+        flag_check,
+        uimm_opnd(VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM.into()),
+    );
+
+    // If the frame flag has been modified, then the actual proc value is
+    // already in the EP and we should just use the value.
+    let frame_flag_modified = cb.new_label("frame_flag_modified".to_string());
+    jnz_label(cb, frame_flag_modified);
+
+    // This instruction writes the block handler to the EP.  If we need to
+    // fire a write barrier for the write, then exit (we'll let the
+    // interpreter handle it so it can fire the write barrier).
+    // flags & VM_ENV_FLAG_WB_REQUIRED
+    let flags_opnd = mem_opnd(
+        64,
+        REG1,
+        SIZEOF_VALUE as i32 * VM_ENV_DATA_INDEX_FLAGS as i32,
+    );
+    test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED.into()));
+
+    // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
+    jnz_ptr(cb, side_exit);
+
+    // Load the block handler for the current frame
+    // note, VM_ASSERT(VM_ENV_LOCAL_P(ep))
+    mov(
+        cb,
+        C_ARG_REGS[1],
+        mem_opnd(
+            64,
+            REG1,
+            (SIZEOF_VALUE as i32) * (VM_ENV_DATA_INDEX_SPECVAL as i32),
+        ),
+    );
+
+    // Convert the block handler in to a proc
+    // call rb_vm_bh_to_procval(const rb_execution_context_t *ec, VALUE block_handler)
+    mov(cb, C_ARG_REGS[0], REG_EC);
+    call_ptr(cb, REG0, rb_vm_bh_to_procval as *const u8);
+
+    // Load environment pointer EP from CFP (again)
+    gen_get_ep(cb, REG1, level);
+
+    // Set the frame modified flag
+    or(cb, flag_check, uimm_opnd(VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM.into()));
+
+    // Write the value at the environment pointer
+    let idx = jit_get_arg(jit, 0).as_i32();
+    let offs = -(SIZEOF_VALUE as i32 * idx);
+    mov(cb, mem_opnd(64, REG1, offs), RAX);
+
+    cb.write_label(frame_flag_modified);
+
+    // Push the proc on the stack
+    let stack_ret = ctx.stack_push(Type::Unknown);
+    mov(cb, RAX, mem_opnd(64, REG1, offs));
+    mov(cb, stack_ret, RAX);
+
+    cb.link_labels();
+
+    KeepCompiling
+}
+
 fn gen_invokebuiltin(
     jit: &mut JITState,
     ctx: &mut Context,
@@ -5653,6 +5869,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         OP_OPT_LTLT => Some(gen_opt_ltlt),
         OP_OPT_NIL_P => Some(gen_opt_nil_p),
         OP_OPT_EMPTY_P => Some(gen_opt_empty_p),
+        OP_OPT_SUCC => Some(gen_opt_succ),
         OP_OPT_NOT => Some(gen_opt_not),
         OP_OPT_SIZE => Some(gen_opt_size),
         OP_OPT_LENGTH => Some(gen_opt_length),
@@ -5668,6 +5885,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         OP_JUMP => Some(gen_jump),
 
         OP_GETBLOCKPARAMPROXY => Some(gen_getblockparamproxy),
+        OP_GETBLOCKPARAM => Some(gen_getblockparam),
         OP_OPT_SEND_WITHOUT_BLOCK => Some(gen_opt_send_without_block),
         OP_SEND => Some(gen_send),
         OP_INVOKESUPER => Some(gen_invokesuper),
@@ -5848,6 +6066,7 @@ impl CodegenGlobals {
             self.yjit_reg_method(rb_cString, "to_s", jit_rb_str_to_s);
             self.yjit_reg_method(rb_cString, "to_str", jit_rb_str_to_s);
             self.yjit_reg_method(rb_cString, "bytesize", jit_rb_str_bytesize);
+            self.yjit_reg_method(rb_cString, "<<", jit_rb_str_concat);
 
             // Thread.current
             self.yjit_reg_method(
@@ -5925,7 +6144,11 @@ mod tests {
     use super::*;
 
     fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
-        let block = Block::new(BLOCKID_NULL, &Context::default());
+        let blockid = BlockId {
+            iseq: ptr::null(),
+            idx: 0,
+        };
+        let block = Block::new(blockid, &Context::default());
 
         return (
             JITState::new(&block),
@@ -6006,7 +6229,7 @@ mod tests {
 
         let mut value_array: [u64; 2] = [0, 2]; // We only compile for n == 2
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        jit.set_pc(pc);
+        jit.pc = pc;
 
         let status = gen_dupn(&mut jit, &mut context, &mut cb, &mut ocb);
 
@@ -6055,7 +6278,7 @@ mod tests {
 
         let mut value_array: [u64; 2] = [0, Qtrue.into()];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        jit.set_pc(pc);
+        jit.pc = pc;
 
         let status = gen_putobject(&mut jit, &mut context, &mut cb, &mut ocb);
 
@@ -6074,7 +6297,7 @@ mod tests {
         // The Fixnum 7 is encoded as 7 * 2 + 1, or 15
         let mut value_array: [u64; 2] = [0, 15];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        jit.set_pc(pc);
+        jit.pc = pc;
 
         let status = gen_putobject(&mut jit, &mut context, &mut cb, &mut ocb);
 
@@ -6116,7 +6339,7 @@ mod tests {
 
         let mut value_array: [u64; 2] = [0, 2];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        jit.set_pc(pc);
+        jit.pc = pc;
 
         let status = gen_setn(&mut jit, &mut context, &mut cb, &mut ocb);
 
@@ -6137,7 +6360,7 @@ mod tests {
 
         let mut value_array: [u64; 2] = [0, 1];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        jit.set_pc(pc);
+        jit.pc = pc;
 
         let status = gen_topn(&mut jit, &mut context, &mut cb, &mut ocb);
 
@@ -6159,7 +6382,7 @@ mod tests {
 
         let mut value_array: [u64; 3] = [0, 2, 0];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        jit.set_pc(pc);
+        jit.pc = pc;
 
         let status = gen_adjuststack(&mut jit, &mut context, &mut cb, &mut ocb);
 
