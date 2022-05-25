@@ -30,10 +30,6 @@ struct rb_native_thread {
 
     rb_nativethread_id_t thread_id;
 
-#ifdef NON_SCALAR_THREAD_ID
-    rb_thread_id_string_t thread_id_string;
-#endif
-
 #ifdef RB_THREAD_T_HAS_NATIVE_ID
     int tid;
 #endif
@@ -54,6 +50,10 @@ struct rb_native_thread {
         rb_nativethread_cond_t intr; /* th->interrupt_lock */
         rb_nativethread_cond_t readyq; /* use sched->lock */
     } cond;
+
+#ifdef USE_SIGALTSTACK
+    void *altstack;
+#endif
 };
 
 #undef except
@@ -102,11 +102,8 @@ typedef pthread_key_t native_tls_key_t;
 static inline void *
 native_tls_get(native_tls_key_t key)
 {
-    void *ptr = pthread_getspecific(key);
-    if (UNLIKELY(ptr == NULL)) {
-        rb_bug("pthread_getspecific returns NULL");
-    }
-    return ptr;
+    // return value should be checked by caller
+    return pthread_getspecific(key);
 }
 
 static inline void
