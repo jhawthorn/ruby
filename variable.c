@@ -1611,10 +1611,11 @@ shape_id_t get_shape_id(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-      case T_CLASS:
-      case T_MODULE:
           return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
           break;
+      case T_CLASS:
+      case T_MODULE:
+          return RCLASS_EXT(obj)->shape_id;
       case T_IMEMO:
           if (imemo_type(obj) == imemo_shape) {
               return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
@@ -1653,8 +1654,6 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
 {
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-      case T_CLASS:
-      case T_MODULE:
           // Ractors are occupying the upper 32 bits of flags
           // Object shapes are occupying the next 16 bits
           // 4 bits are unused
@@ -1663,6 +1662,12 @@ set_shape_id(VALUE obj, shape_id_t shape_id)
           RBASIC(obj)->flags &= 0xffffffff0000ffff;
           RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
           return;
+      case T_CLASS:
+      case T_MODULE:
+          {
+              RCLASS_EXT(obj)->shape_id = shape_id;
+              return;
+          }
       case T_IMEMO:
           if (imemo_type(obj) == imemo_shape) {
               RBASIC(obj)->flags &= 0xffffffff0000ffff;

@@ -63,6 +63,7 @@ struct rb_classext_struct {
     const VALUE refined_class;
     rb_alloc_func_t allocator;
     const VALUE includer;
+    uint16_t shape_id;
 };
 
 struct RClass {
