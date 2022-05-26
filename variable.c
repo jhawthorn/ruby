@@ -1820,7 +1820,7 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb
     rb_shape_t * shape = shape_alloc();
     set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
-    shape->parent = parent;
+    RB_OBJ_WRITE(shape, &shape->parent, parent);
     RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
     shape->iv_table = iv_table;
     return shape;

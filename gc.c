@@ -3259,9 +3259,11 @@ obj_free_object_id(rb_objspace_t *objspace, VALUE obj)
 }
 
 static enum rb_id_table_iterator_result
-remove_child_shapes_parent_id(VALUE value, void *ref)
+remove_child_shapes_parent(VALUE value, void *ref)
 {
     rb_shape_t * shape = (rb_shape_t *) value;
+    GC_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
+    GC_ASSERT(rb_objspace_garbage_object_p(shape));
     shape->parent = NULL;
     return ID_TABLE_CONTINUE;
 }
@@ -3617,7 +3619,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 }
                 rb_id_table_free(shape->iv_table);
                 if(shape->edges) {
-                    rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent_id, NULL);
+                    rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent, NULL);
                     rb_id_table_free(shape->edges);
                     shape->edges = NULL;
                 }
@@ -5680,7 +5682,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
         }
     }
 
-#if 0 //RGENGC_CHECK_MODE
+#if RGENGC_CHECK_MODE
     short freelist_len = 0;
     asan_unlock_freelist(sweep_page);
     RVALUE *ptr = sweep_page->freelist;
