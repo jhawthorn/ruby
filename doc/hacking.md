@@ -42,6 +42,10 @@ If you are frequently building Ruby, this will reduce the time it takes to `make
 ../configure --disable-install-doc
 ```
 
+### Unexplainable Build Errors
+
+If you are having unexplainable build errors, after saving all your work, try running `git clean -xfd` in the source root to remove all git ignored local files. If you are working from a source directory that's been updated several times, you may have temporary build artefacts from previous releases which can cause build failures.
+
 ## Running Ruby
 
 ### Run Local Test Script
@@ -99,6 +103,7 @@ Using the address sanitizer is a great way to detect memory issues.
 ``` shell
 > ./autogen.sh
 > mkdir build && cd build
+> export ASAN_OPTIONS="halt_on_error=0:use_sigaltstack=0:detect_leaks=0"
 > ../configure cppflags="-fsanitize=address -fno-omit-frame-pointer" optflags=-O0 LDFLAGS="-fsanitize=address -fno-omit-frame-pointer"
 > make
 ```
