@@ -1206,6 +1206,30 @@ class TestRefinement < Test::Unit::TestCase
     INPUT
   end
 
+  def test_refined_protected_methods
+    r = Module.new do
+      refine c do
+        protected
+        def foo = :foo
+      end
+    end
+
+    class << c
+      using r
+
+      def call_foo
+        protected_foo
+      end
+
+      def call_foo_on(other)
+        other.protected_foo
+      end
+    end
+
+    assert_equal :foo, c.new.call_foo
+    assert_equal :foo, c.new.call_foo_on(c.new)
+  end
+
   def test_refine_basic_object
     assert_separately([], <<-"end;")
     bug10106 = '[ruby-core:64166] [Bug #10106]'
