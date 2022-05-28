@@ -2183,6 +2183,7 @@ heap_page_allocate(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
     page->start = start;
     page->total_slots = limit;
     page->slot_size = size_pool->slot_size;
+    fprintf(stderr, "page slot size %d\n", page->slot_size);
     page->size_pool = size_pool;
     page_body->header.page = page;
 
@@ -3263,7 +3264,16 @@ remove_child_shapes_parent(VALUE value, void *ref)
 {
     rb_shape_t * shape = (rb_shape_t *) value;
     GC_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    GC_ASSERT(rb_objspace_garbage_object_p(shape));
+
+    // If both objects live on the same page and we're currently
+    // sweeping that page, then we need to assert that neither are marked
+    if (GET_HEAP_PAGE(shape) == GET_HEAP_PAGE(shape->parent)) {
+        GC_ASSERT(!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(shape), shape));
+    }
+    else {
+        GC_ASSERT(rb_objspace_garbage_object_p(shape));
+    }
+
     shape->parent = NULL;
     return ID_TABLE_CONTINUE;
 }

@@ -1901,6 +1901,8 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
     RB_VM_LOCK_LEAVE();
     if(rb_objspace_garbage_object_p((VALUE)res))
         rb_bug("1878 res is garbage object\n");
+    if(rb_objspace_garbage_object_p((VALUE)shape))
+        rb_bug("1906 shape is garbage object\n");
     return res;
 }
 
