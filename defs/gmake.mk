@@ -384,7 +384,7 @@ yjit-static-lib-no:
 
 yjit-static-lib-dev:
 	$(ECHO) 'building Rust YJIT (dev mode)'
-	$(Q) cd $(top_srcdir)/yjit && \
+	$(Q)$(CHDIR) $(top_srcdir)/yjit && \
 	        CARGO_TARGET_DIR='$(CARGO_TARGET_DIR)' \
 	        CARGO_TERM_PROGRESS_WHEN='never' \
 	        $(CARGO) $(CARGO_VERBOSE) build $(CARGO_BUILD_ARGS)
@@ -398,7 +398,7 @@ $(YJIT_LIBS): yjit-static-lib
 
 # Put this here instead of in common.mk to avoid breaking nmake builds
 # TODO: might need to move for BSD Make support
-miniruby$(EXEEXT): | $(YJIT_LIBS)
+miniruby$(EXEEXT): $(YJIT_LIBS)
 
 # Generate Rust bindings. See source for details.
 # Needs `./configure --enable-yjit=dev` and Clang.
