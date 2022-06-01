@@ -2183,7 +2183,6 @@ heap_page_allocate(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
     page->start = start;
     page->total_slots = limit;
     page->slot_size = size_pool->slot_size;
-    fprintf(stderr, "page slot size %d\n", page->slot_size);
     page->size_pool = size_pool;
     page_body->header.page = page;
 
