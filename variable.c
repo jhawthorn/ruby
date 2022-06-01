@@ -897,21 +897,25 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
+struct rb_id_table *
+get_iv_table(VALUE obj) {
+    rb_shape_t* shape = get_shape(obj);
+
+    if (rb_no_cache_shape_p(shape)) {
+        return ROBJECT(obj)->as.heap.iv_index_tbl;
+    }
+    else {
+        return shape->iv_table;
+    }
+}
+
 static bool
 iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
     st_data_t ent_data;
     int r;
 
-    rb_shape_t* shape = get_shape(obj);
-    struct rb_id_table *iv_table;
-
-    if (rb_no_cache_shape_p(shape)) {
-        iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
-    }
-    else {
-        iv_table  = shape->iv_table;
-    }
+    struct rb_id_table *iv_table = get_iv_table(obj);
 
     RB_VM_LOCK_ENTER();
     {
@@ -1009,7 +1013,7 @@ generic_ivar_delete(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, id, &ivtbl)) {
-        struct rb_id_table *iv_index_tbl = get_shape(obj)->iv_table;
+        struct rb_id_table *iv_index_tbl = get_iv_table(obj);
         uint32_t index;
 
         if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
@@ -1030,7 +1034,7 @@ generic_ivar_get(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, id, &ivtbl)) {
-        struct rb_id_table *iv_index_tbl = get_shape(obj)->iv_table;
+        struct rb_id_table *iv_index_tbl = get_iv_table(obj);
         uint32_t index;
 
 	if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
@@ -1089,9 +1093,6 @@ iv_index_tbl_newsize(struct ivar_update *ivup)
     }
 }
 
-// global_hash = {
-//   object => { num_iv, buffer_of_ivs }
-// }
 static int
 generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
 {
@@ -1135,7 +1136,7 @@ generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
 {
     struct gen_ivtbl *ivtbl;
     uint32_t index;
-    struct rb_id_table *iv_index_tbl = get_shape(obj)->iv_table;
+    struct rb_id_table *iv_index_tbl = get_iv_table(obj);
 
     if (!iv_index_tbl) return 0;
     if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
@@ -1573,26 +1574,6 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 
 #define SHAPE_UNMARKABLE IMEMO_FL_USER0
 
-static const struct rb_shape invalid_shape = {
-    .flags = T_IMEMO | (imemo_shape << FL_USHIFT) | SHAPE_UNMARKABLE,
-    .parent = NULL,
-    .edges = NULL,
-    .iv_table = NULL,
-    .edge_name = 0
-};
-
-rb_shape_t *
-rb_invalid_shape(void)
-{
-    return (rb_shape_t *)&invalid_shape;
-}
-
-bool
-rb_invalid_shape_p(rb_shape_t * shape)
-{
-    return shape == rb_invalid_shape();
-}
-
 bool
 rb_no_cache_shape_p(rb_shape_t * shape)
 {
@@ -1847,6 +1828,8 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
     rb_shape_t *res = NULL;
     RB_VM_LOCK_ENTER();
     {
+        // no_cache_shape should only transition to other no_cache_shapes
+        if(shape == get_no_cache_shape()) return shape;
         if(rb_objspace_garbage_object_p((VALUE)shape))
             rb_bug("PRE not a real shape\n");
         // We don't need `res` specifically at the end of this
@@ -1869,6 +1852,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                 shape_id_t next_shape_id = get_next_shape_id();
 
                 if (next_shape_id == MAX_SHAPE_ID) {
+                    rb_bug("assigning a no cache shape\n");
                     res = get_no_cache_shape();
                 }
                 else {

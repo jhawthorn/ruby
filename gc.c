@@ -3270,7 +3270,7 @@ remove_child_shapes_parent(VALUE value, void *ref)
         GC_ASSERT(!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(shape), shape));
     }
     else {
-        GC_ASSERT(rb_objspace_garbage_object_p(shape));
+        GC_ASSERT(rb_objspace_garbage_object_p((VALUE)shape));
     }
 
     shape->parent = NULL;

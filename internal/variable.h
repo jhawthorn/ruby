@@ -40,15 +40,11 @@ uint32_t rb_obj_ensure_iv_index_mapping(VALUE obj, ID id);
 typedef uint16_t shape_id_t;
 
 struct rb_shape {
-    // Put frozen into the shape's flags
-    // Shape's ID is within its flags
-    VALUE flags;
-    struct rb_shape * parent;
-    // id -> st_table;
-    struct rb_id_table * edges;
-    // Store all previously seen ivars
-    struct rb_id_table * iv_table;
-    ID edge_name;
+    VALUE flags; // Shape ID and frozen status encoded within flags
+    struct rb_shape * parent; // Pointer to the parent
+    struct rb_id_table * edges; // id_table from ID (ivar) to next shape
+    struct rb_id_table * iv_table; // id_table from ID (ivar) to ivar index
+    ID edge_name; // ID (ivar) for transition from parent to rb_shape
 };
 
 #define SHAPE_ID(shape) get_shape_id((VALUE)shape)
