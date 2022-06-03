@@ -152,6 +152,7 @@ VALUE rb_special_singleton_class(VALUE);
 VALUE rb_singleton_class_clone_and_attach(VALUE obj, VALUE attach);
 VALUE rb_singleton_class_get(VALUE obj);
 void rb_undef_methods_from(VALUE klass, VALUE super);
+
 static inline void RCLASS_SET_ORIGIN(VALUE klass, VALUE origin);
 static inline void RICLASS_SET_ORIGIN_SHARED_MTBL(VALUE iclass);
 static inline VALUE RCLASS_SUPER(VALUE klass);
@@ -161,7 +162,6 @@ static inline void RCLASS_SET_INCLUDER(VALUE iclass, VALUE klass);
 MJIT_SYMBOL_EXPORT_BEGIN
 VALUE rb_class_inherited(VALUE, VALUE);
 VALUE rb_keyword_error_new(const char *, VALUE);
-
 MJIT_SYMBOL_EXPORT_END
 
 static inline void
@@ -207,4 +207,4 @@ RCLASS_SET_SUPER(VALUE klass, VALUE super)
     return super;
 }
 
-#endif /*INTERNAL_CLASS_H */
+#endif /* INTERNAL_CLASS_H */

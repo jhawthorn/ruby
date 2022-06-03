@@ -278,6 +278,20 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
                 }
             }
             break;
+          case TS_ICVARC:
+            {
+                IVC ivc = (IVC)code[pos + op_no + 1];
+                if (ivc->entry) {
+                    if (RB_TYPE_P(ivc->entry->class_value, T_NONE)) {
+                        rb_bug("!! %u", ivc->entry->index);
+                    }
+                    VALUE nv = func(data, ivc->entry->class_value);
+                    if (ivc->entry->class_value != nv) {
+                        ivc->entry->class_value = nv;
+                    }
+                }
+            }
+            break;
           case TS_IVC:
             {
                 IVC ivc = (IVC)code[pos + op_no + 1];
@@ -293,7 +307,6 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
                 }
                 break;
             }
-          case TS_ICVARC:
           case TS_ISE:
             {
               union iseq_inline_storage_entry *const is = (union iseq_inline_storage_entry *)code[pos + op_no + 1];

@@ -1802,7 +1802,6 @@ name_err_init_attr(VALUE exc, VALUE recv, VALUE method)
     rb_control_frame_t *cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(ec->cfp);
     cfp = rb_vm_get_ruby_level_next_cfp(ec, cfp);
     rb_ivar_set(exc, id_name, method);
-
     err_init_recv(exc, recv);
     if (cfp) rb_ivar_set(exc, id_iseq, rb_iseqw_new(cfp->iseq));
     return exc;

@@ -4012,8 +4012,6 @@ Init_vm_objects(void)
     set_shape_by_id(NO_CACHE_SHAPE_ID, vm->no_cache_shape);
     RB_OBJ_WRITTEN(vm->no_cache_shape, Qundef, (VALUE)vm);
 
-    memset(vm->allocated_shape_bitmap, 0, (0xFFFF / sizeof(uint)));
-
     /*
      * TODO: Why are these not working here?
     // RubyVM.debug_shape functionality

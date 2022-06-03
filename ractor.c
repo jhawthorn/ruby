@@ -2557,7 +2557,14 @@ shareable_p_enter(VALUE obj)
 MJIT_FUNC_EXPORTED bool
 rb_ractor_shareable_p_continue(VALUE obj)
 {
-    return !(rb_obj_traverse(obj, shareable_p_enter, null_leave, mark_shareable));
+    if (rb_obj_traverse(obj,
+                        shareable_p_enter, null_leave,
+                        mark_shareable)) {
+        return false;
+    }
+    else {
+        return true;
+    }
 }
 
 #if RACTOR_CHECK_MODE > 0

@@ -1083,24 +1083,22 @@ vm_search_const_defined_class(const VALUE cbase, ID id)
 static bool
 iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
+    int found;
     st_data_t ent_data;
-    int r;
 
     rb_shape_t* shape = get_shape(obj);
 
     RB_VM_LOCK_ENTER();
     {
-        r = shape->iv_table && rb_id_table_lookup(shape->iv_table, (st_data_t)id, &ent_data);
+        found = shape->iv_table && rb_id_table_lookup(shape->iv_table, (st_data_t)id, &ent_data);
     }
     RB_VM_LOCK_LEAVE();
 
-    if (r) {
+    if (found) {
         *indexp = (uint32_t)ent_data;
-        return true;
     }
-    else {
-        return false;
-    }
+
+    return found;
 }
 
 
@@ -1129,11 +1127,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 #if OPT_IC_FOR_IVAR
     VALUE val = Qundef;
 
-    if (SPECIAL_CONST_P(obj) || BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE) {
-        // frozen?
-    }
-    else {
-        // Put shape_id into the inline cache
+    if (!(SPECIAL_CONST_P(obj) || BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE)) {
         shape_id_t shape_id = get_shape_id(obj);
 
         if (shape_id == NO_CACHE_SHAPE_ID)
@@ -1151,11 +1145,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         if (LIKELY(cached_id == shape_id)) {
             RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
 
-            // Things we need to know
-            // Has the cache been set?
-            //   2 ways to answer:
-            //      *if* it's an attr_reader, is the index 0
-            //      *if* it's an ivar, is the entry set
             uint32_t index;
 
             if (is_attr) {
@@ -1168,7 +1157,6 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 }
             }
             else {
-                // Has the cache been filled?
                 if (vm_ic_attr_index_p(ic)) {
                     index = vm_ic_attr_index(ic);
                 }

@@ -1684,22 +1684,6 @@ set_shape(VALUE obj, rb_shape_t* shape)
 }
 
 void
-set_shape_in_bitmap(shape_id_t shape_id) {
-    rb_vm_t *vm = GET_VM();
-    uint index = shape_id / sizeof(uint);
-    vm->allocated_shape_bitmap[index] |= (shape_id - (index * sizeof(uint)));
-}
-
-/*
-void
-unset_shape_in_bitmap(shape_id_t shape_id) {
-    rb_vm_t *vm = GET_VM();
-    uint index = shape_id / sizeof(uint);
-//    vm->allocated_shape_bitmap[index] &= ^(shape_id - (index * sizeof(uint)));
-}
-*/
-
-void
 set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
@@ -1707,7 +1691,6 @@ set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
     if (shape && rb_objspace_garbage_object_p((VALUE)shape))
         rb_bug("1702 get outta here\n");
     vm->shape_list[shape_id] = shape;
-//    set_shape_in_bitmap(shape_id);
 }
 
 rb_shape_t*

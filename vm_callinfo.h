@@ -410,7 +410,6 @@ static inline unsigned int
 vm_ic_attr_index(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    // What is this -1
     return (int)ic->attr_index - 1;
 }
 
@@ -425,7 +424,6 @@ static inline uint16_t
 vm_ic_attr_shape_id(const struct iseq_inline_iv_cache_entry *ic)
 {
     // VM_ASSERT(IMEMO_TYPE_P(ic, imemo_callcache));
-    // Maybe dest here?
     return ic->source_shape_id;
 }
 

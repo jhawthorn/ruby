@@ -92,6 +92,7 @@ extern int ruby_assert_critical_section_entered;
 #include "internal.h"
 #include "internal/array.h"
 #include "internal/serial.h"
+#include "internal/variable.h"
 #include "internal/vm.h"
 #include "method.h"
 #include "node.h"
@@ -262,11 +263,8 @@ struct iseq_inline_constant_cache {
 };
 
 struct iseq_inline_iv_cache_entry {
-    // struct rb_iv_index_tbl_entry *entry;
-    // TODO: Split entry in three: shape_ids of shape_id_t (16bits) (source, dest) and attr_index (32 bit)
-    // These should be shape_id_t
-    uint16_t source_shape_id;
-    uint16_t dest_shape_id;
+    shape_id_t source_shape_id;
+    shape_id_t dest_shape_id;
     uint32_t attr_index;
 };
 
@@ -677,7 +675,6 @@ typedef struct rb_vm_struct {
     rb_shape_t *root_shape;
     rb_shape_t *frozen_root_shape;
     rb_shape_t *no_cache_shape;
-    uint allocated_shape_bitmap[0xFFFF / sizeof(uint)];
 
     /* load */
     VALUE top_self;
