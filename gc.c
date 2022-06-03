@@ -3626,12 +3626,12 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                         rb_bug("Edge %s should exist", rb_id2name(shape->edge_name));
                     }
                 }
-                rb_id_table_free(shape->iv_table);
-                if(shape->edges) {
+                if (shape->edges) {
                     rb_id_table_foreach_values(shape->edges, remove_child_shapes_parent, NULL);
                     rb_id_table_free(shape->edges);
                     shape->edges = NULL;
                 }
+                rb_id_table_free(shape->iv_table);
                 set_shape_by_id(SHAPE_ID(shape), NULL);
 
                 break;

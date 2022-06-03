@@ -1830,12 +1830,14 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             // we can return that. Otherwise, we'll need to get a new shape
             if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res) || rb_objspace_garbage_object_p((VALUE)res)) {
                 if (res) {
+                    // TODO: Figure out if we want this???
+                    if (res->parent->edges)
+                        rb_id_table_delete(res->parent->edges, id);
                     res->parent = NULL;
                 }
                 shape_id_t next_shape_id = get_next_shape_id();
 
                 if (next_shape_id == MAX_SHAPE_ID) {
-                    rb_bug("assigning a no cache shape\n");
                     res = get_no_cache_shape();
                 }
                 else {
