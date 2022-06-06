@@ -1831,8 +1831,7 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
             if (!rb_id_table_lookup(shape->edges, id, (VALUE *)&res) || rb_objspace_garbage_object_p((VALUE)res)) {
                 if (res) {
                     // TODO: Figure out if we want this???
-                    if (res->parent->edges)
-                        rb_id_table_delete(res->parent->edges, id);
+                    rb_id_table_delete(shape->edges, id);
                     res->parent = NULL;
                 }
                 shape_id_t next_shape_id = get_next_shape_id();

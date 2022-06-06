@@ -294,6 +294,19 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
                 break;
             }
           case TS_ICVARC:
+            {
+                ICVARC cache = (ICVARC)code[pos + op_no + 1];
+                if (cache->entry) {
+                    if (RB_TYPE_P(cache->entry->class_value, T_NONE)) {
+                        rb_bug("!! %u", cache->entry->index);
+                    }
+                    VALUE nv = func(data, cache->entry->class_value);
+                    if (cache->entry->class_value != nv) {
+                        cache->entry->class_value = nv;
+                    }
+                }
+            }
+            break;
           case TS_ISE:
             {
               union iseq_inline_storage_entry *const is = (union iseq_inline_storage_entry *)code[pos + op_no + 1];

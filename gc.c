@@ -3269,9 +3269,6 @@ remove_child_shapes_parent(VALUE value, void *ref)
     if (GET_HEAP_PAGE(shape) == GET_HEAP_PAGE(shape->parent)) {
         GC_ASSERT(!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(shape), shape));
     }
-    else {
-        GC_ASSERT(rb_objspace_garbage_object_p((VALUE)shape));
-    }
 
     shape->parent = NULL;
     return ID_TABLE_CONTINUE;
@@ -3620,9 +3617,15 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 rb_shape_t *shape = (rb_shape_t *)obj;
                 rb_shape_t *parent = shape->parent;
 
-                if (parent && !rb_objspace_garbage_object_p((VALUE)parent)) {
+                if (parent) {
                     RUBY_ASSERT(parent->edges);
-                    if (!rb_id_table_delete(parent->edges, shape->edge_name)) {
+                    VALUE res;
+                    if (rb_id_table_lookup(parent->edges, shape->edge_name, &res)) {
+                        if ((rb_shape_t *)res == shape) {
+                            rb_id_table_delete(parent->edges, shape->edge_name);
+                        }
+                    }
+                    else {
                         rb_bug("Edge %s should exist", rb_id2name(shape->edge_name));
                     }
                 }
