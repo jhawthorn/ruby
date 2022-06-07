@@ -2022,7 +2022,8 @@ iterate_over_shapes(VALUE obj, rb_shape_t *shape, VALUE* iv_list, int numiv, rb_
         return;
     }
     else if (frozen_shape_p(shape)) {
-        return iterate_over_shapes(obj, shape->parent, iv_list, numiv, callback, arg);
+        iterate_over_shapes(obj, shape->parent, iv_list, numiv, callback, arg);
+        return;
     }
     else if (numiv <= 0) {
         rb_bug("bad numiv iterating over shapes\n");
