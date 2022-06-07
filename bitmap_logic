@@ -1,0 +1,10 @@
+~65k slots
+
+uint16_t search;  // 0xFFFF
+
+
+if (search & 0xF) != 0xF
+
+else
+    search >> 16
+end

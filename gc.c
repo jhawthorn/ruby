@@ -3635,7 +3635,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                     shape->edges = NULL;
                 }
                 rb_id_table_free(shape->iv_table);
-                set_shape_by_id(SHAPE_ID(shape), NULL);
+                rb_shape_set_shape_by_id(SHAPE_ID(shape), NULL);
 
                 break;
             }
@@ -5051,7 +5051,7 @@ count_objects(int argc, VALUE *argv, VALUE os)
 }
 
 VALUE rb_obj_shape_id(VALUE self, VALUE obj) {
-    return INT2NUM(get_shape_id(obj));
+    return INT2NUM(rb_shape_get_shape_id(obj));
 }
 
 VALUE rb_cShape;
@@ -5156,7 +5156,7 @@ rb_shape_parent(VALUE self)
 }
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
-    rb_shape_t *shape = get_shape(obj);
+    rb_shape_t *shape = rb_shape_get_shape(obj);
     if (!rb_cShape) {
         // JEM: TODO: move these inits somewhere else, don't seem to be working
         // in Init_vm_objects
@@ -5209,14 +5209,14 @@ VALUE rb_obj_shape(rb_shape_t* shape) {
 }
 
 static VALUE shape_transition_tree(VALUE self) {
-    return rb_obj_shape(get_root_shape());
+    return rb_obj_shape(rb_vm_get_root_shape());
 }
 
 static VALUE shape_count(VALUE self) {
-    // Might want to extract this into a get_root_shape
+    // Might want to extract this into a rb_vm_get_root_shape
     int shape_count = 0;
     for(int i=0; i<MAX_SHAPE_ID; i++) {
-        if(get_shape_by_id_without_assertion(i)) shape_count++;
+        if(rb_shape_get_shape_by_id_without_assertion(i)) shape_count++;
     }
     return INT2NUM(shape_count);
 }
@@ -7165,11 +7165,11 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
                 shape_id_t shape_source_id = vm_cc_attr_index_shape_source_id(cc);
                 shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
                 if (shape_source_id != INVALID_SHAPE_ID) {
-                    rb_shape_t *shape = get_shape_by_id(shape_source_id);
+                    rb_shape_t *shape = rb_shape_get_shape_by_id(shape_source_id);
                     gc_mark(objspace, (VALUE)shape);
                 }
                 if (shape_dest_id != INVALID_SHAPE_ID) {
-                    rb_shape_t *shape = get_shape_by_id(shape_dest_id);
+                    rb_shape_t *shape = rb_shape_get_shape_by_id(shape_dest_id);
                     gc_mark(objspace, (VALUE)shape);
                 }
             }
@@ -7184,7 +7184,7 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_shape:
         {
             rb_shape_t *shape = (rb_shape_t *)obj;
-            if (!root_shape_p(shape))
+            if (!rb_shape_root_shape_p(shape))
                 gc_mark(objspace, (VALUE)shape->parent);
         }
         return;
@@ -7231,7 +7231,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
     }
 
     gc_mark(objspace, any->as.basic.klass);
-    gc_mark(objspace, (VALUE)get_shape(obj));
+    gc_mark(objspace, (VALUE)rb_shape_get_shape(obj));
 
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:

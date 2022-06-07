@@ -70,7 +70,7 @@ RBIMPL_ATTR_PURE()
 static inline struct rb_id_table *
 ROBJECT_IV_INDEX_TBL_inline(VALUE obj)
 {
-    return get_shape(obj)->iv_table;
+    return rb_shape_get_shape(obj)->iv_table;
 }
 #define ROBJECT_IV_INDEX_TBL ROBJECT_IV_INDEX_TBL_inline
 

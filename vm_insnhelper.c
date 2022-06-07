@@ -50,7 +50,7 @@ MJIT_STATIC VALUE
 ruby_vm_special_exception_copy(VALUE exc)
 {
     VALUE e = rb_obj_alloc(rb_class_real(RBASIC_CLASS(exc)));
-    set_shape(e, get_shape(exc));
+    rb_shape_set_shape(e, rb_shape_get_shape(exc));
     rb_obj_copy_ivar(e, exc);
     return e;
 }
@@ -1086,7 +1086,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
     int found;
     st_data_t ent_data;
 
-    rb_shape_t* shape = get_shape(obj);
+    rb_shape_t* shape = rb_shape_get_shape(obj);
 
     RB_VM_LOCK_ENTER();
     {
@@ -1111,12 +1111,12 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
     if (is_attr) {
         if (vm_cc_markable(cc)) {
             vm_cc_attr_index_set(cc, index, shape_id, shape_id);
-            RB_OBJ_WRITTEN(cc, Qundef, get_shape_by_id(shape_id));
+            RB_OBJ_WRITTEN(cc, Qundef, rb_shape_get_shape_by_id(shape_id));
         }
     }
     else {
         vm_ic_attr_index_set(iseq, ic, index, shape_id, shape_id);
-        RB_OBJ_WRITTEN(iseq, Qundef, get_shape_by_id(shape_id));
+        RB_OBJ_WRITTEN(iseq, Qundef, rb_shape_get_shape_by_id(shape_id));
     }
 }
 
@@ -1128,7 +1128,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
     VALUE val = Qundef;
 
     if (!(SPECIAL_CONST_P(obj) || BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE)) {
-        shape_id_t shape_id = get_shape_id(obj);
+        shape_id_t shape_id = rb_shape_get_shape_id(obj);
 
         if (shape_id == NO_CACHE_SHAPE_ID)
             goto general_path;
@@ -1203,7 +1203,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             }
 
             VALUE iv_index_value;
-            if (get_iv_index_from_shape(get_shape(obj), id, &iv_index_value)) {
+            if (rb_shape_get_iv_index(rb_shape_get_shape(obj), id, &iv_index_value)) {
                 // This fills in the cache with the shared cache object.
                 // "ent" is the shared cache object
                 iv_index = (uint32_t)iv_index_value;
@@ -1227,12 +1227,12 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
                 if (is_attr) {
                     if (vm_cc_markable(cc)) {
                         vm_cc_attr_index_initialize(cc, shape_id);
-                        RB_OBJ_WRITTEN(cc, Qundef, get_shape_by_id(shape_id));
+                        RB_OBJ_WRITTEN(cc, Qundef, rb_shape_get_shape_by_id(shape_id));
                     }
                 }
                 else {
                     vm_ic_attr_index_initialize(ic, shape_id);
-                    RB_OBJ_WRITTEN(iseq, Qundef, get_shape_by_id(shape_id));
+                    RB_OBJ_WRITTEN(iseq, Qundef, rb_shape_get_shape_by_id(shape_id));
                 }
             }
 
@@ -1276,11 +1276,9 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
         uint32_t index;
 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
-        rb_shape_t* shape = get_shape(obj);
-        if (rb_objspace_garbage_object_p((VALUE)shape))
-            rb_bug("trash.\n");
-        rb_shape_t* next_shape = get_next_shape(shape, id);
-        set_shape(obj, next_shape);
+        rb_shape_t* shape = rb_shape_get_shape(obj);
+        rb_shape_t* next_shape = rb_shape_get_next(shape, id);
+        rb_shape_set_shape(obj, next_shape);
 
         // cache -> no cache
         //   ensure object isn't embedded
@@ -1368,7 +1366,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
         // transition and write the ivar
         // If object's shape id is the same as the dest, then just write the
         // ivar
-        shape_id_t shape_id = get_shape_id(obj);
+        shape_id_t shape_id = rb_shape_get_shape_id(obj);
         if (shape_id != NO_CACHE_SHAPE_ID) {
             // Do we have a cache hit *and* is the CC intitialized
             if (shape_id == shape_source_id) {
@@ -1395,7 +1393,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                     fprintf(stderr, "couldn't find shape on iseq: %p with shape_id: %d\n", iseq, shape_dest_id);
                     abort();
                 }
-                set_shape(obj, get_shape_by_id(shape_dest_id));
+                rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id));
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 

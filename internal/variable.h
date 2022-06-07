@@ -47,25 +47,23 @@ struct rb_shape {
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
 };
 
-#define SHAPE_ID(shape) get_shape_id((VALUE)shape)
+#define SHAPE_ID(shape) rb_shape_get_shape_id((VALUE)shape)
 
 #ifndef rb_shape_t
 typedef struct rb_shape rb_shape_t;
 #define rb_shape_t rb_shape_t
 #endif
 
-shape_id_t get_shape_id(VALUE obj);
-rb_shape_t* get_shape_by_id(shape_id_t shape_id);
-rb_shape_t* get_shape_by_id_without_assertion(shape_id_t shape_id);
-rb_shape_t* get_shape(VALUE obj);
-rb_shape_t* get_next_shape(rb_shape_t* obj, ID id);
-rb_shape_t* get_root_shape();
-rb_shape_t* get_frozen_root_shape();
-bool root_shape_p(rb_shape_t* shape);
-void set_shape(VALUE obj, rb_shape_t* shape);
-int get_iv_index_from_shape(rb_shape_t * shape, ID id, VALUE * value);
-void transition_shape(VALUE obj, ID id);
-void set_shape_by_id(shape_id_t, rb_shape_t *);
+shape_id_t rb_shape_get_shape_id(VALUE obj);
+rb_shape_t* rb_shape_get_shape_by_id(shape_id_t shape_id);
+rb_shape_t* rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id);
+rb_shape_t* rb_shape_get_shape(VALUE obj);
+rb_shape_t* rb_shape_get_next(rb_shape_t* obj, ID id);
+rb_shape_t* rb_vm_get_root_shape();
+bool rb_shape_root_shape_p(rb_shape_t* shape);
+void rb_shape_set_shape(VALUE obj, rb_shape_t* shape);
+int rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE * value);
+void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
 rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb_id_table * iv_table);
 
 # define MAX_SHAPE_ID 0xFFFE

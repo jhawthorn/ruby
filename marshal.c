@@ -714,11 +714,11 @@ has_ivars(VALUE obj, VALUE encname, VALUE *ivobj)
 static void
 w_ivar_each(VALUE obj, st_index_t num, struct dump_call_arg *arg)
 {
-    shape_id_t shape_id = get_shape_id(arg->obj);
+    shape_id_t shape_id = rb_shape_get_shape_id(arg->obj);
     struct w_ivar_arg ivarg = {arg, num};
     if (!num) return;
     rb_ivar_foreach(obj, w_obj_each, (st_data_t)&ivarg);
-    if (shape_id != get_shape_id(arg->obj)) {
+    if (shape_id != rb_shape_get_shape_id(arg->obj)) {
         rb_raise(rb_eRuntimeError, "instance variable added to %"PRIsVALUE" instance",
                  CLASS_OF(arg->obj));
     }
