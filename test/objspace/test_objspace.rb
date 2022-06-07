@@ -647,7 +647,7 @@ class TestObjSpace < Test::Unit::TestCase
     begin
       bar
     rescue => err
-      _, m = ObjectSpace.reachable_objects_from(err)
+      _, _, m = ObjectSpace.reachable_objects_from(err)
     end
     assert_equal(m, m.clone)
   end
