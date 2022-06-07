@@ -3816,18 +3816,22 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
         CALLER_REMOVE_EMPTY_KW_SPLAT(cfp, calling, ci);
 
 	rb_check_arity(calling->argc, 1, 1);
+        const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
+
         if (vm_cc_markable(cc)) {
             vm_cc_attr_index_initialize(cc, INVALID_SHAPE_ID);
+            VM_CALL_METHOD_ATTR(v,
+                                vm_call_attrset2(ec, cfp, cc, calling->recv),
+                                CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         } else {
             cc = &VM_CC_ON_STACK(cc->klass,
                     cc->call_,
                     { .attr_index = ((uint64_t)INVALID_SHAPE_ID << 48 | (uint64_t)INVALID_SHAPE_ID << 32) },
                     cc->cme_);
+            VM_CALL_METHOD_ATTR(v,
+                                vm_call_attrset2(ec, cfp, cc, calling->recv),
+                                CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         }
-        const unsigned int aset_mask = (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG);
-        VM_CALL_METHOD_ATTR(v,
-                            vm_call_attrset2(ec, cfp, cc, calling->recv),
-                            CC_SET_FASTPATH(cc, vm_call_attrset, !(vm_ci_flag(ci) & aset_mask)));
         return v;
 
       case VM_METHOD_TYPE_IVAR:
