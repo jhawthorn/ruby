@@ -3573,6 +3573,12 @@ vm_keep_script_lines_set(VALUE self, VALUE flags)
     return flags;
 }
 
+static VALUE
+vm_max_shape_count(VALUE self)
+{
+    return INT2NUM(GET_VM()->max_shape_count);
+}
+
 void
 Init_VM(void)
 {
@@ -3598,6 +3604,7 @@ Init_VM(void)
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines", vm_keep_script_lines, 0);
     rb_define_singleton_method(rb_cRubyVM, "keep_script_lines=", vm_keep_script_lines_set, 1);
     rb_define_singleton_method(rb_cRubyVM, "debug_shape", rb_obj_debug_shape, 1);
+    rb_define_singleton_method(rb_cRubyVM, "max_shape_count", vm_max_shape_count, 0);
 
 #if USE_DEBUG_COUNTER
     rb_define_singleton_method(rb_cRubyVM, "reset_debug_counters", rb_debug_counter_reset, 0);
@@ -3986,6 +3993,7 @@ Init_vm_objects(void)
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
     vm->shape_list = xcalloc(MAX_SHAPE_ID, sizeof(rb_shape_t *));
+    vm->max_shape_count = 0;
 
     // Root shape
     vm->root_shape = rb_shape_alloc(ROOT_SHAPE_ID,

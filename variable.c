@@ -1786,10 +1786,17 @@ static shape_id_t
 get_next_shape_id(void)
 {
     rb_vm_t *vm = GET_VM();
+    int res = MAX_SHAPE_ID;
     for (int i = 0; i < MAX_SHAPE_ID; i++) {
-        if (!vm->shape_list[i]) return i;
+        if (!vm->shape_list[i]) {
+            res = i;
+            break;
+        }
     }
-    return MAX_SHAPE_ID;
+    if (res > vm->max_shape_count) {
+        vm->max_shape_count = res;
+    }
+    return res;
 }
 
 static rb_shape_t*
