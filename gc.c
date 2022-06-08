@@ -3619,6 +3619,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 
                 if (parent) {
                     RUBY_ASSERT(parent->edges);
+                    RUBY_ASSERT(IMEMO_TYPE_P(parent, imemo_shape));
                     VALUE res;
                     if (rb_id_table_lookup(parent->edges, shape->edge_name, &res)) {
                         if ((rb_shape_t *)res == shape) {
