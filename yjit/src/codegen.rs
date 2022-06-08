@@ -1038,7 +1038,7 @@ fn gen_putspecialobject(
 ) -> CodegenStatus {
     let object_type = jit_get_arg(jit, 0);
 
-    if object_type == VALUE(VM_SPECIAL_OBJECT_VMCORE) {
+    if object_type == VALUE(VM_SPECIAL_OBJECT_VMCORE.as_usize()) {
         let stack_top: X86Opnd = ctx.stack_push(Type::UnknownHeap);
         jit_mov_gc_ptr(jit, cb, REG0, unsafe { rb_mRubyVMFrozenCore });
         mov(cb, stack_top, REG0);
@@ -1956,8 +1956,8 @@ fn gen_get_ivar(
     }
 
     // Compile time self is embedded and the ivar index lands within the object
-    let test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED)) != VALUE(0) };
-    if test_result && ivar_index < ROBJECT_EMBED_LEN_MAX {
+    let test_result = unsafe { FL_TEST_RAW(comptime_receiver, VALUE(ROBJECT_EMBED.as_usize())) != VALUE(0) };
+    if test_result && ivar_index < (ROBJECT_EMBED_LEN_MAX.as_usize()) {
         // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
         // Guard that self is embedded
@@ -2009,7 +2009,7 @@ fn gen_get_ivar(
         );
 
         // Check that the extended table is big enough
-        if ivar_index > ROBJECT_EMBED_LEN_MAX {
+        if ivar_index > (ROBJECT_EMBED_LEN_MAX.as_usize()) {
             // Check that the slot is inside the extended table (num_slots > index)
             let num_slots = mem_opnd(32, REG0, RUBY_OFFSET_ROBJECT_AS_HEAP_NUMIV);
 
@@ -3422,7 +3422,7 @@ fn jit_guard_known_klass(
             ctx.upgrade_opnd_type(insn_opnd, Type::Flonum);
         }
     } else if unsafe {
-        FL_TEST(known_klass, VALUE(RUBY_FL_SINGLETON)) != VALUE(0)
+        FL_TEST(known_klass, VALUE(RUBY_FL_SINGLETON as usize)) != VALUE(0)
             && sample_instance == rb_attr_get(known_klass, id__attached__ as ID)
     } {
         // Singleton classes are attached to one specific object, so we can
@@ -3596,6 +3596,43 @@ fn jit_rb_obj_equal(
 
     let stack_ret = ctx.stack_push(Type::UnknownImm);
     mov(cb, stack_ret, REG0);
+    true
+}
+
+/// If string is frozen, duplicate it to get a non-frozen string. Otherwise, return it.
+fn jit_rb_str_uplus(
+    _jit: &mut JITState,
+    ctx: &mut Context,
+    cb: &mut CodeBlock,
+    _ocb: &mut OutlinedCb,
+    _ci: *const rb_callinfo,
+    _cme: *const rb_callable_method_entry_t,
+    _block: Option<IseqPtr>,
+    _argc: i32,
+    _known_recv_class: *const VALUE,
+) -> bool
+{
+    let recv = ctx.stack_pop(1);
+
+    add_comment(cb, "Unary plus on string");
+    mov(cb, REG0, recv);
+    mov(cb, REG1, mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS));
+    test(cb, REG1, imm_opnd(RUBY_FL_FREEZE as i64));
+
+    let ret_label = cb.new_label("stack_ret".to_string());
+    // If the string isn't frozen, we just return it. It's already in REG0.
+    jz_label(cb, ret_label);
+
+    // Str is frozen - duplicate
+    mov(cb, C_ARG_REGS[0], REG0);
+    call_ptr(cb, REG0, rb_str_dup as *const u8);
+    // Return value is in REG0, drop through and return it.
+
+    cb.write_label(ret_label);
+    let stack_ret = ctx.stack_push(Type::String);
+    mov(cb, stack_ret, REG0);
+
+    cb.link_labels();
     true
 }
 
@@ -5012,7 +5049,7 @@ fn gen_invokesuper(
     // vm_search_normal_superclass
     let rbasic_ptr: *const RBasic = current_defined_class.as_ptr();
     if current_defined_class.builtin_type() == RUBY_T_ICLASS
-        && unsafe { RB_TYPE_P((*rbasic_ptr).klass, RUBY_T_MODULE) && FL_TEST_RAW((*rbasic_ptr).klass, VALUE(RMODULE_IS_REFINEMENT)) != VALUE(0) }
+        && unsafe { RB_TYPE_P((*rbasic_ptr).klass, RUBY_T_MODULE) && FL_TEST_RAW((*rbasic_ptr).klass, VALUE(RMODULE_IS_REFINEMENT.as_usize())) != VALUE(0) }
     {
         return CantCompile;
     }
@@ -6045,6 +6082,7 @@ impl CodegenGlobals {
             self.yjit_reg_method(rb_cString, "to_str", jit_rb_str_to_s);
             self.yjit_reg_method(rb_cString, "bytesize", jit_rb_str_bytesize);
             self.yjit_reg_method(rb_cString, "<<", jit_rb_str_concat);
+            self.yjit_reg_method(rb_cString, "+@", jit_rb_str_uplus);
 
             // Thread.current
             self.yjit_reg_method(

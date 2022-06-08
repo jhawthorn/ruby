@@ -10,7 +10,6 @@ require_relative 'deprecate'
 require_relative 'basic_specification'
 require_relative 'stub_specification'
 require_relative 'platform'
-require_relative 'requirement'
 require_relative 'util/list'
 
 ##
@@ -1241,8 +1240,7 @@ class Gem::Specification < Gem::BasicSpecification
     clear_load_cache
     unresolved = unresolved_deps
     unless unresolved.empty?
-      w = "W" + "ARN"
-      warn "#{w}: Unresolved or ambiguous specs during Gem::Specification.reset:"
+      warn "WARN: Unresolved or ambiguous specs during Gem::Specification.reset:"
       unresolved.values.each do |dep|
         warn "      #{dep}"
 
@@ -1252,7 +1250,7 @@ class Gem::Specification < Gem::BasicSpecification
           versions.each {|s| warn "      - #{s.version}" }
         end
       end
-      warn "#{w}: Clearing out unresolved specs. Try 'gem cleanup <gem>'"
+      warn "WARN: Clearing out unresolved specs. Try 'gem cleanup <gem>'"
       warn "Please report a bug if this causes problems."
       unresolved.clear
     end
