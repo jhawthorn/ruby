@@ -1786,6 +1786,15 @@ get_next_shape_id(void)
 {
     rb_vm_t *vm = GET_VM();
     int res = MAX_SHAPE_ID;
+    // for (i = 0; i < (sizeof(bitmap) / sizeof(mask)); i += sizeof(mask)) {
+    //   mask = 0xF << i;
+    //   if((bitmap & mask) != mask) {
+    //     // found something!
+    //     break;
+    //   }
+    // }
+    //
+    // end
     for (int i = 0; i < MAX_SHAPE_ID; i++) {
         if (!vm->shape_list[i]) {
             res = i;

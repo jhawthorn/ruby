@@ -114,7 +114,7 @@ rb_id_table_clear(struct rb_id_table *tbl)
     MEMZERO(tbl->items, item_t, tbl->capa);
 }
 
-size_t
+MJIT_FUNC_EXPORTED size_t
 rb_id_table_size(const struct rb_id_table *tbl)
 {
     return (size_t)tbl->num;
@@ -324,7 +324,7 @@ rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_table_for
     }
 }
 
-struct rb_id_table *
+MJIT_FUNC_EXPORTED struct rb_id_table *
 rb_id_table_copy(struct rb_id_table *old_table)
 {
     if (old_table->capa == 0)
