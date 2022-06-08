@@ -1384,11 +1384,11 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
         if ((VALUE)iv_table == Qundef) {
             iv_table = rb_id_table_create(0);
+            ROBJECT(obj)->as.heap.iv_index_tbl = iv_table;
         }
         uint32_t index = (uint32_t)rb_id_table_size(iv_table);
         rb_id_table_insert(iv_table, id, (VALUE)index);
         ivup->u.iv_index_tbl = iv_table;
-        ROBJECT(obj)->as.heap.iv_index_tbl = iv_table;
     }
     else {
         // This sets the iv table in the ivup struct
@@ -1563,6 +1563,10 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     struct ivar_update ivup = obj_ensure_iv_index_mapping(obj, id);
 
     len = ROBJECT_NUMIV(obj);
+    // if (obj is now "not cachable" && len <= EMBED_LEN)
+    //    rb_ensure_iv_list_size(obj, len, EMBED_LEN + 1);
+    //    len = EMBED_LEN + 1;
+    // }
     if (len <= (ivup.index)) {
         uint32_t newsize = iv_index_tbl_newsize(&ivup);
         rb_ensure_iv_list_size(obj, len, newsize);
@@ -1692,6 +1696,14 @@ rb_shape_set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
+    /*
+    if (shape == NULL) {
+        bitmap &= ~shape_id;
+    }
+    else {
+        bitmap |= shape_id;
+    }
+    */
     vm->shape_list[shape_id] = shape;
 }
 
@@ -1916,7 +1928,20 @@ transition_shape(VALUE obj, ID id)
 {
     rb_shape_t* shape = rb_shape_get_shape(obj);
     rb_shape_t* next_shape = rb_shape_get_next(shape, id);
-    // C(rb_objspace_garbage_object_p(obj), "G"),
+    if (BUILTIN_TYPE(obj) == T_OBJECT && next_shape == get_no_cache_shape()) {
+        // If the object is embedded, we need to make it extended so that
+        // the instance variable index table can be stored on the object.
+        // The "no cache shape" is a singleton and is allowed to be shared
+        // among objects, so it cannot store instance variable index information.
+        // Therefore we need to store the iv index table on the object itself.
+        // Embedded objects don't have the room for an iv index table, so
+        // we'll force it to be extended
+        if (ROBJECT_NUMIV(obj) <= ROBJECT_EMBED_LEN_MAX) {
+            // Make the object extended
+            rb_ensure_iv_list_size(obj, ROBJECT_EMBED_LEN_MAX, ROBJECT_EMBED_LEN_MAX + 1);
+            ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(shape->iv_table);
+        }
+    }
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
     rb_shape_set_shape(obj, next_shape);
 }

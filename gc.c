@@ -3364,6 +3364,10 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             RB_DEBUG_COUNTER_INC(obj_obj_transient);
         }
         else {
+            // "No cache" objects have a singleton iv_index_tbl that we need to free
+            if (rb_no_cache_shape_p(rb_shape_get_shape(obj))) {
+                rb_id_table_free(ROBJECT(obj)->as.heap.iv_index_tbl);
+            }
             xfree(RANY(obj)->as.object.as.heap.ivptr);
             RB_DEBUG_COUNTER_INC(obj_obj_ptr);
         }
@@ -3677,6 +3681,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                     rb_id_table_free(shape->edges);
                     shape->edges = NULL;
                 }
+
+                shape->parent = NULL;
+
                 rb_id_table_free(shape->iv_table);
                 rb_shape_set_shape_by_id(SHAPE_ID(shape), NULL);
 
@@ -4824,6 +4831,11 @@ obj_memsize_of(VALUE obj, int use_all_types)
 	if (!(RBASIC(obj)->flags & ROBJECT_EMBED)) {
 	    size += ROBJECT_NUMIV(obj) * sizeof(VALUE);
 	}
+        else {
+            if (rb_no_cache_shape_p(rb_shape_get_shape(obj))) {
+                size += rb_id_table_memsize(ROBJECT(obj)->as.heap.iv_index_tbl);
+            }
+        }
 	break;
       case T_MODULE:
       case T_CLASS:
@@ -7232,8 +7244,9 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
       case imemo_shape:
         {
             rb_shape_t *shape = (rb_shape_t *)obj;
-            if (!rb_shape_root_shape_p(shape))
+            if (!rb_shape_root_shape_p(shape)) {
                 gc_mark(objspace, (VALUE)shape->parent);
+            }
         }
         return;
 #if VM_CHECK_MODE > 0
