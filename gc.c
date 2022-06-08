@@ -5128,8 +5128,8 @@ rb_shape_iv_table(VALUE self)
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
 
     VALUE array = rb_ary_new();
-    if (((rb_shape_t)*shape).iv_table) {
-        rb_id_table_foreach(((rb_shape_t)*shape).iv_table, collect_keys, &array);
+    if (shape->iv_table) {
+        rb_id_table_foreach(shape->iv_table, collect_keys, &array);
     }
     return array;
 }
@@ -5141,8 +5141,8 @@ rb_shape_edges(VALUE self)
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
 
     VALUE hash = rb_hash_new();
-    if (((rb_shape_t)*shape).edges) {
-        rb_id_table_foreach(((rb_shape_t)*shape).edges, rb_edges_to_hash, &hash);
+    if (shape->edges) {
+        rb_id_table_foreach(shape->edges, rb_edges_to_hash, &hash);
     }
     return hash;
 }
@@ -5152,7 +5152,7 @@ rb_shape_parent(VALUE self)
 {
     rb_shape_t * shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-    return rb_shape_t_to_rb_cShape(((rb_shape_t)*shape).parent);
+    return rb_shape_t_to_rb_cShape(shape->parent);
 }
 
 VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
@@ -10254,7 +10254,7 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
             if(shape->edges) {
                 update_m_tbl(objspace, shape->edges);
             }
-            UPDATE_IF_MOVED(objspace, shape->parent);
+            UPDATE_IF_MOVED(objspace, (VALUE)shape->parent);
         }
         break;
       default:
