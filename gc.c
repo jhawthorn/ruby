@@ -3637,6 +3637,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 rb_id_table_free(shape->iv_table);
                 rb_shape_set_shape_by_id(SHAPE_ID(shape), NULL);
 
+                RB_DEBUG_COUNTER_INC(obj_imemo_shape);
                 break;
             }
 	}
@@ -10254,7 +10255,7 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
             if(shape->edges) {
                 update_m_tbl(objspace, shape->edges);
             }
-            UPDATE_IF_MOVED(objspace, (VALUE)shape->parent);
+            UPDATE_IF_MOVED(objspace, shape->parent);
         }
         break;
       default:
