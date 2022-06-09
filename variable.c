@@ -1692,18 +1692,38 @@ rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 }
 
 void
+rb_shape_set_shape_in_bitmap(shape_id_t shape_id) {
+    uint16_t bitmap_index = shape_id >> 6;
+    uint64_t mask = (1 << (shape_id & 63));
+    fprintf(stderr, "shape id: %hu\n", shape_id);
+    fprintf(stderr, "before set: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
+    GET_VM()->shape_bitmaps[bitmap_index] |= mask;
+    fprintf(stderr, "after set: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
+    fprintf(stderr, "\n");
+}
+
+void
+rb_shape_unset_shape_in_bitmap(shape_id_t shape_id) {
+    uint16_t bitmap_index = shape_id >> 6;
+    uint64_t mask = (1 << (shape_id & 63));
+    fprintf(stderr, "shape id: %hu\n", shape_id);
+    fprintf(stderr, "before unset: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
+    GET_VM()->shape_bitmaps[bitmap_index] &= ~mask;
+    fprintf(stderr, "after unset: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
+    fprintf(stderr, "\n");
+}
+
+void
 rb_shape_set_shape_by_id(shape_id_t shape_id, rb_shape_t *shape)
 {
     rb_vm_t *vm = GET_VM();
     RUBY_ASSERT(shape == NULL || IMEMO_TYPE_P(shape, imemo_shape));
-    /*
     if (shape == NULL) {
-        bitmap &= ~shape_id;
+        rb_shape_unset_shape_in_bitmap(shape_id);
     }
     else {
-        bitmap |= shape_id;
+        rb_shape_set_shape_in_bitmap(shape_id);
     }
-    */
     vm->shape_list[shape_id] = shape;
 }
 
@@ -1786,24 +1806,38 @@ get_next_shape_id(void)
 {
     rb_vm_t *vm = GET_VM();
     int res = MAX_SHAPE_ID;
-    // for (i = 0; i < (sizeof(bitmap) / sizeof(mask)); i += sizeof(mask)) {
-    //   mask = 0xF << i;
-    //   if((bitmap & mask) != mask) {
-    //     // found something!
-    //     break;
-    //   }
-    // }
-    //
-    // end
+
     for (int i = 0; i < MAX_SHAPE_ID; i++) {
         if (!vm->shape_list[i]) {
             res = i;
             break;
         }
     }
+
     if (res > vm->max_shape_count) {
         vm->max_shape_count = res;
     }
+
+    int next_shape_id = 0;
+
+    for (int i = 0; i < 1024; i++) {
+        uint64_t cur_bitmap = vm->shape_bitmaps[i];
+        if (~cur_bitmap) {
+            uint64_t comparison = 0;
+            for (int j = 0; j < 64 && !next_shape_id; j++) {
+                // JEM: Could this be better??
+                comparison = (1 << j);
+                if (comparison & ~cur_bitmap) {
+                    next_shape_id = i * 64 + j;
+                    if (res != next_shape_id) {
+                        rb_bug("Shape IDs are inconsistent\n");
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     return res;
 }
 
