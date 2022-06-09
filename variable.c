@@ -1797,40 +1797,27 @@ static shape_id_t
 get_next_shape_id(void)
 {
     rb_vm_t *vm = GET_VM();
-    int res = MAX_SHAPE_ID;
-
-    for (int i = 0; i < MAX_SHAPE_ID; i++) {
-        if (!vm->shape_list[i]) {
-            res = i;
-            break;
-        }
-    }
-
-    if (res > vm->max_shape_count) {
-        vm->max_shape_count = res;
-    }
-
     int next_shape_id = 0;
 
     for (int i = 0; i < 2048; i++) {
         uint32_t cur_bitmap = vm->shape_bitmaps[i];
         if (~cur_bitmap) {
-            uint32_t comparison = 0;
-            for (int j = 0; j < 32 && !next_shape_id; j++) {
-                // JEM: Could this be better??
-                comparison = (1 << j);
-                if (comparison & ~cur_bitmap) {
-                    next_shape_id = i * 32 + j;
-                    break;
-                }
+            uint32_t copied_curbitmap = ~cur_bitmap;
+
+            uint32_t count = 0;
+            while (!(copied_curbitmap & 0x1)) {
+                copied_curbitmap >>= 1;
+                count++;
             }
+            next_shape_id = i * 32 + count;
+            break;
         }
     }
-
-    if (res != next_shape_id) {
-        rb_bug("Shape IDs are inconsistent\n");
+    if (next_shape_id > vm->max_shape_count) {
+        vm->max_shape_count = next_shape_id;
     }
-    return res;
+
+    return next_shape_id;
 }
 
 static rb_shape_t*

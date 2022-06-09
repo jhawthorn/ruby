@@ -3365,7 +3365,8 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
         }
         else {
             // "No cache" objects have a singleton iv_index_tbl that we need to free
-            if (rb_no_cache_shape_p(rb_shape_get_shape(obj))) {
+            rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(rb_shape_get_shape_id(obj));
+            if (shape && rb_no_cache_shape_p(shape)) {
                 rb_id_table_free(ROBJECT(obj)->as.heap.iv_index_tbl);
             }
             xfree(RANY(obj)->as.object.as.heap.ivptr);
