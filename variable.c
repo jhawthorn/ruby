@@ -1693,24 +1693,16 @@ rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 
 void
 rb_shape_set_shape_in_bitmap(shape_id_t shape_id) {
-    uint16_t bitmap_index = shape_id >> 6;
-    uint64_t mask = (1 << (shape_id & 63));
-    fprintf(stderr, "shape id: %hu\n", shape_id);
-    fprintf(stderr, "before set: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
+    uint16_t bitmap_index = shape_id >> 5;
+    uint32_t mask = (1 << (shape_id & 31));
     GET_VM()->shape_bitmaps[bitmap_index] |= mask;
-    fprintf(stderr, "after set: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
-    fprintf(stderr, "\n");
 }
 
 void
 rb_shape_unset_shape_in_bitmap(shape_id_t shape_id) {
-    uint16_t bitmap_index = shape_id >> 6;
-    uint64_t mask = (1 << (shape_id & 63));
-    fprintf(stderr, "shape id: %hu\n", shape_id);
-    fprintf(stderr, "before unset: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
+    uint16_t bitmap_index = shape_id >> 5;
+    uint32_t mask = (1 << (shape_id & 31));
     GET_VM()->shape_bitmaps[bitmap_index] &= ~mask;
-    fprintf(stderr, "after unset: %llu\n", GET_VM()->shape_bitmaps[bitmap_index]);
-    fprintf(stderr, "\n");
 }
 
 void
@@ -1820,24 +1812,24 @@ get_next_shape_id(void)
 
     int next_shape_id = 0;
 
-    for (int i = 0; i < 1024; i++) {
-        uint64_t cur_bitmap = vm->shape_bitmaps[i];
+    for (int i = 0; i < 2048; i++) {
+        uint32_t cur_bitmap = vm->shape_bitmaps[i];
         if (~cur_bitmap) {
-            uint64_t comparison = 0;
-            for (int j = 0; j < 64 && !next_shape_id; j++) {
+            uint32_t comparison = 0;
+            for (int j = 0; j < 32 && !next_shape_id; j++) {
                 // JEM: Could this be better??
                 comparison = (1 << j);
                 if (comparison & ~cur_bitmap) {
-                    next_shape_id = i * 64 + j;
-                    if (res != next_shape_id) {
-                        rb_bug("Shape IDs are inconsistent\n");
-                    }
+                    next_shape_id = i * 32 + j;
                     break;
                 }
             }
         }
     }
 
+    if (res != next_shape_id) {
+        rb_bug("Shape IDs are inconsistent\n");
+    }
     return res;
 }
 

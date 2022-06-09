@@ -3993,7 +3993,7 @@ Init_vm_objects(void)
     vm->loading_table = st_init_strtable();
     vm->frozen_strings = st_init_table_with_size(&rb_fstring_hash_type, 10000);
     vm->shape_list = xcalloc(MAX_SHAPE_ID, sizeof(rb_shape_t *));
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < 2048; i++) {
         vm->shape_bitmaps[i] = 0;
     }
     vm->max_shape_count = 0;
