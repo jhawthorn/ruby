@@ -1642,6 +1642,9 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
 static void
 rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 {
+    if (rb_shape_get_shape_id(obj) == shape_id)
+        return;
+
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
           // Ractors are occupying the upper 32 bits of flags
