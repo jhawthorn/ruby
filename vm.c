@@ -2625,8 +2625,9 @@ rb_vm_update_references(void *ptr)
         vm->orig_progname = rb_gc_location(vm->orig_progname);
 
         for (int i = 0; i < MAX_SHAPE_ID; i++) {
-            if (vm->shape_list[i])
+            if (vm->shape_list[i]) {
                 vm->shape_list[i] = (rb_shape_t *)rb_gc_location((VALUE)vm->shape_list[i]);
+            }
         }
 
         rb_gc_update_tbl_refs(vm->overloaded_cme_table);

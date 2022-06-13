@@ -3665,8 +3665,8 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
                 rb_shape_t *parent = shape->parent;
 
                 if (parent) {
-                    RUBY_ASSERT(parent->edges);
                     RUBY_ASSERT(IMEMO_TYPE_P(parent, imemo_shape));
+                    RUBY_ASSERT(parent->edges);
                     VALUE res;
                     if (rb_id_table_lookup(parent->edges, shape->edge_name, &res)) {
                         if ((rb_shape_t *)res == shape) {
@@ -7227,11 +7227,11 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
                 shape_id_t shape_dest_id = vm_cc_attr_index_shape_dest_id(cc);
                 if (shape_source_id != INVALID_SHAPE_ID) {
                     rb_shape_t *shape = rb_shape_get_shape_by_id(shape_source_id);
-                    gc_mark(objspace, (VALUE)shape);
+                    rb_gc_mark((VALUE)shape);
                 }
                 if (shape_dest_id != INVALID_SHAPE_ID) {
                     rb_shape_t *shape = rb_shape_get_shape_by_id(shape_dest_id);
-                    gc_mark(objspace, (VALUE)shape);
+                    rb_gc_mark((VALUE)shape);
                 }
             }
         }
@@ -7246,7 +7246,7 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
         {
             rb_shape_t *shape = (rb_shape_t *)obj;
             if (!rb_shape_root_shape_p(shape)) {
-                gc_mark(objspace, (VALUE)shape->parent);
+                rb_gc_mark((VALUE)shape->parent);
             }
         }
         return;
@@ -7293,7 +7293,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
     }
 
     gc_mark(objspace, any->as.basic.klass);
-    gc_mark(objspace, (VALUE)rb_shape_get_shape(obj));
+    rb_gc_mark((VALUE)rb_shape_get_shape(obj));
 
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
