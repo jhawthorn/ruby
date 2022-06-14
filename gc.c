@@ -9841,6 +9841,10 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
     GC_ASSERT(!SPECIAL_CONST_P(obj));
 
     switch (BUILTIN_TYPE(obj)) {
+      case T_IMEMO:
+        if (IMEMO_TYPE_P(obj, imemo_shape)) {
+            return FALSE;
+        }
       case T_NONE:
       case T_NIL:
       case T_MOVED:
@@ -9854,7 +9858,6 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
       case T_STRING:
       case T_OBJECT:
       case T_FLOAT:
-      case T_IMEMO:
       case T_ARRAY:
       case T_BIGNUM:
       case T_ICLASS:
