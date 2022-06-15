@@ -1394,35 +1394,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
-                /*
-                if (is_attr) {
-                    RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_is_attr);
-                } else {
-                    RB_DEBUG_COUNTER_INC(ivar_set_ic_hit_not_attr);
-                }
-                */
-
                 return val; /* inline cache hit */
             }
-                /*
-            else {
-#if RUBY_DEBUG
-                if (is_attr) {
-                    if (shape_source_id != INVALID_SHAPE_ID) {
-                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
-                    } else {
-                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
-                    }
-                } else {
-                    if (shape_source_id != INVALID_SHAPE_ID) {
-                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_set);
-                    } else {
-                        RB_DEBUG_COUNTER_INC(ivar_set_cc_miss_unset);
-                    }
-                }
-#endif
-            }
-*/
         }
     }
     else {
