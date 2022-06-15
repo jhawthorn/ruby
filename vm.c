@@ -4009,7 +4009,7 @@ Init_vm_objects(void)
 
     // Frozen root shape
     vm->frozen_root_shape = rb_shape_alloc(FROZEN_ROOT_SHAPE_ID,
-            0,
+            rb_make_internal_id(),
             vm->root_shape,
             rb_id_table_create(0));
     RB_OBJ_FREEZE_RAW((VALUE)vm->frozen_root_shape);

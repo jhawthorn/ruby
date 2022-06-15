@@ -1677,19 +1677,21 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
           }
       default:
           {
-              struct gen_ivtbl *ivtbl = 0;
-              RB_VM_LOCK_ENTER();
-              {
-                  st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+              if (shape_id != FROZEN_ROOT_SHAPE_ID) {
+                  struct gen_ivtbl *ivtbl = 0;
+                  RB_VM_LOCK_ENTER();
+                  {
+                      st_table* global_iv_table = generic_ivtbl(obj, 0, false);
 
-                  if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-                      ivtbl->shape_id = shape_id;
+                      if (st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+                          ivtbl->shape_id = shape_id;
+                      }
+                      else {
+                          rb_bug("Expected shape_id entry in global iv table");
+                      }
                   }
-                  else {
-                      rb_bug("Expected shape_id entry in global iv table");
-                  }
+                  RB_VM_LOCK_LEAVE();
               }
-              RB_VM_LOCK_LEAVE();
           }
     }
 }

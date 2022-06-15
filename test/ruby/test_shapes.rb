@@ -88,6 +88,38 @@ class TestShapes < Test::Unit::TestCase
     assert_equal(str2.instance_variable_get(:@a), 1)
   end
 
+  def test_freezing_and_cloning_object
+    obj = Object.new.freeze
+    obj2 = obj.clone(freeze: true)
+    assert_predicate(obj2, :frozen?)
+    assert_equal(RubyVM.debug_shape(obj).id, RubyVM.debug_shape(obj2).id)
+  end
+
+  def test_freezing_and_cloning_object_with_ivars
+    example = Example2.new.freeze
+    example2 = example.clone(freeze: true)
+    assert_predicate(example2, :frozen?)
+    assert_equal(RubyVM.debug_shape(example).id, RubyVM.debug_shape(example2).id)
+    assert_equal(example2.instance_variable_get(:@a), 1)
+  end
+
+  def test_freezing_and_cloning_string
+    str = "str".freeze
+    str2 = str.clone(freeze: true)
+    assert_predicate(str2, :frozen?)
+    assert_equal(RubyVM.debug_shape(str).id, RubyVM.debug_shape(str2).id)
+  end
+
+  def test_freezing_and_cloning_string_with_ivars
+    str = "str"
+    str.instance_variable_set(:@a, 1)
+    str.freeze
+    str2 = str.clone(freeze: true)
+    assert_predicate(str2, :frozen?)
+    assert_equal(RubyVM.debug_shape(str).id, RubyVM.debug_shape(str2).id)
+    assert_equal(str2.instance_variable_get(:@a), 1)
+  end
+
   def test_inheritance
     # TODO around Example2 in here
 
