@@ -1411,7 +1411,7 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
     // The returned shape should have `id` in its iv_table
-    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), id);
+    rb_shape_t * shape = rb_shape_get_next(rb_shape_get_shape(obj), id); // takes a VM lock
     ivup.shape = shape;
     ivup.iv_extended = 0;
 
@@ -1601,7 +1601,7 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-          return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+          return ROBJECT_SHAPE_ID(obj);
           break;
       case T_CLASS:
       case T_MODULE:

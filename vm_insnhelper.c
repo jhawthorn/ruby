@@ -1366,34 +1366,31 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
         // transition and write the ivar
         // If object's shape id is the same as the dest, then just write the
         // ivar
-        shape_id_t shape_id = rb_shape_get_shape_id(obj);
+        shape_id_t shape_id = ROBJECT_SHAPE_ID(obj);
+
         if (shape_id != NO_CACHE_SHAPE_ID) {
             // Do we have a cache hit *and* is the CC intitialized
             if (shape_id == shape_source_id) {
-                if (shape_dest_id == INVALID_SHAPE_ID || shape_id == INVALID_SHAPE_ID) {
-                    rb_bug("wrong shape id dest: %d shape_id %d!\n", shape_dest_id, shape_id);
-                }
+                RUBY_ASSERT(shape_dest_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
                 VM_ASSERT(!rb_ractor_shareable_p(obj));
-                if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                    rb_init_iv_list(obj);
+
+                if (shape_dest_id != shape_id) {
+                    if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
+                        rb_init_iv_list(obj);
+                    }
+                    rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id));
+                }
+                else {
+                    RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
                 }
 
-                if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
-                    rb_bug("object isn't big enough index: %u, numiv: %d!\n", index, ROBJECT_NUMIV(obj));
-                }
+                RUBY_ASSERT(index < ROBJECT_NUMIV(obj));
 
                 VALUE *ptr = ROBJECT_IVPTR(obj);
 
                 RB_OBJ_WRITE(obj, &ptr[index], val);
 
-                // TODO: We should directly set it for speed
-                rb_vm_t *vm = GET_VM();
-                if (!vm->shape_list[shape_dest_id]) {
-                    fprintf(stderr, "couldn't find shape on iseq: %p with shape_id: %d\n", iseq, shape_dest_id);
-                    abort();
-                }
-                rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id));
 
                 RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
