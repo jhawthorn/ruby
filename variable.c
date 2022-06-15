@@ -1647,11 +1647,11 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
     return shape_id;
 }
 
-static void
+static bool
 rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 {
     if (rb_shape_get_shape_id(obj) == shape_id)
-        return;
+        return false;
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
@@ -1662,19 +1662,19 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
           // | XXXX ractor_id | shape_id | UUUU flags |
           RBASIC(obj)->flags &= 0xffffffff0000ffff;
           RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
-          return;
+          break;
       case T_CLASS:
       case T_MODULE:
           {
               RCLASS_EXT(obj)->shape_id = shape_id;
-              return;
+              break;
           }
       case T_IMEMO:
           if (imemo_type(obj) == imemo_shape) {
               RBASIC(obj)->flags &= 0xffffffff0000ffff;
               RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
-              return;
           }
+          break;
       default:
           {
               if (shape_id != FROZEN_ROOT_SHAPE_ID) {
@@ -1694,14 +1694,17 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
               }
           }
     }
+
+    return true;
 }
 
 void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    rb_shape_set_shape_id(obj, SHAPE_ID(shape));
-    RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
+    if(rb_shape_set_shape_id(obj, SHAPE_ID(shape))) {
+        RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
+    }
 }
 
 void
