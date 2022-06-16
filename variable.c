@@ -1516,7 +1516,7 @@ rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
 void
 rb_init_iv_list(VALUE obj)
 {
-    uint32_t newsize = rb_id_table_size(ROBJECT_IV_INDEX_TBL(obj)) * 1.5;
+    uint32_t newsize = rb_id_table_size(ROBJECT_IV_INDEX_TBL(obj)) * 2.0;
     uint32_t len = ROBJECT_NUMIV(obj);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
