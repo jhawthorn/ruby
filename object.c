@@ -317,6 +317,7 @@ init_copy(VALUE dest, VALUE obj, bool preserve_frozen)
     // so we need to copy the frozen shape's parent to the new object.
     if (!preserve_frozen && RB_OBJ_FROZEN((VALUE)shape_to_set)) shape_to_set = shape_to_set->parent;
 
+    // shape ids are different
     rb_shape_set_shape(dest, shape_to_set);
 
     if (RB_TYPE_P(obj, T_OBJECT)) {

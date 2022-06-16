@@ -1945,7 +1945,7 @@ transition_shape_frozen(VALUE obj)
     }
     else {
         if (frozen_shape_p(shape)) {
-            next_shape = shape;
+            return;
         }
         else {
             static ID id_frozen;
@@ -1986,7 +1986,9 @@ transition_shape(VALUE obj, ID id)
         }
     }
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
-    rb_shape_set_shape(obj, next_shape);
+    if (shape != next_shape) {
+        rb_shape_set_shape(obj, next_shape);
+    }
 }
 
 /**

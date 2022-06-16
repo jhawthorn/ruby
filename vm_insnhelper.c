@@ -1278,7 +1278,9 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
         rb_shape_t* shape = rb_shape_get_shape(obj);
         rb_shape_t* next_shape = rb_shape_get_next(shape, id);
-        rb_shape_set_shape(obj, next_shape);
+        if (shape != next_shape) {
+            rb_shape_set_shape(obj, next_shape);
+        }
 
         // cache -> no cache
         //   ensure object isn't embedded
