@@ -1592,6 +1592,11 @@ get_frozen_root_shape(void) {
     return vm->frozen_root_shape;
 }
 
+static inline shape_id_t
+shape_get_shape_id(rb_shape_t *shape) {
+    return (shape_id_t)(0xffff & (shape->flags >> 16));
+}
+
 shape_id_t rb_shape_get_shape_id(VALUE obj)
 {
     shape_id_t shape_id = ROOT_SHAPE_ID;
@@ -1608,7 +1613,7 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
           return RCLASS_EXT(obj)->shape_id;
       case T_IMEMO:
           if (imemo_type(obj) == imemo_shape) {
-              return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
+              return shape_get_shape_id((rb_shape_t *)obj);
               break;
           }
       default:
@@ -1702,7 +1707,7 @@ void
 rb_shape_set_shape(VALUE obj, rb_shape_t* shape)
 {
     RUBY_ASSERT(IMEMO_TYPE_P(shape, imemo_shape));
-    if(rb_shape_set_shape_id(obj, SHAPE_ID(shape))) {
+    if(rb_shape_set_shape_id(obj, shape_get_shape_id(shape))) {
         RB_OBJ_WRITTEN(obj, Qundef, (VALUE)shape);
     }
 }
