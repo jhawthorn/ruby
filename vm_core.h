@@ -1216,6 +1216,18 @@ typedef struct rb_call_data *CALL_DATA;
 
 typedef VALUE CDHASH;
 
+/* A null-terminated list of ids, used to represent a constant's path
+ * idNULL is used to represent the :: prefix, and 0 is used to donate the end
+ * of the list.
+ *
+ * For example:
+ *   FOO        {rb_intern("FOO"), 0}
+ *   FOO::BAR   {rb_intern("FOO"), rb_intern("BAR"), 0}
+ *   ::FOO      {idNULL, rb_intern("FOO"), 0}
+ *   ::FOO::BAR {idNULL, rb_intern("FOO"), rb_intern("BAR"), 0}
+ */
+typedef ID *IDLIST;
+
 #ifndef FUNC_FASTCALL
 #define FUNC_FASTCALL(x) x
 #endif
