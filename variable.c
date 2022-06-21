@@ -1609,7 +1609,7 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
           break;
       case T_CLASS:
       case T_MODULE:
-          return RCLASS_EXT(obj)->shape_id;
+          return RCLASS_SHAPE_ID(obj);
       case T_IMEMO:
           if (imemo_type(obj) == imemo_shape) {
               return shape_get_shape_id((rb_shape_t *)obj);
@@ -1966,10 +1966,13 @@ transition_shape_frozen(VALUE obj)
 }
 
 static void
-transition_shape(VALUE obj, ID id)
+transition_shape(VALUE obj, ID id, rb_shape_t *shape)
 {
-    rb_shape_t* shape = rb_shape_get_shape(obj);
     rb_shape_t* next_shape = rb_shape_get_next(shape, id);
+    if (shape == next_shape) {
+        return;
+    }
+
     if (BUILTIN_TYPE(obj) == T_OBJECT && next_shape == get_no_cache_shape()) {
         // If the object is embedded, we need to make it extended so that
         // the instance variable index table can be stored on the object.
@@ -1985,9 +1988,7 @@ transition_shape(VALUE obj, ID id)
         }
     }
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
-    if (shape != next_shape) {
-        rb_shape_set_shape(obj, next_shape);
-    }
+    rb_shape_set_shape(obj, next_shape);
 }
 
 /**
@@ -2021,13 +2022,13 @@ ivar_set(VALUE obj, ID id, VALUE val)
            * Array of existing shapes which we can index into w a shape_id
            * Hash (tree representation) of ivar transitions between shapes
            */
-          transition_shape(obj, id);
+          transition_shape(obj, id, rb_shape_get_shape_by_id(ROBJECT_SHAPE_ID(obj)));
           obj_ivar_set(obj, id, val);
           break;
       }
       case T_CLASS:
       case T_MODULE:
-        transition_shape(obj, id);
+        transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         break;

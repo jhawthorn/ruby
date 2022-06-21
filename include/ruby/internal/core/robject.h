@@ -193,5 +193,4 @@ ROBJECT_SHAPE_ID(VALUE obj)
     RBIMPL_ASSERT_TYPE(obj, RUBY_T_OBJECT);
     return (shape_id_t)(0xffff & (RBASIC(obj)->flags >> 16));
 }
-
 #endif /* RBIMPL_ROBJECT_H */
