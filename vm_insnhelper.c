@@ -1126,126 +1126,145 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
 {
 #if OPT_IC_FOR_IVAR
     VALUE val = Qundef;
+    shape_id_t shape_id;
+    VALUE * ivar_list;
 
-    if (!(SPECIAL_CONST_P(obj) || BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE)) {
-        shape_id_t shape_id = rb_shape_get_shape_id(obj);
+    if (SPECIAL_CONST_P(obj)) {
+        goto general_path;
+    }
 
-        if (shape_id == NO_CACHE_SHAPE_ID)
-            goto general_path;
+    switch (BUILTIN_TYPE(obj)) {
+        case T_OBJECT:
+            {
+                shape_id = ROBJECT_SHAPE_ID(obj);
+                ivar_list = ROBJECT_IVPTR(obj);
+            }
+            break;
+        case T_CLASS:
+        case T_MODULE:
+            {
+                goto general_path;
+            }
+        default:
+            if (FL_TEST_RAW(obj, FL_EXIVAR)) {
+                struct gen_ivtbl *ivtbl;
+                rb_ivar_generic_ivtbl_lookup(obj, &ivtbl);
+                shape_id = ivtbl->shape_id;
+                //shape_id = rb_shape_get_shape_id(obj);
+                ivar_list = ivtbl->ivptr;
+            } else {
+                return Qnil;
+            }
+    }
 
-        shape_id_t cached_id;
+    if (shape_id == NO_CACHE_SHAPE_ID) {
+        goto general_path;
+    }
+
+    shape_id_t cached_id;
+
+    if (is_attr) {
+        cached_id = vm_cc_attr_shape_id(cc);
+    }
+    else {
+        cached_id = vm_ic_attr_shape_id(ic);
+    }
+
+    if (LIKELY(cached_id == shape_id)) {
+        RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
+
+        uint32_t index;
 
         if (is_attr) {
-            cached_id = vm_cc_attr_shape_id(cc);
-        }
-        else {
-            cached_id = vm_ic_attr_shape_id(ic);
-        }
-
-        if (LIKELY(cached_id == shape_id)) {
-            RB_DEBUG_COUNTER_INC(ivar_get_ic_hit);
-
-            uint32_t index;
-
-            if (is_attr) {
-                if (vm_cc_attr_index_p(cc)) {
-                    index = vm_cc_attr_index(cc);
-                }
-                else {
-                    val = Qnil;
-                    goto ret;
-                }
+            if (vm_cc_attr_index_p(cc)) {
+                index = vm_cc_attr_index(cc);
             }
             else {
-                if (vm_ic_attr_index_p(ic)) {
-                    index = vm_ic_attr_index(ic);
-                }
-                else {
-                    val = Qnil;
-                    goto ret;
-                }
+                goto general_path;
             }
+        }
+        else {
+            if (vm_ic_attr_index_p(ic)) {
+                index = vm_ic_attr_index(ic);
+            }
+            else {
+                goto general_path;
+            }
+        }
 
+        val = ivar_list[index];
+        VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
+
+        goto ret;
+    }
+    else { // cache miss case
+        uint32_t iv_index;
+
+#if RUBY_DEBUG
+        if (is_attr) {
+            if (cached_id != INVALID_SHAPE_ID) {
+                RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_set);
+            } else {
+                RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_unset);
+            }
+        }
+        else {
+            if (cached_id != INVALID_SHAPE_ID) {
+                RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_set);
+            } else {
+                RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
+            }
+        }
+#endif
+
+        // We're only caching information for T_OBJECTS and things that store
+        // ivars in EXIVAR
+        if (!(LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) || FL_TEST_RAW(obj, FL_EXIVAR))) {
+            goto general_path;
+        }
+
+        VALUE iv_index_value;
+        rb_shape_t *shape = rb_shape_get_shape(obj);
+        if (rb_shape_get_iv_index(shape, id, &iv_index_value)) {
+            // This fills in the cache with the shared cache object.
+            // "ent" is the shared cache object
+            iv_index = (uint32_t)iv_index_value;
+            fill_ivar_cache(iseq, ic, cc, is_attr, (uint32_t) iv_index_value, shape_id);
+
+            // get value
             if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
-                    LIKELY(index < ROBJECT_NUMIV(obj))) {
-                val = ROBJECT_IVPTR(obj)[index];
+                    LIKELY(iv_index < ROBJECT_NUMIV(obj))) {
+                val = ROBJECT_IVPTR(obj)[iv_index];
 
                 VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
             }
             else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-                val = rb_ivar_generic_lookup_with_index(obj, id, index);
+                val = rb_ivar_generic_lookup_with_index(obj, id, iv_index);
             }
-
-            goto ret;
         }
-        else { // cache miss case
-            uint32_t iv_index;
-
-#if RUBY_DEBUG
+        else {
             if (is_attr) {
-                if (cached_id != INVALID_SHAPE_ID) {
-                    RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_set);
-                } else {
-                    RB_DEBUG_COUNTER_INC(ivar_get_cc_miss_unset);
+                if (vm_cc_markable(cc)) {
+                    vm_cc_attr_index_initialize(cc, shape_id);
+                    RB_OBJ_WRITTEN(cc, Qundef, shape);
                 }
             }
             else {
-                if (cached_id != INVALID_SHAPE_ID) {
-                    RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_set);
-                } else {
-                    RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_unset);
-                }
+                vm_ic_attr_index_initialize(ic, shape_id);
+                RB_OBJ_WRITTEN(iseq, Qundef, shape);
             }
-#endif
-
-            if (!(LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) || FL_TEST_RAW(obj, FL_EXIVAR))) {
-                goto general_path;
-            }
-
-            VALUE iv_index_value;
-            if (rb_shape_get_iv_index(rb_shape_get_shape(obj), id, &iv_index_value)) {
-                // This fills in the cache with the shared cache object.
-                // "ent" is the shared cache object
-                iv_index = (uint32_t)iv_index_value;
-                fill_ivar_cache(iseq, ic, cc, is_attr, (uint32_t) iv_index_value, shape_id);
-
-                // get value
-                if (LIKELY(BUILTIN_TYPE(obj) == T_OBJECT) &&
-                        LIKELY(iv_index < ROBJECT_NUMIV(obj))) {
-                    val = ROBJECT_IVPTR(obj)[iv_index];
-
-                    VM_ASSERT(rb_ractor_shareable_p(obj) ? rb_ractor_shareable_p(val) : true);
-                }
-                else if (FL_TEST_RAW(obj, FL_EXIVAR)) {
-                    val = rb_ivar_generic_lookup_with_index(obj, id, iv_index);
-                }
-                else {
-                    goto general_path;
-                }
-            }
-            else {
-                if (is_attr) {
-                    if (vm_cc_markable(cc)) {
-                        vm_cc_attr_index_initialize(cc, shape_id);
-                        RB_OBJ_WRITTEN(cc, Qundef, rb_shape_get_shape_by_id(shape_id));
-                    }
-                }
-                else {
-                    vm_ic_attr_index_initialize(ic, shape_id);
-                    RB_OBJ_WRITTEN(iseq, Qundef, rb_shape_get_shape_by_id(shape_id));
-                }
-            }
+        }
 
 ret:
-            if (LIKELY(val != Qundef)) {
-                return val;
-            }
-            else {
-                return Qnil;
-            }
+        if (LIKELY(val != Qundef)) {
+            return val;
+        }
+        else {
+            return Qnil;
         }
     }
-  general_path:
+
+general_path:
 #endif /* OPT_IC_FOR_IVAR */
     RB_DEBUG_COUNTER_INC(ivar_get_ic_miss);
 

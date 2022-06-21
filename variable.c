@@ -1116,6 +1116,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     *v = (st_data_t)ivtbl;
     ivup->u.ivtbl = ivtbl;
     ivtbl->shape_id = SHAPE_ID(ivup->shape);
+    RB_OBJ_WRITTEN((VALUE)*k, Qundef, ivup->shape);
     return ST_CONTINUE;
 }
 
@@ -1425,8 +1426,6 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
 
     ivup.u.ivtbl->ivptr[ivup.index] = val;
     rb_shape_set_shape(obj, shape);
-    RB_GC_GUARD(*(VALUE *)shape);
-
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
 
