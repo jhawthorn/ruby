@@ -77,7 +77,7 @@ class BackTrace:
             pathobj = pathobj.Cast(self.tRArray)
 
             if flags & RUBY_FL_USER1:
-                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4)) >> (RUBY_FL_USHIFT+3))
+                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4|RUBY_FL_USER5|RUBY_FL_USER6|RUBY_FL_USER7|RUBY_FL_USER8|RUBY_FL_USER9)) >> (RUBY_FL_USHIFT+3))
                 ptr = pathobj.GetValueForExpressionPath("->as.ary")
             else:
                 len = pathobj.GetValueForExpressionPath("->as.heap.len").GetValueAsSigned()
@@ -321,7 +321,7 @@ def lldb_inspect(debugger, target, result, val):
             tRArray = target.FindFirstType("struct RArray").GetPointerType()
             val = val.Cast(tRArray)
             if flags & RUBY_FL_USER1:
-                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4)) >> (RUBY_FL_USHIFT+3))
+                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4|RUBY_FL_USER5|RUBY_FL_USER6|RUBY_FL_USER7|RUBY_FL_USER8|RUBY_FL_USER9)) >> (RUBY_FL_USHIFT+3))
                 ptr = val.GetValueForExpressionPath("->as.ary")
             else:
                 len = val.GetValueForExpressionPath("->as.heap.len").GetValueAsSigned()
@@ -422,6 +422,10 @@ def lldb_inspect(debugger, target, result, val):
                 append_command_output(debugger, "p *(rb_shape_t *) %0#x" % val.GetValueAsUnsigned(), result)
             else:
                 append_command_output(debugger, "p *(struct MEMO *) %0#x" % val.GetValueAsUnsigned(), result)
+        elif flType == RUBY_T_STRUCT:
+            tRTypedData = target.FindFirstType("struct RStruct").GetPointerType()
+            val = val.Cast(tRTypedData)
+            append_command_output(debugger, "p *(struct RStruct *) %0#x" % val.GetValueAsUnsigned(), result)
         elif flType == RUBY_T_ZOMBIE:
             tRZombie = target.FindFirstType("struct RZombie").GetPointerType()
             val = val.Cast(tRZombie)
@@ -511,6 +515,8 @@ def dump_node(debugger, command, ctx, result, internal_dict):
     output_string(ctx, result, dump)
 
 def rb_backtrace(debugger, command, result, internal_dict):
+    if not ('RUBY_Qfalse' in globals()):
+        lldb_init(debugger)
     bt = BackTrace(debugger, command, result, internal_dict)
     frame = bt.frame
 
@@ -720,6 +726,24 @@ def rb_id2str(debugger, command, result, internal_dict):
         id_str = rb_ary_entry(target, ary, pos, result)
         lldb_inspect(debugger, target, result, id_str)
 
+def rb_rclass_ext(debugger, command, result, internal_dict):
+    if not ('RUBY_Qfalse' in globals()):
+        lldb_init(debugger)
+
+    target = debugger.GetSelectedTarget()
+    process = target.GetProcess()
+    thread = process.GetSelectedThread()
+    frame = thread.GetSelectedFrame()
+
+    uintptr_t = target.FindFirstType("uintptr_t")
+    rclass_t = target.FindFirstType("struct RClass")
+    rclass_ext_t = target.FindFirstType("rb_classext_t")
+
+    rclass_addr = target.EvaluateExpression(command).Cast(uintptr_t)
+    rclass_ext_addr = (rclass_addr.GetValueAsUnsigned() + rclass_t.GetByteSize())
+    debugger.HandleCommand("p *(rb_classext_t *)%0#x" % rclass_ext_addr)
+
+
 def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.lldb_rp rp")
     debugger.HandleCommand("command script add -f lldb_cruby.count_objects rb_count_objects")
@@ -731,6 +755,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page_rvalue dump_page_rvalue")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_id2str rb_id2str")
+    debugger.HandleCommand("command script add -f lldb_cruby.rb_rclass_ext rclass_ext")
 
     lldb_init(debugger)
     print("lldb scripts for ruby has been installed.")

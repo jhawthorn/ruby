@@ -233,12 +233,6 @@ rb_str_embed_size(long capa)
     return offsetof(struct RString, as.embed.ary) + capa;
 }
 
-bool
-rb_str_shared_root_p(VALUE str)
-{
-    return FL_TEST_RAW(str, STR_SHARED_ROOT);
-}
-
 size_t
 rb_str_size_as_embedded(VALUE str)
 {
@@ -862,7 +856,7 @@ rb_enc_str_asciionly_p(VALUE str)
 
     if (!rb_enc_asciicompat(enc))
         return FALSE;
-    else if (rb_enc_str_coderange(str) == ENC_CODERANGE_7BIT)
+    else if (is_ascii_string(str))
         return TRUE;
     return FALSE;
 }
@@ -1282,7 +1276,7 @@ rb_external_str_with_enc(VALUE str, rb_encoding *eenc)
 {
     int eidx = rb_enc_to_index(eenc);
     if (eidx == rb_usascii_encindex() &&
-	rb_enc_str_coderange(str) != ENC_CODERANGE_7BIT) {
+	!is_ascii_string(str)) {
 	rb_enc_associate_index(str, rb_ascii8bit_encindex());
 	return str;
     }
@@ -3527,7 +3521,7 @@ st_index_t
 rb_str_hash(VALUE str)
 {
     int e = ENCODING_GET(str);
-    if (e && rb_enc_str_coderange(str) == ENC_CODERANGE_7BIT) {
+    if (e && is_ascii_string(str)) {
 	e = 0;
     }
     return rb_memhash((const void *)RSTRING_PTR(str), RSTRING_LEN(str)) ^ e;

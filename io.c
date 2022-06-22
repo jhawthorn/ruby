@@ -3385,7 +3385,7 @@ io_read_nonblock(rb_execution_context_t *ec, VALUE io, VALUE length, VALUE str, 
     }
 
     shrinkable = io_setstrbuf(&str, len);
-    rb_bool_expected(ex, "exception");
+    rb_bool_expected(ex, "exception", TRUE);
 
     GetOpenFile(io, fptr);
     rb_io_check_byte_readable(fptr);
@@ -3433,7 +3433,7 @@ io_write_nonblock(rb_execution_context_t *ec, VALUE io, VALUE str, VALUE ex)
 
     if (!RB_TYPE_P(str, T_STRING))
 	str = rb_obj_as_string(str);
-    rb_bool_expected(ex, "exception");
+    rb_bool_expected(ex, "exception", TRUE);
 
     io = GetWriteIO(io);
     GetOpenFile(io, fptr);
@@ -3836,7 +3836,7 @@ check_getline_args(VALUE *rsp, long *limit, VALUE io)
 	enc_rs = rb_enc_get(rs);
 	enc_io = io_read_encoding(fptr);
 	if (enc_io != enc_rs &&
-	    (rb_enc_str_coderange(rs) != ENC_CODERANGE_7BIT ||
+	    (!is_ascii_string(rs) ||
 	     (RSTRING_LEN(rs) > 0 && !rb_enc_asciicompat(enc_io)))) {
             if (rs == rb_default_rs) {
                 rs = rb_enc_str_new(0, 0, enc_io);

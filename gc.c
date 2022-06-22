@@ -87,6 +87,11 @@
 #include <emscripten.h>
 #endif
 
+#ifdef HAVE_MACH_TASK_EXCEPTION_PORTS
+# include <mach/task.h>
+# include <mach/mach_init.h>
+# include <mach/mach_port.h>
+#endif
 #undef LIST_HEAD /* ccan/list conflicts with BSD-origin sys/queue.h. */
 
 #include "constant.h"
@@ -5320,16 +5325,24 @@ gc_setup_mark_bits(struct heap_page *page)
 static int gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj);
 static VALUE gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t src_slot_size, size_t slot_size);
 
+#if defined(_WIN32)
+enum {HEAP_PAGE_LOCK = PAGE_NOACCESS, HEAP_PAGE_UNLOCK = PAGE_READWRITE};
+
+static BOOL
+protect_page_body(struct heap_page_body *body, DWORD protect)
+{
+    DWORD old_protect;
+    return VirtualProtect(body, HEAP_PAGE_SIZE, protect, &old_protect) != 0;
+}
+#else
+enum {HEAP_PAGE_LOCK = PROT_NONE, HEAP_PAGE_UNLOCK = PROT_READ | PROT_WRITE};
+#define protect_page_body(body, protect) !mprotect((body), HEAP_PAGE_SIZE, (protect))
+#endif
+
 static void
 lock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 {
-#if defined(_WIN32)
-    DWORD old_protect;
-
-    if (!VirtualProtect(body, HEAP_PAGE_SIZE, PAGE_NOACCESS, &old_protect)) {
-#else
-    if (mprotect(body, HEAP_PAGE_SIZE, PROT_NONE)) {
-#endif
+    if (!protect_page_body(body, HEAP_PAGE_LOCK)) {
         rb_bug("Couldn't protect page %p, errno: %s", (void *)body, strerror(errno));
     }
     else {
@@ -5340,13 +5353,7 @@ lock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 static void
 unlock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 {
-#if defined(_WIN32)
-    DWORD old_protect;
-
-    if (!VirtualProtect(body, HEAP_PAGE_SIZE, PAGE_READWRITE, &old_protect)) {
-#else
-    if (mprotect(body, HEAP_PAGE_SIZE, PROT_READ | PROT_WRITE)) {
-#endif
+    if (!protect_page_body(body, HEAP_PAGE_UNLOCK)) {
         rb_bug("Couldn't unprotect page %p, errno: %s", (void *)body, strerror(errno));
     }
     else {
@@ -5409,15 +5416,23 @@ gc_unprotect_pages(rb_objspace_t *objspace, rb_heap_t *heap)
 static void gc_update_references(rb_objspace_t * objspace);
 static void invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page);
 
-#ifndef GC_COMPACTION_SUPPORTED
+#ifndef GC_CAN_COMPILE_COMPACTION
 #if defined(__wasi__) /* WebAssembly doesn't support signals */
-# define GC_COMPACTION_SUPPORTED 0
+# define GC_CAN_COMPILE_COMPACTION 0
 #else
-# define GC_COMPACTION_SUPPORTED 1
+# define GC_CAN_COMPILE_COMPACTION 1
 #endif
 #endif
 
-#if GC_COMPACTION_SUPPORTED
+#if defined(__MINGW32__) || defined(_WIN32)
+# define GC_COMPACTION_SUPPORTED 1
+#else
+/* If not MinGW, Windows, or does not have mmap, we cannot use mprotect for
+ * the read barrier, so we must disable compaction. */
+# define GC_COMPACTION_SUPPORTED (GC_CAN_COMPILE_COMPACTION && HEAP_PAGE_ALLOC_USE_MMAP)
+#endif
+
+#if GC_CAN_COMPILE_COMPACTION
 static void
 read_barrier_handler(uintptr_t address)
 {
@@ -5440,7 +5455,7 @@ read_barrier_handler(uintptr_t address)
 }
 #endif
 
-#if !GC_COMPACTION_SUPPORTED
+#if !GC_CAN_COMPILE_COMPACTION
 static void
 uninstall_handlers(void)
 {
@@ -5494,6 +5509,38 @@ install_handlers(void)
 static struct sigaction old_sigbus_handler;
 static struct sigaction old_sigsegv_handler;
 
+#ifdef HAVE_MACH_TASK_EXCEPTION_PORTS
+static exception_mask_t old_exception_masks[32];
+static mach_port_t old_exception_ports[32];
+static exception_behavior_t old_exception_behaviors[32];
+static thread_state_flavor_t old_exception_flavors[32];
+static mach_msg_type_number_t old_exception_count;
+
+static void
+disable_mach_bad_access_exc(void)
+{
+    old_exception_count = sizeof(old_exception_masks) / sizeof(old_exception_masks[0]);
+    task_swap_exception_ports(
+        mach_task_self(), EXC_MASK_BAD_ACCESS,
+        MACH_PORT_NULL, EXCEPTION_DEFAULT, 0,
+        old_exception_masks, &old_exception_count,
+        old_exception_ports, old_exception_behaviors, old_exception_flavors
+    );
+}
+
+static void
+restore_mach_bad_access_exc(void)
+{
+    for (mach_msg_type_number_t i = 0; i < old_exception_count; i++) {
+        task_set_exception_ports(
+            mach_task_self(),
+            old_exception_masks[i], old_exception_ports[i],
+            old_exception_behaviors[i], old_exception_flavors[i]
+        );
+    }
+}
+#endif
+
 static void
 read_barrier_signal(int sig, siginfo_t * info, void * data)
 {
@@ -5508,11 +5555,16 @@ read_barrier_signal(int sig, siginfo_t * info, void * data)
     sigaddset(&set, SIGBUS);
     sigaddset(&set, SIGSEGV);
     sigprocmask(SIG_UNBLOCK, &set, &prev_set);
-
+#ifdef HAVE_MACH_TASK_EXCEPTION_PORTS
+    disable_mach_bad_access_exc();
+#endif
     // run handler
     read_barrier_handler((uintptr_t)info->si_addr);
 
     // reset SEGV/BUS handlers
+#ifdef HAVE_MACH_TASK_EXCEPTION_PORTS
+    restore_mach_bad_access_exc();
+#endif
     sigaction(SIGBUS, &prev_sigbus, NULL);
     sigaction(SIGSEGV, &prev_sigsegv, NULL);
     sigprocmask(SIG_SETMASK, &prev_set, NULL);
@@ -5521,6 +5573,9 @@ read_barrier_signal(int sig, siginfo_t * info, void * data)
 static void
 uninstall_handlers(void)
 {
+#ifdef HAVE_MACH_TASK_EXCEPTION_PORTS
+    restore_mach_bad_access_exc();
+#endif
     sigaction(SIGBUS, &old_sigbus_handler, NULL);
     sigaction(SIGSEGV, &old_sigsegv_handler, NULL);
 }
@@ -5536,6 +5591,9 @@ install_handlers(void)
 
     sigaction(SIGBUS, &action, &old_sigbus_handler);
     sigaction(SIGSEGV, &action, &old_sigsegv_handler);
+#ifdef HAVE_MACH_TASK_EXCEPTION_PORTS
+    disable_mach_bad_access_exc();
+#endif
 }
 #endif
 
@@ -9764,8 +9822,6 @@ gc_enter(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_
     if (UNLIKELY(during_gc != 0)) rb_bug("during_gc != 0");
     if (RGENGC_CHECK_MODE >= 3) gc_verify_internal_consistency(objspace);
 
-    mjit_gc_start_hook();
-
     during_gc = TRUE;
     RUBY_DEBUG_LOG("%s (%s)",gc_enter_event_cstr(event), gc_current_status(objspace));
     gc_report(1, objspace, "gc_enter: %s [%s]\n", gc_enter_event_cstr(event), gc_current_status(objspace));
@@ -9784,7 +9840,6 @@ gc_exit(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_l
     gc_report(1, objspace, "gc_exit: %s [%s]\n", gc_enter_event_cstr(event), gc_current_status(objspace));
     during_gc = FALSE;
 
-    mjit_gc_exit_hook();
     gc_exit_clock(objspace, event);
     RB_VM_LOCK_LEAVE_LEV(lock_lev);
 
@@ -9837,17 +9892,7 @@ gc_start_internal(rb_execution_context_t *ec, VALUE self, VALUE full_mark, VALUE
 
     /* For now, compact implies full mark / sweep, so ignore other flags */
     if (RTEST(compact)) {
-        /* If not MinGW, Windows, or does not have mmap, we cannot use mprotect for
-         * the read barrier, so we must disable compaction. */
-#if !defined(__MINGW32__) && !defined(_WIN32)
-        if (!HEAP_PAGE_ALLOC_USE_MMAP) {
-            rb_raise(rb_eNotImpError, "Compaction isn't available on this platform");
-        }
-#endif
-
-#if !GC_COMPACTION_SUPPORTED
-        rb_raise(rb_eNotImpError, "Compaction isn't available on this platform");
-#endif
+        GC_ASSERT(GC_COMPACTION_SUPPORTED);
 
         reason |= GPR_FLAG_COMPACT;
     }
@@ -10015,7 +10060,7 @@ gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t src_slot_size, s
     return (VALUE)src;
 }
 
-#if GC_COMPACTION_SUPPORTED
+#if GC_CAN_COMPILE_COMPACTION
 static int
 compare_free_slots(const void *left, const void *right, void *dummy)
 {
@@ -10760,7 +10805,7 @@ gc_update_references(rb_objspace_t *objspace)
     gc_update_table_refs(objspace, finalizer_table);
 }
 
-#if GC_COMPACTION_SUPPORTED
+#if GC_CAN_COMPILE_COMPACTION
 /*
  *  call-seq:
  *     GC.latest_compact_info -> {:considered=>{:T_CLASS=>11}, :moved=>{:T_CLASS=>11}}
@@ -10813,7 +10858,7 @@ gc_compact_stats(VALUE self)
 #  define gc_compact_stats rb_f_notimplement
 #endif
 
-#if GC_COMPACTION_SUPPORTED
+#if GC_CAN_COMPILE_COMPACTION
 static void
 root_obj_check_moved_i(const char *category, VALUE obj, void *data)
 {
@@ -10892,7 +10937,7 @@ gc_compact(VALUE self)
 #  define gc_compact rb_f_notimplement
 #endif
 
-#if GC_COMPACTION_SUPPORTED
+#if GC_CAN_COMPILE_COMPACTION
 static VALUE
 gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE double_heap, VALUE toward_empty)
 {
@@ -11519,7 +11564,7 @@ gc_disable(rb_execution_context_t *ec, VALUE _)
     return rb_gc_disable();
 }
 
-#if GC_COMPACTION_SUPPORTED
+#if GC_CAN_COMPILE_COMPACTION
 /*
  *  call-seq:
  *     GC.auto_compact = flag
@@ -11533,13 +11578,7 @@ gc_disable(rb_execution_context_t *ec, VALUE _)
 static VALUE
 gc_set_auto_compact(VALUE _, VALUE v)
 {
-    /* If not MinGW, Windows, or does not have mmap, we cannot use mprotect for
-     * the read barrier, so we must disable automatic compaction. */
-#if !defined(__MINGW32__) && !defined(_WIN32)
-    if (!HEAP_PAGE_ALLOC_USE_MMAP) {
-        rb_raise(rb_eNotImpError, "Automatic compaction isn't available on this platform");
-    }
-#endif
+    GC_ASSERT(GC_COMPACTION_SUPPORTED);
 
     ruby_enable_autocompact = RTEST(v);
     return v;
@@ -11548,7 +11587,7 @@ gc_set_auto_compact(VALUE _, VALUE v)
 #  define gc_set_auto_compact rb_f_notimplement
 #endif
 
-#if GC_COMPACTION_SUPPORTED
+#if GC_CAN_COMPILE_COMPACTION
 /*
  *  call-seq:
  *     GC.auto_compact    -> true or false
@@ -14422,13 +14461,21 @@ Init_GC(void)
     rb_define_singleton_method(rb_mGC, "malloc_allocated_size", gc_malloc_allocated_size, 0);
     rb_define_singleton_method(rb_mGC, "malloc_allocations", gc_malloc_allocations, 0);
 #endif
-    rb_define_singleton_method(rb_mGC, "compact", gc_compact, 0);
-    rb_define_singleton_method(rb_mGC, "auto_compact", gc_get_auto_compact, 0);
-    rb_define_singleton_method(rb_mGC, "auto_compact=", gc_set_auto_compact, 1);
-    rb_define_singleton_method(rb_mGC, "latest_compact_info", gc_compact_stats, 0);
-#if !GC_COMPACTION_SUPPORTED
-    rb_define_singleton_method(rb_mGC, "verify_compaction_references", rb_f_notimplement, -1);
-#endif
+
+    if (GC_COMPACTION_SUPPORTED) {
+        rb_define_singleton_method(rb_mGC, "compact", gc_compact, 0);
+        rb_define_singleton_method(rb_mGC, "auto_compact", gc_get_auto_compact, 0);
+        rb_define_singleton_method(rb_mGC, "auto_compact=", gc_set_auto_compact, 1);
+        rb_define_singleton_method(rb_mGC, "latest_compact_info", gc_compact_stats, 0);
+    }
+    else {
+        rb_define_singleton_method(rb_mGC, "compact", rb_f_notimplement, 0);
+        rb_define_singleton_method(rb_mGC, "auto_compact", rb_f_notimplement, 0);
+        rb_define_singleton_method(rb_mGC, "auto_compact=", rb_f_notimplement, 1);
+        rb_define_singleton_method(rb_mGC, "latest_compact_info", rb_f_notimplement, 0);
+        /* When !GC_COMPACTION_SUPPORTED, this method is not defined in gc.rb */
+        rb_define_singleton_method(rb_mGC, "verify_compaction_references", rb_f_notimplement, -1);
+    }
 
 #if GC_DEBUG_STRESS_TO_CLASS
     rb_define_singleton_method(rb_mGC, "add_stress_to_class", rb_gcdebug_add_stress_to_class, -1);
