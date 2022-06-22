@@ -1288,10 +1288,10 @@ NOINLINE(static VALUE vm_setivar_slowpath_attr(VALUE obj, ID id, VALUE val, cons
 static VALUE
 vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr)
 {
-    rb_check_frozen_internal(obj);
-
 #if OPT_IC_FOR_IVAR
     if (RB_TYPE_P(obj, T_OBJECT)) {
+        rb_check_frozen_internal(obj);
+
         uint32_t index;
 
         uint32_t num_iv = ROBJECT_NUMIV(obj);
@@ -1400,7 +1400,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                     if (UNLIKELY(index >= ROBJECT_NUMIV(obj))) {
                         rb_init_iv_list(obj);
                     }
-                    rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id));
+                    ROBJECT_SET_SHAPE_ID(obj, shape_dest_id);
+                    RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
                 }
                 else {
                     RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);

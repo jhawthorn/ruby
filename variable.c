@@ -1659,13 +1659,7 @@ rb_shape_set_shape_id(VALUE obj, shape_id_t shape_id)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-          // Ractors are occupying the upper 32 bits of flags
-          // Object shapes are occupying the next 16 bits
-          // 4 bits are unused
-          // 12 bits are occupied by RUBY_FL (see RUBY_FL_USHIFT)
-          // | XXXX ractor_id | shape_id | UUUU flags |
-          RBASIC(obj)->flags &= 0xffffffff0000ffff;
-          RBASIC(obj)->flags |= ((uint32_t)(shape_id) << 16);
+          ROBJECT_SET_SHAPE_ID(obj, shape_id);
           break;
       case T_CLASS:
       case T_MODULE:
@@ -1749,7 +1743,7 @@ rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id)
     return shape;
 }
 
-rb_shape_t*
+inline rb_shape_t*
 rb_shape_get_shape_by_id(shape_id_t shape_id)
 {
     RUBY_ASSERT(shape_id != INVALID_SHAPE_ID);

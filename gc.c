@@ -2860,6 +2860,8 @@ rb_newobj_of(VALUE klass, VALUE flags)
     if ((flags & RUBY_T_MASK) == T_OBJECT) {
         VALUE obj = newobj_of(klass, (flags | ROBJECT_EMBED) & ~FL_WB_PROTECTED , Qundef, Qundef, Qundef, flags & FL_WB_PROTECTED, sizeof(RVALUE));
 
+        rb_ensure_iv_list_size(obj, 0, (uint32_t)RCLASS_EXT(klass)->max_iv_count);
+
         return obj;
     }
     else {
@@ -2986,6 +2988,9 @@ rb_class_allocate_instance(VALUE klass)
     VALUE flags = T_OBJECT | ROBJECT_EMBED;
 
     VALUE obj = newobj_of(klass, flags, Qundef, Qundef, Qundef, RGENGC_WB_PROTECTED_OBJECT, sizeof(RVALUE));
+    if (RCLASS_EXT(klass)->max_iv_count > 3) {
+        rb_ensure_iv_list_size(obj, 0, (uint32_t)RCLASS_EXT(klass)->max_iv_count);
+    }
 
     return obj;
 }
@@ -3372,9 +3377,16 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
         }
         else {
             // "No cache" objects have a singleton iv_index_tbl that we need to free
-            rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(rb_shape_get_shape_id(obj));
-            if (shape && rb_no_cache_shape_p(shape)) {
-                rb_id_table_free(ROBJECT(obj)->as.heap.iv_index_tbl);
+            rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
+            if (shape) {
+                VALUE klass = RBASIC_CLASS(obj);
+                size_t num_of_ivs = rb_id_table_size(shape->iv_table);
+                if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
+                    RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
+                }
+                if (shape && rb_no_cache_shape_p(shape)) {
+                    rb_id_table_free(ROBJECT(obj)->as.heap.iv_index_tbl);
+                }
             }
             xfree(RANY(obj)->as.object.as.heap.ivptr);
             RB_DEBUG_COUNTER_INC(obj_obj_ptr);
