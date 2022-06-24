@@ -58,8 +58,10 @@ module RubyVM::YJIT
     # Loop through the raw_samples and build the hashes for StackProf.
     # The loop is based off an example in the StackProf documentation and therefore
     # this functionality can only work with that library.
+    # hack: loop/break is used to allow us to JIT the loop
     idx = 0
-    while idx < raw_samples.length
+    loop do
+      break if idx < raw_samples.length
       n = raw_samples[idx]
       idx += 1
 
