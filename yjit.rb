@@ -58,12 +58,18 @@ module RubyVM::YJIT
     # Loop through the raw_samples and build the hashes for StackProf.
     # The loop is based off an example in the StackProf documentation and therefore
     # this functionality can only work with that library.
-    while raw_samples.length > 0
-      stack_trace = raw_samples.shift(raw_samples.shift + 1)
-      lines = line_samples.shift(line_samples.shift + 1)
+    idx = 0
+    while idx < raw_samples.length
+      n = raw_samples[idx]
+      idx += 1
+
       prev_frame_id = nil
 
-      stack_trace.each_with_index do |frame_id, idx|
+      idxend = idx + n
+      while idx < idxend
+        frame_id = raw_samples[idx]
+        line_no = line_samples[idx]
+
         if prev_frame_id
           prev_frame = frames[prev_frame_id]
           prev_frame[:edges][frame_id] ||= 0
@@ -75,13 +81,16 @@ module RubyVM::YJIT
         frame_info[:total_samples] += 1
 
         frame_info[:lines] ||= {}
-        frame_info[:lines][lines[idx]] ||= [0, 0]
-        frame_info[:lines][lines[idx]][0] += 1
+        frame_info[:lines][line_no] ||= [0, 0]
+        frame_info[:lines][line_no][0] += 1
 
         prev_frame_id = frame_id
+
+        idx += 1
       end
 
-      top_frame_id = stack_trace.last
+      top_frame_id = raw_samples[idx]
+      idx += 1
       top_frame_line = 1
 
       frames[top_frame_id][:samples] += 1
@@ -89,8 +98,8 @@ module RubyVM::YJIT
       frames[top_frame_id][:lines][top_frame_line] ||= [0, 0]
       frames[top_frame_id][:lines][top_frame_line][1] += 1
 
-      samples_count += raw_samples.shift
-      line_samples.shift
+      samples_count += raw_samples[idx]
+      idx += 1
     end
 
     results[:samples] = samples_count
