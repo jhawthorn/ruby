@@ -8,6 +8,8 @@ use crate::cruby::*;
 use crate::options::*;
 use crate::yjit::yjit_enabled_p;
 
+use std::collections::HashSet;
+
 // YJIT exit counts for each instruction type
 const VM_INSTRUCTION_SIZE_USIZE:usize = VM_INSTRUCTION_SIZE as usize;
 static mut EXIT_OP_COUNT: [u64; VM_INSTRUCTION_SIZE_USIZE] = [0; VM_INSTRUCTION_SIZE_USIZE];
@@ -19,7 +21,9 @@ pub struct YjitExitLocations {
     raw_samples: Vec<VALUE>,
     /// Vec to hold line_samples which represent line numbers of
     /// the iseq caller.
-    line_samples: Vec<i32>
+    line_samples: Vec<i32>,
+    /// Seen frames
+    seen_frames: HashSet<VALUE>
 }
 
 /// Private singleton instance of yjit exit locations
@@ -40,7 +44,8 @@ impl YjitExitLocations {
 
         let yjit_exit_locations = YjitExitLocations {
             raw_samples: Vec::new(),
-            line_samples: Vec::new()
+            line_samples: Vec::new(),
+            seen_frames: HashSet::new()
         };
 
         // Initialize the yjit exit locations instance
@@ -57,6 +62,11 @@ impl YjitExitLocations {
     /// Get a mutable reference to the yjit raw samples Vec
     pub fn get_raw_samples() -> &'static mut Vec<VALUE> {
         &mut YjitExitLocations::get_instance().raw_samples
+    }
+
+    /// Get a mutable reference to the yjit raw samples Vec
+    pub fn get_seen_frames() -> &'static mut HashSet<VALUE> {
+        &mut YjitExitLocations::get_instance().seen_frames
     }
 
     /// Get a mutable reference to yjit the line samples Vec.
@@ -86,28 +96,33 @@ impl YjitExitLocations {
             return;
         }
 
-        let mut idx: size_t = 0;
-        let yjit_raw_samples = YjitExitLocations::get_raw_samples();
-
-        while idx < yjit_raw_samples.len() as size_t {
-            let num = yjit_raw_samples[idx as usize];
-            let mut i = 0;
-            idx += 1;
-
-            // Mark the yjit_raw_samples at the given index. These represent
-            // the data that needs to be GC'd which are the current frames.
-            while i < i32::from(num) {
-                unsafe { rb_gc_mark(yjit_raw_samples[idx as usize]); }
-                i += 1;
-                idx += 1;
-            }
-
-            // Increase index for exit instruction.
-            idx += 1;
-            // Increase index for bookeeping value (number of times we've seen this
-            // row in a stack).
-            idx += 1;
+        let yjit_seen_frames = YjitExitLocations::get_seen_frames();
+        for frame in yjit_seen_frames.iter() {
+            unsafe { rb_gc_mark(*frame) }
         }
+
+        //let mut idx: size_t = 0;
+        //let yjit_raw_samples = YjitExitLocations::get_raw_samples();
+
+        //while idx < yjit_raw_samples.len() as size_t {
+        //    let num = yjit_raw_samples[idx as usize];
+        //    let mut i = 0;
+        //    idx += 1;
+
+        //    // Mark the yjit_raw_samples at the given index. These represent
+        //    // the data that needs to be GC'd which are the current frames.
+        //    while i < i32::from(num) {
+        //        unsafe { rb_gc_mark(yjit_raw_samples[idx as usize]); }
+        //        i += 1;
+        //        idx += 1;
+        //    }
+
+        //    // Increase index for exit instruction.
+        //    idx += 1;
+        //    // Increase index for bookeeping value (number of times we've seen this
+        //    // row in a stack).
+        //    idx += 1;
+        //}
     }
 }
 
@@ -435,6 +450,7 @@ pub extern "C" fn rb_yjit_record_exit_stack(exit_pc: *const VALUE)
         let mut i = num - 1;
         let yjit_raw_samples = YjitExitLocations::get_raw_samples();
         let yjit_line_samples = YjitExitLocations::get_line_samples();
+        let yjit_seen_frames = YjitExitLocations::get_seen_frames();
 
         yjit_raw_samples.push(VALUE(num as usize));
         yjit_line_samples.push(num);
@@ -443,6 +459,7 @@ pub extern "C" fn rb_yjit_record_exit_stack(exit_pc: *const VALUE)
             let frame = frames_buffer[i as usize];
             let line = lines_buffer[i as usize];
 
+            yjit_seen_frames.insert(frame);
             yjit_raw_samples.push(frame);
             yjit_line_samples.push(line);
 
