@@ -3380,7 +3380,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
-                size_t num_of_ivs = rb_id_table_size(shape->iv_table);
+                uint32_t num_of_ivs = (uint32_t) rb_id_table_size(shape->iv_table);
                 if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                     RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
                 }
@@ -5224,6 +5224,20 @@ rb_shape_edges(VALUE self)
 }
 
 static VALUE
+rb_shape_depth(VALUE self)
+{
+    rb_shape_t* shape;
+    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
+
+    unsigned int depth = 0;
+    while (shape->parent) {
+        depth++;
+        shape = shape->parent;
+    }
+    return INT2NUM(depth);
+}
+
+static VALUE
 rb_shape_parent(VALUE self)
 {
     rb_shape_t * shape;
@@ -5243,6 +5257,7 @@ VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
         rb_define_method(rb_cShape, "parent", rb_shape_parent, 0);
         rb_define_method(rb_cShape, "ivars", rb_shape_iv_table, 0);
         rb_define_method(rb_cShape, "edges", rb_shape_edges, 0);
+        rb_define_method(rb_cShape, "depth", rb_shape_depth, 0);
     }
 
     return rb_shape_t_to_rb_cShape(shape);
