@@ -46,7 +46,6 @@
 #define ROBJECT_EMBED         ROBJECT_EMBED
 #define ROBJECT_NUMIV         ROBJECT_NUMIV
 #define ROBJECT_IVPTR         ROBJECT_IVPTR
-#define ROBJECT_IV_INDEX_TBL  ROBJECT_IV_INDEX_TBL
 /** @endcond */
 
 /**

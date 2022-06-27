@@ -12,10 +12,6 @@
 #include "internal/class.h"     /* for RCLASS_IV_INDEX_TBL */
 #include "internal/variable.h"     /* for shapes */
 
-#ifdef ROBJECT_IV_INDEX_TBL
-# undef ROBJECT_IV_INDEX_TBL
-#endif
-
 /* object.c */
 VALUE rb_class_search_ancestor(VALUE klass, VALUE super);
 NORETURN(void rb_undefined_alloc(VALUE klass));
@@ -27,7 +23,6 @@ int rb_bool_expected(VALUE, const char *, int raise);
 static inline void RBASIC_CLEAR_CLASS(VALUE obj);
 static inline void RBASIC_SET_CLASS_RAW(VALUE obj, VALUE klass);
 static inline void RBASIC_SET_CLASS(VALUE obj, VALUE klass);
-static inline struct rb_id_table *ROBJECT_IV_INDEX_TBL_inline(VALUE obj);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* object.c (export) */
@@ -65,13 +60,4 @@ RBASIC_SET_CLASS(VALUE obj, VALUE klass)
     RBASIC_SET_CLASS_RAW(obj, klass);
     RB_OBJ_WRITTEN(obj, oldv, klass);
 }
-
-RBIMPL_ATTR_PURE()
-static inline struct rb_id_table *
-ROBJECT_IV_INDEX_TBL_inline(VALUE obj)
-{
-    return rb_shape_get_shape(obj)->iv_table;
-}
-#define ROBJECT_IV_INDEX_TBL ROBJECT_IV_INDEX_TBL_inline
-
 #endif /* INTERNAL_OBJECT_H */

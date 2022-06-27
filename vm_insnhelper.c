@@ -1087,12 +1087,7 @@ iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
     st_data_t ent_data;
 
     rb_shape_t* shape = rb_shape_get_shape(obj);
-
-    RB_VM_LOCK_ENTER();
-    {
-        found = shape->iv_table && rb_id_table_lookup(shape->iv_table, (st_data_t)id, &ent_data);
-    }
-    RB_VM_LOCK_LEAVE();
+    found = rb_shape_get_iv_index(shape, id, &ent_data);
 
     if (found) {
         *indexp = (uint32_t)ent_data;
@@ -1309,16 +1304,13 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
         //
         // both caches
         if (!rb_no_cache_shape_p(shape) && !rb_no_cache_shape_p(next_shape)) {
-            // Copy IV index table
-            struct rb_id_table * iv_index_tbl = rb_id_table_copy(shape->iv_table);
-
             // Ensure the object is *not* embedded
             if (num_iv < (ROBJECT_EMBED_LEN_MAX + 1)) {
                 rb_ensure_iv_list_size(obj, num_iv, ROBJECT_EMBED_LEN_MAX + 1);
             }
 
             // Save the IV index table on the instance
-            ROBJECT(obj)->as.heap.iv_index_tbl = iv_index_tbl;
+            ROBJECT(obj)->as.heap.iv_index_tbl = rb_shape_generate_iv_table(shape);
         }
 
         if (rb_no_cache_shape_p(shape) || rb_no_cache_shape_p(next_shape)) {

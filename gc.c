@@ -2943,8 +2943,6 @@ imemo_memsize(VALUE obj)
       case imemo_shape:
         {
             rb_shape_t * shape = (rb_shape_t *) obj;
-            if (shape->iv_table)
-                size += rb_id_table_memsize(shape->iv_table); // this node's iv_table
             if (shape->edges)
                 size += rb_id_table_memsize(shape->edges); // this node's edges
             break;
@@ -3380,7 +3378,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             rb_shape_t *shape = rb_shape_get_shape_by_id_without_assertion(ROBJECT_SHAPE_ID(obj));
             if (shape) {
                 VALUE klass = RBASIC_CLASS(obj);
-                uint32_t num_of_ivs = (uint32_t) rb_id_table_size(shape->iv_table);
+                uint32_t num_of_ivs = rb_shape_depth(shape);
                 if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                     RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
                 }
@@ -3704,7 +3702,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 
                 shape->parent = NULL;
 
-                rb_id_table_free(shape->iv_table);
                 rb_shape_set_shape_by_id(SHAPE_ID(shape), NULL);
 
                 RB_DEBUG_COUNTER_INC(obj_imemo_shape);
@@ -5185,29 +5182,10 @@ rb_shape_t_to_rb_cShape(rb_shape_t *shape) {
     return res;
 }
 
-static enum rb_id_table_iterator_result collect_keys(ID key, VALUE value, void *ref)
-{
-    rb_ary_push(*(VALUE *)ref, parse_key(key));
-    return ID_TABLE_CONTINUE;
-}
-
 static enum rb_id_table_iterator_result rb_edges_to_hash(ID key, VALUE value, void *ref)
 {
     rb_hash_aset(*(VALUE *)ref, parse_key(key), rb_shape_t_to_rb_cShape((rb_shape_t*)value));
     return ID_TABLE_CONTINUE;
-}
-
-static VALUE
-rb_shape_iv_table(VALUE self)
-{
-    rb_shape_t * shape;
-    TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
-
-    VALUE array = rb_ary_new();
-    if (shape->iv_table) {
-        rb_id_table_foreach(shape->iv_table, collect_keys, &array);
-    }
-    return array;
 }
 
 static VALUE
@@ -5224,7 +5202,7 @@ rb_shape_edges(VALUE self)
 }
 
 static VALUE
-rb_shape_depth(VALUE self)
+rb_shape_export_depth(VALUE self)
 {
     rb_shape_t* shape;
     TypedData_Get_Struct(self, rb_shape_t, &shape_data_type, shape);
@@ -5255,21 +5233,11 @@ VALUE rb_obj_debug_shape(VALUE self, VALUE obj) {
         rb_define_method(rb_cShape, "id", rb_shape_id, 0);
         rb_define_method(rb_cShape, "parent_id", rb_shape_parent_id, 0);
         rb_define_method(rb_cShape, "parent", rb_shape_parent, 0);
-        rb_define_method(rb_cShape, "ivars", rb_shape_iv_table, 0);
         rb_define_method(rb_cShape, "edges", rb_shape_edges, 0);
-        rb_define_method(rb_cShape, "depth", rb_shape_depth, 0);
+        rb_define_method(rb_cShape, "depth", rb_shape_export_depth, 0);
     }
 
     return rb_shape_t_to_rb_cShape(shape);
-}
-
-static VALUE seen_ivars(struct rb_id_table* ivars)
-{
-    VALUE array = rb_ary_new();
-    if (ivars) {
-        rb_id_table_foreach(ivars, collect_keys, &array);
-    }
-    return array;
 }
 
 VALUE rb_obj_shape(rb_shape_t* shape);
@@ -5292,7 +5260,6 @@ VALUE rb_obj_shape(rb_shape_t* shape) {
     VALUE rb_shape = rb_hash_new();
 
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("id")), INT2NUM(SHAPE_ID(shape)));
-    rb_hash_aset(rb_shape, ID2SYM(rb_intern("seen_ivars")), seen_ivars(shape->iv_table));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edges")), edges(shape->edges));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("parent_id")), INT2NUM(SHAPE_ID(shape->parent)));
     rb_hash_aset(rb_shape, ID2SYM(rb_intern("edge_name")), rb_id2str(shape->edge_name));

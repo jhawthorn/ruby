@@ -46,7 +46,6 @@ struct rb_shape {
     VALUE flags; // Shape ID and frozen status encoded within flags
     struct rb_shape * parent; // Pointer to the parent
     struct rb_id_table * edges; // id_table from ID (ivar) to next shape
-    struct rb_id_table * iv_table; // id_table from ID (ivar) to ivar index
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
 };
 
@@ -61,7 +60,9 @@ rb_shape_t* rb_shape_get_shape_by_id_without_assertion(shape_id_t shape_id);
 rb_shape_t* rb_vm_get_root_shape();
 bool rb_shape_root_shape_p(rb_shape_t* shape);
 void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
-rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb_id_table * iv_table);
+rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
+uint32_t rb_shape_depth(rb_shape_t* shape);
+struct rb_id_table * rb_shape_generate_iv_table(rb_shape_t* shape);
 
 # define MAX_SHAPE_ID 0xFFFE
 # define NO_CACHE_SHAPE_ID (0x2)

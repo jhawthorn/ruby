@@ -64,7 +64,7 @@ static st_table *generic_iv_tbl_;
 
 struct ivar_update {
     union {
-	struct rb_id_table *iv_index_tbl;
+	size_t iv_index_tbl_size;
 	struct gen_ivtbl *ivtbl;
     } u;
     uint32_t index;
@@ -897,31 +897,36 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
-static struct rb_id_table *
-get_iv_table(VALUE obj) {
-    rb_shape_t* shape = rb_shape_get_shape(obj);
-
-    if (rb_no_cache_shape_p(shape)) {
-        return ROBJECT(obj)->as.heap.iv_index_tbl;
+struct rb_id_table *
+rb_shape_generate_iv_table(rb_shape_t* shape) {
+    struct rb_id_table *iv_table = rb_id_table_create(0);
+    uint32_t depth = rb_shape_depth(shape);
+    uint32_t index = 0;
+    while (shape->parent) {
+        rb_id_table_insert(iv_table, shape->edge_name, depth - (VALUE)index - 1);
+        index++;
+        shape = shape->parent;
     }
-    else {
-        return shape->iv_table;
-    }
+    return iv_table;
 }
 
 static bool
 iv_index_tbl_lookup(VALUE obj, ID id, uint32_t *indexp)
 {
     st_data_t ent_data;
-    int r;
+    int r = 0;
 
-    struct rb_id_table *iv_table = get_iv_table(obj);
+    rb_shape_t* shape = rb_shape_get_shape(obj);
 
-    RB_VM_LOCK_ENTER();
-    {
-        r = iv_table && rb_id_table_lookup(iv_table, (st_data_t)id, &ent_data);
+    if (rb_no_cache_shape_p(shape)) {
+        struct rb_id_table *iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
+        if (iv_table) {
+            r = rb_id_table_lookup(iv_table, (st_data_t)id, &ent_data);
+        }
     }
-    RB_VM_LOCK_LEAVE();
+    else {
+        r = rb_shape_get_iv_index(shape, id, &ent_data);
+    }
 
     if (r) {
         *indexp = (uint32_t)ent_data;
@@ -1013,10 +1018,9 @@ generic_ivar_delete(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, id, &ivtbl)) {
-        struct rb_id_table *iv_index_tbl = get_iv_table(obj);
         uint32_t index;
 
-        if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
+        if (iv_index_tbl_lookup(obj, id, &index)) {
 	    if (index < ivtbl->numiv) {
 		VALUE ret = ivtbl->ivptr[index];
 
@@ -1034,10 +1038,9 @@ generic_ivar_get(VALUE obj, ID id, VALUE undef)
     struct gen_ivtbl *ivtbl;
 
     if (gen_ivtbl_get(obj, id, &ivtbl)) {
-        struct rb_id_table *iv_index_tbl = get_iv_table(obj);
         uint32_t index;
 
-	if (iv_index_tbl && iv_index_tbl_lookup(obj, id, &index)) {
+	if (iv_index_tbl_lookup(obj, id, &index)) {
 	    if (index < ivtbl->numiv) {
 		VALUE ret = ivtbl->ivptr[index];
 
@@ -1085,7 +1088,7 @@ static uint32_t
 iv_index_tbl_newsize(struct ivar_update *ivup)
 {
     if (!ivup->iv_extended) {
-        return (uint32_t) rb_id_table_size(ivup->u.iv_index_tbl);
+        return (uint32_t) ivup->u.iv_index_tbl_size;
     }
     else {
         uint32_t index = (uint32_t)ivup->index;	/* should not overflow */
@@ -1137,9 +1140,7 @@ generic_ivar_remove(VALUE obj, ID id, VALUE *valp)
 {
     struct gen_ivtbl *ivtbl;
     uint32_t index;
-    struct rb_id_table *iv_index_tbl = get_iv_table(obj);
 
-    if (!iv_index_tbl) return 0;
     if (!iv_index_tbl_lookup(obj, id, &index)) return 0;
     if (!gen_ivtbl_get(obj, id, &ivtbl)) return 0;
 
@@ -1380,6 +1381,7 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
     ASSERT_vm_locking();
     VALUE ent_data;
     struct rb_id_table *iv_table;
+    int r;
 
     if (rb_no_cache_shape_p(ivup->shape)) {
         iv_table = ROBJECT(obj)->as.heap.iv_index_tbl;
@@ -1389,21 +1391,21 @@ iv_index_tbl_extend(VALUE obj, struct ivar_update *ivup, ID id)
         }
         uint32_t index = (uint32_t)rb_id_table_size(iv_table);
         rb_id_table_insert(iv_table, id, (VALUE)index);
-        ivup->u.iv_index_tbl = iv_table;
+        ivup->u.iv_index_tbl_size = rb_id_table_size(iv_table);
+        r = rb_id_table_lookup(iv_table, id, &ent_data);
     }
     else {
         // This sets the iv table in the ivup struct
-        ivup->u.iv_index_tbl = ivup->shape->iv_table;
+        ivup->u.iv_index_tbl_size = rb_shape_depth(ivup->shape);
+        r = rb_shape_get_iv_index(ivup->shape, id, &ent_data);
     }
 
-    // This should always hit
-    if (rb_id_table_lookup(ivup->u.iv_index_tbl, id, &ent_data)) {
+    if (r) {
         ivup->index = (uint32_t) ent_data;
         ivup->iv_extended = 1;
-	return;
     }
     else {
-        rb_bug("Should have found the id here\n");
+        fprintf(stderr, "miss on %s\n", rb_id2name(id));
     }
 }
 
@@ -1515,7 +1517,7 @@ rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
 void
 rb_init_iv_list(VALUE obj)
 {
-    uint32_t newsize = rb_id_table_size(ROBJECT_IV_INDEX_TBL(obj)) * 2.0;
+    uint32_t newsize = rb_shape_depth(rb_shape_get_shape(obj)) * 2.0;
     uint32_t len = ROBJECT_NUMIV(obj);
     rb_ensure_iv_list_size(obj, len, newsize < len ? len : newsize);
 }
@@ -1791,15 +1793,24 @@ shape_alloc(void)
 }
 
 rb_shape_t *
-rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent, struct rb_id_table * iv_table)
+rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
 {
     rb_shape_t * shape = shape_alloc();
     rb_shape_set_shape_id((VALUE)shape, shape_id);
     shape->edge_name = edge_name;
     RB_OBJ_WRITE(shape, &shape->parent, parent);
     RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
-    shape->iv_table = iv_table;
     return shape;
+}
+
+uint32_t
+rb_shape_depth(rb_shape_t* shape) {
+    uint32_t depth = 0;
+    while (shape->parent) {
+        depth++;
+        shape = shape->parent;
+    }
+    return depth;
 }
 
 enum transition_type {
@@ -1834,6 +1845,18 @@ get_next_shape_id(void)
     return next_shape_id;
 }
 
+static bool
+rb_shape_lookup_id(rb_shape_t* shape, ID id) {
+    while (shape->parent) {
+        if (shape->edge_name == id) {
+            return true;
+        }
+        shape = shape->parent;
+    }
+    return false;
+}
+
+
 static rb_shape_t*
 get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
 {
@@ -1842,10 +1865,8 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
     {
         // no_cache_shape should only transition to other no_cache_shapes
         if(shape == get_no_cache_shape()) return shape;
-        // We don't need `res` specifically at the end of this
-        // rb_id_table_lookup, we could just use a void (it's about to get set
-        // to shape anyways) - how can we do this?
-        if (rb_id_table_lookup(shape->iv_table, id, (VALUE *)&res)) {
+
+        if (rb_shape_lookup_id(shape, id)) {
             // If shape already contains the ivar that is being set, we'll return shape
             res = shape;
         }
@@ -1870,20 +1891,14 @@ get_next_shape_internal(rb_shape_t* shape, ID id, enum transition_type tt)
                     RUBY_ASSERT(next_shape_id < MAX_SHAPE_ID);
                     rb_shape_t * new_shape = rb_shape_alloc(next_shape_id,
                             id,
-                            shape,
-                            rb_id_table_copy(shape->iv_table));
+                            shape);
 
                     rb_id_table_insert(shape->edges, id, (VALUE)new_shape);
                     RB_OBJ_WRITTEN((VALUE)new_shape, Qundef, (VALUE)shape);
 
                     rb_shape_set_shape_by_id(next_shape_id, new_shape);
 
-                    //  Only insert if the id is an ivar
-                    if (tt == SHAPE_IVAR) {
-                        rb_id_table_insert(new_shape->iv_table, id, (VALUE)rb_id_table_size(new_shape->iv_table));
-                    }
-                    else {
-                        // tt == SHAPE_FROZEN
+                    if (tt == SHAPE_FROZEN) {
                         RB_OBJ_FREEZE_RAW((VALUE)new_shape);
                     }
 
@@ -1904,12 +1919,23 @@ rb_shape_get_next(rb_shape_t* shape, ID id)
 
 int
 rb_shape_get_iv_index(rb_shape_t * shape, ID id, VALUE *value) {
-    if (shape->iv_table) {
-        return rb_id_table_lookup(shape->iv_table, id, value);
+    size_t depth = 0;
+    int counting = FALSE;
+    while (shape->parent) {
+        if (counting) {
+            depth++;
+        }
+        else {
+            if (shape->edge_name == id) {
+                counting = TRUE;
+            }
+        }
+        shape = shape->parent;
     }
-    else {
-        return 0;
+    if (counting) {
+        *value = depth;
     }
+    return counting;
 }
 
 static void
@@ -1978,7 +2004,7 @@ transition_shape(VALUE obj, ID id, rb_shape_t *shape)
         if (ROBJECT_NUMIV(obj) <= ROBJECT_EMBED_LEN_MAX) {
             // Make the object extended
             rb_ensure_iv_list_size(obj, ROBJECT_EMBED_LEN_MAX, ROBJECT_EMBED_LEN_MAX + 1);
-            ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(shape->iv_table);
+            ROBJECT(obj)->as.heap.iv_index_tbl = rb_id_table_copy(rb_shape_generate_iv_table(shape));
         }
     }
     RUBY_ASSERT(!rb_objspace_garbage_object_p((VALUE)next_shape));
@@ -2139,7 +2165,7 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
         xfree(array);
     }
     else {
-        iv_index_tbl = rb_shape_get_shape(obj)->iv_table;
+        iv_index_tbl = rb_shape_generate_iv_table(rb_shape_get_shape(obj));
         if (!iv_index_tbl) {
             return;
         }
@@ -2151,11 +2177,11 @@ static void
 gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     struct gen_ivtbl *ivtbl;
-    struct rb_id_table *iv_index_tbl = rb_shape_get_shape(obj)->iv_table;
+    struct rb_id_table *iv_index_tbl = rb_shape_generate_iv_table(rb_shape_get_shape(obj));
     if (!iv_index_tbl) return;
     if (!gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_id_table_size(rb_shape_get_shape(obj)->iv_table), func, arg);
+    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_id_table_size(iv_index_tbl), func, arg);
 }
 
 void
@@ -2261,7 +2287,7 @@ rb_ivar_count(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-	if (ROBJECT_IV_INDEX_TBL(obj) != 0) {
+	if (rb_shape_depth(rb_shape_get_shape(obj)) > 0) {
 	    st_index_t i, count, num = ROBJECT_NUMIV(obj);
 	    const VALUE *const ivptr = ROBJECT_IVPTR(obj);
 	    for (i = count = 0; i < num; ++i) {
