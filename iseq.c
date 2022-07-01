@@ -135,6 +135,7 @@ iseq_clear_ic_references_i(VALUE *code, VALUE insn, size_t index, void *data)
             if (id == idNULL) continue;
             remove_from_constant_cache(id, ic);
         }
+        xfree(segments);
         return true;
       }
       default:
