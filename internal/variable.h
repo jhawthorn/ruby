@@ -63,6 +63,7 @@ void rb_shape_set_shape_by_id(shape_id_t, rb_shape_t *);
 rb_shape_t * rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent);
 uint32_t rb_shape_depth(rb_shape_t* shape);
 struct rb_id_table * rb_shape_generate_iv_table(rb_shape_t* shape);
+shape_id_t rb_generic_shape_id(VALUE obj);
 
 # define MAX_SHAPE_ID 0xFFFE
 # define NO_CACHE_SHAPE_ID (0x2)

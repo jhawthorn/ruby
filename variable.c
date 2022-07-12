@@ -1116,6 +1116,7 @@ generic_ivar_update(st_data_t *k, st_data_t *v, st_data_t u, int existing)
     FL_SET((VALUE)*k, FL_EXIVAR);
     uint32_t newsize = iv_index_tbl_newsize(ivup);
     ivtbl = gen_ivtbl_resize(ivtbl, newsize);
+    // Reinsert in to the hash table because ivtbl might be a newly resized chunk of memory
     *v = (st_data_t)ivtbl;
     ivup->u.ivtbl = ivtbl;
     ivtbl->shape_id = SHAPE_ID(ivup->shape);
@@ -1598,6 +1599,37 @@ shape_get_shape_id(rb_shape_t *shape) {
     return (shape_id_t)(0xffff & (shape->flags >> 16));
 }
 
+shape_id_t
+rb_generic_shape_id(VALUE obj)
+{
+    struct gen_ivtbl *ivtbl = 0;
+    shape_id_t shape_id;
+
+    RB_VM_LOCK_ENTER();
+    {
+        st_table* global_iv_table = generic_ivtbl(obj, 0, false);
+
+        if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
+            shape_id = ivtbl->shape_id;
+            /*
+             * Bad path to this assertion -- rb_copy_generic_ivar has
+             * rb_shape_set_shape(clone, rb_shape_get_shape(obj))
+             * setting the shape checks if the shape is already the same
+             if (rb_shape_get_shape_id(obj) == shape_id)
+             return;
+             * this assertion asserts that there's already a shape, which there isn't in the clone case
+             */
+            // RUBY_ASSERT(rb_shape_get_shape_by_id(shape_id));
+        }
+        else if (OBJ_FROZEN(obj)) {
+            shape_id = FROZEN_ROOT_SHAPE_ID;
+        }
+    }
+    RB_VM_LOCK_LEAVE();
+
+    return shape_id;
+}
+
 shape_id_t rb_shape_get_shape_id(VALUE obj)
 {
     shape_id_t shape_id = ROOT_SHAPE_ID;
@@ -1618,30 +1650,7 @@ shape_id_t rb_shape_get_shape_id(VALUE obj)
               break;
           }
       default:
-          {
-              struct gen_ivtbl *ivtbl = 0;
-              RB_VM_LOCK_ENTER();
-              {
-                  st_table* global_iv_table = generic_ivtbl(obj, 0, false);
-
-                  if (global_iv_table && st_lookup(global_iv_table, obj, (st_data_t *)&ivtbl)) {
-                      shape_id = ivtbl->shape_id;
-                      /*
-                       * Bad path to this assertion -- rb_copy_generic_ivar has
-                       * rb_shape_set_shape(clone, rb_shape_get_shape(obj))
-                       * setting the shape checks if the shape is already the same
-                         if (rb_shape_get_shape_id(obj) == shape_id)
-                           return;
-                       * this assertion asserts that there's already a shape, which there isn't in the clone case
-                       */
-                      // RUBY_ASSERT(rb_shape_get_shape_by_id(shape_id));
-                  }
-                  else if (OBJ_FROZEN(obj)) {
-                      shape_id = FROZEN_ROOT_SHAPE_ID;
-                  }
-              }
-              RB_VM_LOCK_LEAVE();
-          }
+          return rb_generic_shape_id(obj);
     }
 
     // The shape id must be smaller than the tree size
