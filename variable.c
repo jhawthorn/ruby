@@ -973,7 +973,7 @@ generic_ivtbl_no_ractor_check(VALUE obj)
     return generic_ivtbl(obj, 0, false);
 }
 
-static int
+int
 gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 {
     st_data_t data;
@@ -1057,7 +1057,7 @@ gen_ivtbl_bytes(size_t n)
     return offsetof(struct gen_ivtbl, ivptr) + n * sizeof(VALUE);
 }
 
-static struct gen_ivtbl *
+struct gen_ivtbl *
 gen_ivtbl_resize(struct gen_ivtbl *old, uint32_t n)
 {
     uint32_t len = old ? old->numiv : 0;
@@ -1603,7 +1603,7 @@ shape_id_t
 rb_generic_shape_id(VALUE obj)
 {
     struct gen_ivtbl *ivtbl = 0;
-    shape_id_t shape_id;
+    shape_id_t shape_id = 0;
 
     RB_VM_LOCK_ENTER();
     {
