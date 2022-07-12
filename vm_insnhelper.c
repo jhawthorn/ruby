@@ -1355,9 +1355,11 @@ vm_setivar_slowpath(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, 
                 rb_shape_t * shape = rb_shape_get_shape(obj);
                 rb_ivar_set(obj, id, val);
                 rb_shape_t * next_shape = rb_shape_get_shape(obj);
+                VALUE x;
                 uint32_t index;
 
-                if (rb_shape_get_iv_index(next_shape, id, (VALUE *)&index)) { // based off the has stored in the transition tree
+                if (rb_shape_get_iv_index(next_shape, id, &x)) { // based off the has stored in the transition tree
+                    index = (uint32_t)x;
                     if (index >= INT_MAX) {
                         rb_raise(rb_eArgError, "too many instance variables");
                     }
@@ -1425,13 +1427,13 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
 
                         RB_OBJ_WRITE(obj, &ptr[index], val);
 
-
                         RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
 
                         return val; /* inline cache hit */
                     }
                 }
             }
+            break;
       case T_CLASS:
       case T_MODULE:
         RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
@@ -1448,29 +1450,35 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                     VM_ASSERT(!rb_ractor_shareable_p(obj));
 
                     if (shape_dest_id != shape_id) {
-                        // Does this need a lock?
-                        struct gen_ivtbl *ivtbl;
                         // Take a lock
                         // get the gen iv table
                         // call gen_ivtbl_resize with the size we need (if it's not big enough)
                         // release the lock
-                        if (!gen_ivtbl_get(obj, id, &ivtbl)) {
-                            return Qundef;
+                        struct gen_ivtbl *ivtbl;
+                        if (gen_ivtbl_get(obj, id, &ivtbl)) {
+                            if (ivtbl->numiv >= index) {
+                                ptr = ivtbl->ivptr;
+                            }
+                            else {
+                                rb_ensure_iv_list_size(obj, ivtbl->numiv, index);
+                                gen_ivtbl_get(obj, id, &ivtbl);
+                                ptr = ivtbl->ivptr;
+                            }
+                        }
+                        else {
+                            rb_ensure_iv_list_size(obj, 0, index);
+                            gen_ivtbl_get(obj, id, &ivtbl);
+                            ptr = ivtbl->ivptr;
                         }
 
-                        if (UNLIKELY(index >= ivtbl->numiv)) {
-                            ivtbl = gen_ivtbl_resize(ivtbl, index + 1);
-                        }
-                        ROBJECT_SET_SHAPE_ID(obj, shape_dest_id); // won't work
+                        rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id)); // won't work
                         RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
                     }
                     else {
                         RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
                     }
 
-                    RUBY_ASSERT(index < ROBJECT_NUMIV(obj));
-
-                    VALUE *ptr = ROBJECT_IVPTR(obj);
+                    VALUE *ptr = ivtbl->ivptr;
 
                     RB_OBJ_WRITE(obj, &ptr[index], val);
 
