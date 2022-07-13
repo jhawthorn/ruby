@@ -1449,26 +1449,21 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
 
                     VM_ASSERT(!rb_ractor_shareable_p(obj));
 
+                    struct gen_ivtbl *ivtbl;
                     if (shape_dest_id != shape_id) {
                         // Take a lock
                         // get the gen iv table
                         // call gen_ivtbl_resize with the size we need (if it's not big enough)
                         // release the lock
-                        struct gen_ivtbl *ivtbl;
                         if (gen_ivtbl_get(obj, id, &ivtbl)) {
-                            if (ivtbl->numiv >= index) {
-                                ptr = ivtbl->ivptr;
-                            }
-                            else {
-                                rb_ensure_iv_list_size(obj, ivtbl->numiv, index);
+                            if (ivtbl->numiv < index) {
+                                rb_ensure_generic_iv_list_size(obj, ivtbl->numiv, index, ivtbl);
                                 gen_ivtbl_get(obj, id, &ivtbl);
-                                ptr = ivtbl->ivptr;
                             }
                         }
                         else {
-                            rb_ensure_iv_list_size(obj, 0, index);
+                            rb_ensure_generic_iv_list_size(obj, 0, index, ivtbl);
                             gen_ivtbl_get(obj, id, &ivtbl);
-                            ptr = ivtbl->ivptr;
                         }
 
                         rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id)); // won't work
@@ -1476,6 +1471,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                     }
                     else {
                         RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
+                        // JEM: What does this case represent?
+                        return Qundef;
                     }
 
                     VALUE *ptr = ivtbl->ivptr;

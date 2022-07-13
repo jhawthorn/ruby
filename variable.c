@@ -1497,44 +1497,39 @@ rb_obj_transient_heap_evacuate(VALUE obj, int promote)
 void
 rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
 {
-    switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT: {
-            VALUE *ptr = ROBJECT_IVPTR(obj);
-            VALUE *newptr;
+    VALUE *ptr = ROBJECT_IVPTR(obj);
+    VALUE *newptr;
 
-            if (RBASIC(obj)->flags & ROBJECT_EMBED) {
-                newptr = obj_ivar_heap_alloc(obj, newsize);
-                MEMCPY(newptr, ptr, VALUE, len);
-                RBASIC(obj)->flags &= ~ROBJECT_EMBED;
-                ROBJECT(obj)->as.heap.ivptr = newptr;
-            }
-            else {
-                newptr = obj_ivar_heap_realloc(obj, len, newsize);
-            }
-
-            for (; len < newsize; len++) {
-                newptr[len] = Qundef;
-            }
-            ROBJECT(obj)->as.heap.numiv = newsize;
-            break;
-      }
-      case T_CLASS:
-      case T_MODULE:
-            rb_bug("This should never happen!\n");
-      default:  {
-            RB_VM_LOCK_ENTER();
-            {
-                // Extract this into its own function, take it out of the case statement
-                // (ie revert this function)
-                // and then put back all the stuff below
-                if (UNLIKELY(!gen_ivtbl_get(obj, 0, &ivtbl) || newsize >= len)) {
-                    ivtbl = gen_ivtbl_resize(ivtbl, newsize);
-                    st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)obj, (st_data_t)ivtbl);
-                }
-            }
-            RB_VM_LOCK_LEAVE();
-      }
+    if (RBASIC(obj)->flags & ROBJECT_EMBED) {
+        newptr = obj_ivar_heap_alloc(obj, newsize);
+        MEMCPY(newptr, ptr, VALUE, len);
+        RBASIC(obj)->flags &= ~ROBJECT_EMBED;
+        ROBJECT(obj)->as.heap.ivptr = newptr;
     }
+    else {
+        newptr = obj_ivar_heap_realloc(obj, len, newsize);
+    }
+
+    for (; len < newsize; len++) {
+        newptr[len] = Qundef;
+    }
+    ROBJECT(obj)->as.heap.numiv = newsize;
+}
+
+void
+rb_ensure_generic_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize, struct gen_ivtbl *ivtbl)
+{
+    RB_VM_LOCK_ENTER();
+    {
+        // Extract this into its own function, take it out of the case statement
+        // (ie revert this function)
+        // and then put back all the stuff below
+        if (UNLIKELY(!gen_ivtbl_get(obj, 0, &ivtbl) || newsize >= len)) {
+            ivtbl = gen_ivtbl_resize(ivtbl, newsize);
+            st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)obj, (st_data_t)ivtbl);
+        }
+    }
+    RB_VM_LOCK_LEAVE();
 }
 
 void
