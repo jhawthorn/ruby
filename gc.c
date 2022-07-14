@@ -4849,7 +4849,10 @@ obj_memsize_of(VALUE obj, int use_all_types)
 	    size += ROBJECT_NUMIV(obj) * sizeof(VALUE);
 	}
         else {
-            if (rb_no_cache_shape_p(rb_shape_get_shape(obj))) {
+            // We can't look up the shape here because `obj_memsize_of` is used during
+            // the sweep phase when RGENGC_CHECK_MODE is enabled.  The shape may have been
+            // collected, so we just want to check the ID
+            if (NO_CACHE_SHAPE_ID == rb_shape_get_shape_id(obj)) {
                 size += rb_id_table_memsize(ROBJECT(obj)->as.heap.iv_index_tbl);
             }
         }

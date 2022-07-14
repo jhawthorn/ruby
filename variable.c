@@ -1060,6 +1060,8 @@ gen_ivtbl_bytes(size_t n)
 struct gen_ivtbl *
 gen_ivtbl_resize(struct gen_ivtbl *old, uint32_t n)
 {
+    RUBY_ASSERT(n > 0);
+
     uint32_t len = old ? old->numiv : 0;
     struct gen_ivtbl *ivtbl = xrealloc(old, gen_ivtbl_bytes(n));
 
@@ -1521,9 +1523,6 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize, struct
 {
     RB_VM_LOCK_ENTER();
     {
-        // Extract this into its own function, take it out of the case statement
-        // (ie revert this function)
-        // and then put back all the stuff below
         if (UNLIKELY(!gen_ivtbl_get(obj, 0, &ivtbl) || newsize >= len)) {
             ivtbl = gen_ivtbl_resize(ivtbl, newsize);
             st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)obj, (st_data_t)ivtbl);

@@ -1449,7 +1449,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
 
                     VM_ASSERT(!rb_ractor_shareable_p(obj));
 
-                    struct gen_ivtbl *ivtbl;
+                    struct gen_ivtbl *ivtbl = 0;
                     if (shape_dest_id != shape_id) {
                         // Take a lock
                         // get the gen iv table
