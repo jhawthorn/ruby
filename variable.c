@@ -1539,13 +1539,15 @@ rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 
     RB_VM_LOCK_ENTER();
     {
-        if (UNLIKELY(!gen_ivtbl_get_unlocked(obj, 0, &ivtbl) || newsize >= ivtbl->numiv)) {
+        if (UNLIKELY(!gen_ivtbl_get_unlocked(obj, 0, &ivtbl) || newsize > ivtbl->numiv)) {
             ivtbl = gen_ivtbl_resize(ivtbl, newsize);
             st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)obj, (st_data_t)ivtbl);
             FL_SET_RAW(obj, FL_EXIVAR);
         }
     }
     RB_VM_LOCK_LEAVE();
+
+    RUBY_ASSERT(ivtbl);
 
     return ivtbl;
 }
@@ -1845,6 +1847,24 @@ rb_shape_alloc(shape_id_t shape_id, ID edge_name, rb_shape_t * parent)
     RB_OBJ_WRITE(shape, &shape->parent, parent);
     RUBY_ASSERT(!parent || IMEMO_TYPE_P(parent, imemo_shape));
     return shape;
+}
+
+/*
+ * This function calculates iv depth based on checking
+ * if the shape is frozen or not.
+ *
+ * If or when we add more attributes to shapes beyond
+ * only frozen status, we will need to refactor this
+ * method to count the transitions based on attributes
+ */
+uint32_t
+rb_shape_iv_depth(rb_shape_t* shape) {
+    if (frozen_shape_p(shape)) {
+        return rb_shape_depth(shape->parent);
+    }
+    else {
+        return rb_shape_depth(shape);
+    }
 }
 
 uint32_t
@@ -2221,11 +2241,13 @@ static void
 gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
 {
     struct gen_ivtbl *ivtbl;
-    struct rb_id_table *iv_index_tbl = rb_shape_generate_iv_table(rb_shape_get_shape(obj));
+    rb_shape_t *shape = rb_shape_get_shape(obj);
+    struct rb_id_table *iv_index_tbl = rb_shape_generate_iv_table(shape);
     if (!iv_index_tbl) return;
     if (!gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
-    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_id_table_size(iv_index_tbl), func, arg);
+    // JEM: Instead of depth here we need a just IV depth
+    iterate_over_shapes(obj, rb_shape_get_shape(obj), ivtbl->ivptr, (int)rb_shape_iv_depth(shape), func, arg);
 }
 
 void
