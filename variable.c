@@ -973,6 +973,20 @@ generic_ivtbl_no_ractor_check(VALUE obj)
     return generic_ivtbl(obj, 0, false);
 }
 
+static int
+gen_ivtbl_get_unlocked(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
+{
+    st_data_t data;
+    int r = 0;
+
+    if (st_lookup(generic_ivtbl(obj, id, false), (st_data_t)obj, &data)) {
+        *ivtbl = (struct gen_ivtbl *)data;
+        r = 1;
+    }
+
+    return r;
+}
+
 int
 gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 {
@@ -1518,17 +1532,22 @@ rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize)
     ROBJECT(obj)->as.heap.numiv = newsize;
 }
 
-void
-rb_ensure_generic_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize, struct gen_ivtbl *ivtbl)
+struct gen_ivtbl *
+rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize)
 {
+    struct gen_ivtbl * ivtbl = 0;
+
     RB_VM_LOCK_ENTER();
     {
-        if (UNLIKELY(!gen_ivtbl_get(obj, 0, &ivtbl) || newsize >= len)) {
+        if (UNLIKELY(!gen_ivtbl_get_unlocked(obj, 0, &ivtbl) || newsize >= ivtbl->numiv)) {
             ivtbl = gen_ivtbl_resize(ivtbl, newsize);
             st_insert(generic_ivtbl_no_ractor_check(obj), (st_data_t)obj, (st_data_t)ivtbl);
+            FL_SET_RAW(obj, FL_EXIVAR);
         }
     }
     RB_VM_LOCK_LEAVE();
+
+    return ivtbl;
 }
 
 void

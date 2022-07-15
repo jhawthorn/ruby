@@ -1451,32 +1451,25 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
 
                     struct gen_ivtbl *ivtbl = 0;
                     if (shape_dest_id != shape_id) {
-                        // Take a lock
-                        // get the gen iv table
-                        // call gen_ivtbl_resize with the size we need (if it's not big enough)
-                        // release the lock
-                        if (gen_ivtbl_get(obj, id, &ivtbl)) {
-                            if (ivtbl->numiv < index) {
-                                rb_ensure_generic_iv_list_size(obj, ivtbl->numiv, index, ivtbl);
-                                gen_ivtbl_get(obj, id, &ivtbl);
-                            }
-                        }
-                        else {
-                            rb_ensure_generic_iv_list_size(obj, 0, index, ivtbl);
-                            gen_ivtbl_get(obj, id, &ivtbl);
-                        }
+                        // Ensuring we have a place to store the IV value
+                        // -> lock
+                        ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
+                        // <- unlock
 
-                        rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id)); // won't work
+                        // -> lock
+                        rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id));
+                        // <- unlock
                         RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
                     }
                     else {
+                        // Just get the IV table
                         RUBY_ASSERT(GET_VM()->shape_list[shape_dest_id]);
-                        // JEM: What does this case represent?
-                        return Qundef;
+                        gen_ivtbl_get(obj, 0, &ivtbl);
                     }
 
                     VALUE *ptr = ivtbl->ivptr;
 
+                    // Ensuring we have a place to store the IV value
                     RB_OBJ_WRITE(obj, &ptr[index], val);
 
                     RB_DEBUG_COUNTER_INC(ivar_set_ic_hit);
