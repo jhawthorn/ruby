@@ -2452,7 +2452,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 		      case TS_IVC: /* inline ivar cache */
 			{
 			    ic_index += FIX2UINT(operands[j]);
-			    IC ic = (IC)&body->is_entries[ic_index];
+			    ISE ic = &body->is_entries[ic_index];
 			    if (UNLIKELY(ic_index >= ISEQ_IS_SIZE(body))) {
                                 BADINSN_DUMP(anchor, &iobj->link, 0);
                                 COMPILE_ERROR(iseq, iobj->insn_info.line_no,
