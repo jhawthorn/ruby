@@ -1440,6 +1440,8 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
         break;
       default:
         {
+            VM_ASSERT(!rb_ractor_shareable_p(obj));
+
             shape_id_t shape_id = rb_generic_shape_id(obj);
 
             if (shape_id != NO_CACHE_SHAPE_ID) {
@@ -1447,18 +1449,10 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, shape_id_t shape_
                 if (shape_id == shape_source_id) {
                     RUBY_ASSERT(shape_dest_id != INVALID_SHAPE_ID && shape_id != INVALID_SHAPE_ID);
 
-                    VM_ASSERT(!rb_ractor_shareable_p(obj));
-
                     struct gen_ivtbl *ivtbl = 0;
                     if (shape_dest_id != shape_id) {
-                        // Ensuring we have a place to store the IV value
-                        // -> lock
                         ivtbl = rb_ensure_generic_iv_list_size(obj, index + 1);
-                        // <- unlock
-
-                        // -> lock
-                        rb_shape_set_shape(obj, rb_shape_get_shape_by_id(shape_dest_id));
-                        // <- unlock
+                        ivtbl->shape_id = shape_dest_id;
                         RB_OBJ_WRITTEN(obj, Qundef, rb_shape_get_shape_by_id(shape_dest_id));
                     }
                     else {
