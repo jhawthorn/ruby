@@ -150,7 +150,7 @@ iseq_clear_ic_references_i(VALUE *code, VALUE insn, size_t index, void *data)
 static void
 iseq_clear_ic_references(const rb_iseq_t *iseq)
 {
-    rb_iseq_each(iseq, 0, iseq_clear_ic_references_i, NULL);
+    //rb_iseq_each(iseq, 0, iseq_clear_ic_references_i, NULL);
 }
 
 void
@@ -2199,6 +2199,11 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
         }
 
       case TS_VALUE:		/* VALUE */
+        if (RB_TYPE_P(op, T_IMEMO)) {
+            ret = rb_sprintf("FIXME: it's an imemo!");
+            break;
+        }
+
 	op = obj_resurrect(op);
 	if (insn == BIN(defined) && op_no == 1 && FIXNUM_P(op)) {
 	    /* should be DEFINED_REF */

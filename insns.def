@@ -255,20 +255,19 @@ setclassvariable
 
 DEFINE_INSN
 opt_getconstant_path
-(IDLIST segments, IC ic)
+(VALUE ic_entry_val)
 ()
 (VALUE val)
 // attr bool leaf = false; /* may autoload */
 {
-    struct iseq_inline_constant_cache_entry *ice = ic->entry;
-    if (ice && vm_ic_hit_p(ice, GET_EP())) {
+    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)ic_entry_val;
+    if (ice->value != Qundef && vm_ic_hit_p(ice, GET_EP())) {
         val = ice->value;
-
-        VM_ASSERT(val == vm_get_ev_const_chain(ec, segments));
     } else {
+        ID *segments = ice->segments;
         val = vm_get_ev_const_chain(ec, segments);
-        vm_ic_track_const_chain(GET_CFP(), ic, segments);
-        vm_ic_update(GET_ISEQ(), ic, val, GET_EP(), GET_PC() - 3);
+        vm_ice_track_const_chain(GET_CFP(), ice, segments);
+        vm_ice_update(GET_ISEQ(), ice, val, GET_EP(), GET_PC() - 3);
     }
 }
 

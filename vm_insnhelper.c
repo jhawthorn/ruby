@@ -4958,7 +4958,7 @@ vm_opt_newarray_min(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr)
 #define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
 
 static void
-vm_track_constant_cache(ID id, void *ic)
+vm_track_constant_cache(ID id, VALUE ice)
 {
     struct rb_id_table *const_cache = GET_VM()->constant_cache;
     VALUE lookup_result;
@@ -4972,18 +4972,18 @@ vm_track_constant_cache(ID id, void *ic)
         rb_id_table_insert(const_cache, id, (VALUE)ics);
     }
 
-    st_insert(ics, (st_data_t) ic, (st_data_t) Qtrue);
+    st_insert(ics, (st_data_t) ice, (st_data_t) Qtrue);
 }
 
 static void
-vm_ic_track_const_chain(rb_control_frame_t *cfp, IC ic, IDLIST segments)
+vm_ice_track_const_chain(rb_control_frame_t *cfp, VALUE ice, IDLIST segments)
 {
     RB_VM_LOCK_ENTER();
 
     for (int i = 0; segments[i]; i++) {
         VALUE id = segments[i];
         if (id == idNULL) continue;
-        vm_track_constant_cache(id, ic);
+        vm_track_constant_cache(id, ice);
     }
 
     RB_VM_LOCK_LEAVE();
@@ -5017,24 +5017,27 @@ rb_vm_ic_hit_p(IC ic, const VALUE *reg_ep)
 }
 
 static void
-vm_ic_update(const rb_iseq_t *iseq, IC ic, VALUE val, const VALUE *reg_ep, const VALUE *pc)
+vm_ice_update(const rb_iseq_t *iseq, struct iseq_inline_constant_cache_entry *ice, VALUE val, const VALUE *reg_ep, const VALUE *pc)
 {
     if (ruby_vm_const_missing_count > 0) {
         ruby_vm_const_missing_count = 0;
-        ic->entry = NULL;
+        ice->value = Qundef;
         return;
     }
 
-    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
     RB_OBJ_WRITE(ice, &ice->value, val);
     ice->ic_cref = vm_get_const_key_cref(reg_ep);
-    if (rb_ractor_shareable_p(val)) ice->flags |= IMEMO_CONST_CACHE_SHAREABLE;
-    RB_OBJ_WRITE(iseq, &ic->entry, ice);
+    if (rb_ractor_shareable_p(val)) {
+        ice->flags |= IMEMO_CONST_CACHE_SHAREABLE;
+    } else {
+        ice->flags &= ~IMEMO_CONST_CACHE_SHAREABLE;
+    }
+
 #ifndef MJIT_HEADER
     // MJIT and YJIT can't be on at the same time, so there is no need to
     // notify YJIT about changes to the IC when running inside MJIT code.
-    unsigned pos = pc - ISEQ_BODY(iseq)->iseq_encoded;
-    rb_yjit_constant_ic_update(iseq, ic, pos);
+    //unsigned pos = pc - ISEQ_BODY(iseq)->iseq_encoded;
+    //rb_yjit_constant_ic_update(iseq, ic, pos);
 #endif
 }
 

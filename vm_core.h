@@ -241,13 +241,15 @@ union ic_serial_entry {
     VALUE data[2];
 };
 
+typedef ID *IDLIST;
+
 // imemo_constcache
 struct iseq_inline_constant_cache_entry {
     VALUE flags;
 
     VALUE value;              // v0
     VALUE _unused1;           // v1
-    VALUE _unused2;           // v2
+    IDLIST segments;              // v2
     const rb_cref_t *ic_cref; // v3
 };
 STATIC_ASSERT(sizeof_iseq_inline_constant_cache_entry,
@@ -1223,8 +1225,6 @@ typedef VALUE CDHASH;
  *   ::FOO      {idNULL, rb_intern("FOO"), 0}
  *   ::FOO::BAR {idNULL, rb_intern("FOO"), rb_intern("BAR"), 0}
  */
-typedef ID *IDLIST;
-
 #ifndef FUNC_FASTCALL
 #define FUNC_FASTCALL(x) x
 #endif

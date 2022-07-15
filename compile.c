@@ -2251,6 +2251,16 @@ static ID *array_to_idlist(VALUE arr) {
     return ids;
 }
 
+static VALUE array_to_inline_cc_entry(VALUE arr) {
+    ID *idlist = array_to_idlist(arr);
+
+    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
+    ice->value = Qundef;
+    ice->segments = idlist;
+
+    return (VALUE)ice;
+}
+
 static VALUE idlist_to_array(IDLIST ids) {
     VALUE arr = rb_ary_new();
     while (*ids) {
@@ -8932,8 +8942,7 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
         VALUE segments;
         if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache &&
                 (segments = collect_const_segments(iseq, node))) {
-            int ic_index = ISEQ_BODY(iseq)->ic_size++;
-            ADD_INSN2(ret, node, opt_getconstant_path, array_to_idlist(segments), INT2FIX(ic_index));
+            ADD_INSN1(ret, node, opt_getconstant_path, array_to_inline_cc_entry(segments));
             RB_OBJ_WRITTEN(iseq, Qundef, segments);
         } else {
             /* constant */
@@ -8973,9 +8982,8 @@ compile_colon3(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
 
     /* add cache insn */
     if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-        int ic_index = ISEQ_BODY(iseq)->ic_size++;
         VALUE segments = rb_ary_new_from_args(2, Qnil, ID2SYM(node->nd_mid));
-        ADD_INSN2(ret, node, opt_getconstant_path, array_to_idlist(segments), INT2FIX(ic_index));
+        ADD_INSN1(ret, node, opt_getconstant_path, array_to_inline_cc_entry(segments));
         RB_OBJ_WRITTEN(iseq, Qundef, segments);
     } else {
         ADD_INSN1(ret, node, putobject, rb_cObject);
@@ -9482,9 +9490,8 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	debugi("nd_vid", node->nd_vid);
 
 	if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	    int ic_index = body->ic_size++;
             VALUE segments = rb_ary_new_from_args(1, ID2SYM(node->nd_vid));
-            ADD_INSN2(ret, node, opt_getconstant_path, array_to_idlist(segments), INT2FIX(ic_index));
+            ADD_INSN1(ret, node, opt_getconstant_path, array_to_inline_cc_entry(segments));
 	}
 	else {
 	    ADD_INSN(ret, node, putnil);
