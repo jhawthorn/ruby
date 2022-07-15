@@ -2233,7 +2233,8 @@ obj_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
         if (!iv_index_tbl) {
             return;
         }
-        iterate_over_shapes(obj, rb_shape_get_shape(obj), ROBJECT_IVPTR(obj), (int)rb_id_table_size(iv_index_tbl), func, arg);
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+        iterate_over_shapes(obj, shape, ROBJECT_IVPTR(obj), (int)rb_shape_iv_depth(shape), func, arg);
     }
 }
 
