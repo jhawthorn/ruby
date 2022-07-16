@@ -93,7 +93,7 @@ typedef struct rb_classext_struct rb_classext_t;
 #else
 #  define RCLASS_EXT(c) (RCLASS(c)->ptr)
 #endif
-#define RCLASS_IV_TBL(c) (RCLASS_EXT(c)->iv_tbl)
+#define RCLASS_IV_TBL(c) (*RCLASS_IV_TBL_inline(c))
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE
 # define RCLASS_M_TBL(c) (RCLASS_EXT(c)->m_tbl)
@@ -138,6 +138,26 @@ RCLASS_SHAPE_ID(VALUE obj)
     return RCLASS_EXT(obj)->shape_id;
 }
 
+static inline st_table **RCLASS_IV_TBL_inline(VALUE c) {
+    if (RB_TYPE_P(c, T_ICLASS)) {
+        VALUE original_module = RBASIC(c)->klass;
+        if (RB_TYPE_P(original_module, T_MODULE) && RCLASS_EXT(c)->iv_tbl != RCLASS_EXT(original_module)->iv_tbl) {
+            fprintf(stderr, "iv_tables don't match:\n");
+            rb_obj_info_dump(c);
+            fprintf(stderr, "  %p\n", RCLASS_EXT(c)->iv_tbl);
+            rb_obj_info_dump(original_module);
+            fprintf(stderr, "  %p\n", RCLASS_EXT(original_module)->iv_tbl);
+            rb_bug("iv_tables");
+        }
+    }
+    return &(RCLASS_EXT(c)->iv_tbl);
+}
+
+static inline void RCLASS_SET_IV_TBL(VALUE c, st_table *iv_tbl) {
+    if (RB_TYPE_P(c, T_ICLASS)) {
+    }
+    RCLASS_EXT(c)->iv_tbl = iv_tbl;
+}
 
 /* class.c */
 void rb_class_subclass_add(VALUE super, VALUE klass);
