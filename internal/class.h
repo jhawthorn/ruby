@@ -138,7 +138,10 @@ RCLASS_SHAPE_ID(VALUE obj)
     return RCLASS_EXT(obj)->shape_id;
 }
 
+#define RCLASS_IV_TBL_any(c) (RCLASS_EXT(c)->iv_tbl)
+
 static inline st_table **RCLASS_IV_TBL_inline(VALUE c) {
+    RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS));
     if (RB_TYPE_P(c, T_ICLASS)) {
         VALUE original_module = RBASIC(c)->klass;
         if (RB_TYPE_P(original_module, T_MODULE) && RCLASS_EXT(c)->iv_tbl != RCLASS_EXT(original_module)->iv_tbl) {

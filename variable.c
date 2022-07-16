@@ -4083,8 +4083,9 @@ original_module(VALUE c)
 static int
 cvar_lookup_at(VALUE klass, ID id, st_data_t *v)
 {
-    if (!RCLASS_IV_TBL(klass)) return 0;
-    return st_lookup(RCLASS_IV_TBL(klass), (st_data_t)id, v);
+    st_table *tbl = RCLASS_IV_TBL_any(klass);
+    if (!tbl) return 0;
+    return st_lookup(tbl, (st_data_t)id, v);
 }
 
 static VALUE
@@ -4157,7 +4158,7 @@ find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
 static void
 check_for_cvar_table(VALUE subclass, VALUE key)
 {
-    st_table *tbl = RCLASS_IV_TBL(subclass);
+    st_table *tbl = RCLASS_IV_TBL_any(subclass);
 
     if (tbl && st_lookup(tbl, key, NULL)) {
         RB_DEBUG_COUNTER_INC(cvar_class_invalidate);
