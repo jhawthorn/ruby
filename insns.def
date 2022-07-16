@@ -255,12 +255,11 @@ setclassvariable
 
 DEFINE_INSN
 opt_getconstant_path
-(VALUE ic_entry_val)
+(ICE ice)
 ()
 (VALUE val)
 // attr bool leaf = false; /* may autoload */
 {
-    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)ic_entry_val;
     if (ice->value != Qundef && vm_ic_hit_p(ice, GET_EP())) {
         val = ice->value;
     } else {

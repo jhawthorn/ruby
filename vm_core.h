@@ -1205,6 +1205,7 @@ enum vm_svar_index {
 };
 
 /* inline cache */
+typedef struct iseq_inline_constant_cache_entry *ICE;
 typedef struct iseq_inline_constant_cache *IC;
 typedef struct iseq_inline_iv_cache_entry *IVC;
 typedef struct iseq_inline_cvar_cache_entry *ICVARC;

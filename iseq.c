@@ -2188,6 +2188,9 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	ret = rb_inspect(ID2SYM(op));
 	break;
 
+      case TS_ICE:		/* ICE (inline constant cache entry) */
+        rb_bug("here!");
+        break;
       case TS_IDLIST:		/* IDLIST */
         {
             IDLIST ids = (IDLIST)op;
@@ -3115,6 +3118,9 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 	      case TS_ID:
 		rb_ary_push(ary, ID2SYM(*seq));
 		break;
+              case TS_ICE:		/* ICE (inline constant cache entry) */
+                rb_bug("here!");
+                break;
 	      case TS_IDLIST:
                 {
                     VALUE list = rb_ary_new();
