@@ -39,6 +39,7 @@ struct rb_cvar_class_tbl_entry {
 
 struct rb_classext_struct {
     struct st_table *iv_tbl;
+
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE /* otherwise m_tbl is in struct RClass */
     struct rb_id_table *m_tbl;
 #endif

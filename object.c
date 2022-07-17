@@ -4152,6 +4152,8 @@ InitVM_Object(void)
 {
     Init_class_hierarchy();
 
+    verify_class_iv_matches_shape(rb_cObject);
+
 #if 0
     // teach RDoc about these classes
     rb_cBasicObject = rb_define_class("BasicObject", Qnil);
@@ -4475,6 +4477,8 @@ InitVM_Object(void)
     rb_define_method(rb_cFalseClass, "===", case_equal, 1);
     rb_undef_alloc_func(rb_cFalseClass);
     rb_undef_method(CLASS_OF(rb_cFalseClass), "new");
+
+    verify_class_iv_matches_shape(rb_cObject);
 }
 
 #include "kernel.rbinc"

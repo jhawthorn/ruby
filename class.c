@@ -1077,7 +1077,7 @@ rb_include_class_new(VALUE module, VALUE super)
 
     RCLASS_SET_IV_TBL(klass, RCLASS_IV_TBL(module));
     //RCLASS_IV_TBL(klass) = RCLASS_IV_TBL(module);
-    //RCLASS_IV_TBL(klass) = 0x55555555;
+    //RCLASS_IV_TBL(klass) = (void *)0x55555555;
     //RCLASS_IV_TBL(klass) = 0;
 
     RCLASS_CVC_TBL(klass) = RCLASS_CVC_TBL(module);

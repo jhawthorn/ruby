@@ -128,4 +128,6 @@ ROBJ_TRANSIENT_UNSET(VALUE obj)
 #endif
 }
 
+void verify_class_iv_matches_shape(VALUE obj);
+
 #endif /* INTERNAL_VARIABLE_H */
