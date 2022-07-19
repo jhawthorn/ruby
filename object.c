@@ -812,6 +812,10 @@ rb_obj_is_kind_of(VALUE obj, VALUE c)
 {
     VALUE cl = CLASS_OF(obj);
 
+    if (!RB_TYPE_P(cl, T_CLASS)) {
+        fprintf(stderr, "WTF!");
+        rb_obj_info_dump(obj);
+    }
     RUBY_ASSERT(RB_TYPE_P(cl, T_CLASS));
 
     // Fastest path: If the object's class is an exact match we know `c` is a

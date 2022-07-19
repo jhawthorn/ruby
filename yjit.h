@@ -50,7 +50,7 @@ void rb_yjit_iseq_mark(void *payload);
 void rb_yjit_iseq_update_references(void *payload);
 void rb_yjit_iseq_free(void *payload);
 void rb_yjit_before_ractor_spawn(void);
-void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic, unsigned insn_idx);
+void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, ICE ice, unsigned insn_idx);
 void rb_yjit_tracing_invalidate_all(void);
 
 #else
