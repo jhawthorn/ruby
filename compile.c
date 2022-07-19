@@ -10432,7 +10432,11 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
                         argv[j] = (VALUE)array_to_idlist(op);
 			break;
                       case TS_ICE: /* inline cache: constant entry */
-                        rb_bug("here1!");
+                        {
+                            VALUE v = (VALUE)array_to_inline_cc_entry(op);
+                            argv[j] = v;
+                            RB_OBJ_WRITTEN(iseq, Qundef, v);
+                        }
                         break;
 		      case TS_CDHASH:
 			{
@@ -11398,6 +11402,9 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     VALUE op = ibf_load_small_value(load, &reading_pos);
                     VALUE ary = ibf_load_object(load, op);
                     VALUE v = array_to_inline_cc_entry(ary);
+
+                    pinned_list_store(load->current_buffer->obj_list, (long)op, v);
+
                     code[code_index] = v;
                     RB_OBJ_WRITTEN(iseqv, Qundef, v);
                     ISEQ_MBITS_SET(mark_offset_bits, code_index);
