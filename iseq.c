@@ -2189,8 +2189,14 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	break;
 
       case TS_ICE:		/* ICE (inline constant cache entry) */
-        rb_bug("here!");
-        break;
+        {
+            ID *ids = ((ICE)op)->segments;
+            ret = rb_str_new2(rb_id2name(ids[0]));
+            for (int i = 1; ids[i]; i++) {
+                rb_str_catf(ret, "::%s", rb_id2name(ids[i]));
+            }
+            break;
+        }
       case TS_IDLIST:		/* IDLIST */
         {
             IDLIST ids = (IDLIST)op;
