@@ -11396,8 +11396,13 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
               case TS_ICE: /* inline cache: constant entry */
                 {
                     VALUE op = ibf_load_small_value(load, &reading_pos);
-                    VALUE v = ibf_load_object(load, op);
-                    code[code_index] = (VALUE)array_to_inline_cc_entry(v);
+                    VALUE ary = ibf_load_object(load, op);
+                    VALUE v = array_to_inline_cc_entry(ary);
+                    code[code_index] = v;
+                    RB_OBJ_WRITTEN(iseqv, Qundef, v);
+                    ISEQ_MBITS_SET(mark_offset_bits, code_index);
+                    FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
+                    needs_bitmap = true;
                 }
                 break;
               case TS_FUNCPTR:
