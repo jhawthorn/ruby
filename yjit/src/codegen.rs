@@ -5522,9 +5522,9 @@ fn gen_opt_getconstant_path(
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
-    let const_cache_as_value = jit_get_arg(jit, 1);
-    let ic: *const iseq_inline_constant_cache = const_cache_as_value.as_ptr();
-    let idlist: *const ID = jit_get_arg(jit, 0).as_ptr();
+    let const_cache_as_value = jit_get_arg(jit, 0);
+    let ic: *const iseq_inline_constant_cache_entry = const_cache_as_value.as_ptr();
+    let idlist: *const ID = ic->segments;
 
     // See vm_ic_hit_p(). The same conditions are checked in yjit_constant_ic_update().
     let ice = unsafe { (*ic).entry };

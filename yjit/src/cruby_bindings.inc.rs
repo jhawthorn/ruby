@@ -545,12 +545,13 @@ extern "C" {
     pub fn rb_callable_method_entry(klass: VALUE, id: ID) -> *const rb_callable_method_entry_t;
 }
 pub type rb_num_t = ::std::os::raw::c_ulong;
+pub type IDLIST = *mut ID;
 #[repr(C)]
 pub struct iseq_inline_constant_cache_entry {
     pub flags: VALUE,
     pub value: VALUE,
     pub _unused1: VALUE,
-    pub _unused2: VALUE,
+    pub segments: IDLIST,
     pub ic_cref: *const rb_cref_t,
 }
 #[repr(C)]
