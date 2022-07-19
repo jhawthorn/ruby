@@ -102,13 +102,13 @@ compile_data_free(struct iseq_compile_data *compile_data)
     }
 }
 
-static void remove_from_constant_cache(ID id, st_data_t ic) {
+static void remove_from_constant_cache(ID id, st_data_t ice) {
     rb_vm_t *vm = GET_VM();
     VALUE lookup_result;
 
     if (rb_id_table_lookup(vm->constant_cache, id, &lookup_result)) {
         st_table *ics = (st_table *)lookup_result;
-        st_delete(ics, &ic, NULL);
+        st_delete(ics, &ice, NULL);
 
         if (ics->num_entries == 0) {
             rb_id_table_delete(vm->constant_cache, id);
@@ -117,40 +117,18 @@ static void remove_from_constant_cache(ID id, st_data_t ic) {
     }
 }
 
-// This iterator is used to walk through the instructions and clean any
-// references to ICs that are contained within this ISEQ out of the VM's
-// constant cache table. It passes around a struct that holds the current IC
-// we're looking for, which can be NULL (if we haven't hit an opt_getinlinecache
-// instruction yet) or set to an IC (if we've hit an opt_getinlinecache and
-// haven't yet hit the associated opt_setinlinecache).
-static bool
-iseq_clear_ic_references_i(VALUE *code, VALUE insn, size_t index, void *data)
+void
+rb_free_constcache(ICE ice)
 {
-    switch (insn) {
-      case BIN(opt_getconstant_path): {
-        IDLIST segments = (IDLIST)code[index + 1];
-        st_data_t ic = code[index + 2];
-        for (int i = 0; segments[i]; i++) {
-            ID id = segments[i];
-            if (id == idNULL) continue;
-            remove_from_constant_cache(id, ic);
-        }
-        xfree(segments);
-        return true;
-      }
-      default:
-        return true;
+    // For each segment of the constant path and remove our constant cache from the
+    // global invalidation table.
+    ID *segments = ice->segments;
+    for (int i = 0; segments[i]; i++) {
+        ID id = segments[i];
+        if (id == idNULL) continue;
+        remove_from_constant_cache(id, (st_data_t)ice);
     }
-}
-
-// When an ISEQ is being freed, all of its associated ICs are going to go away
-// as well. Because of this, we need to walk through the ISEQ, find any
-// opt_getinlinecache calls, and clear out the VM's constant cache of associated
-// ICs.
-static void
-iseq_clear_ic_references(const rb_iseq_t *iseq)
-{
-    //rb_iseq_each(iseq, 0, iseq_clear_ic_references_i, NULL);
+    xfree(segments);
 }
 
 void
@@ -159,7 +137,6 @@ rb_iseq_free(const rb_iseq_t *iseq)
     RUBY_FREE_ENTER("iseq");
 
     if (iseq && ISEQ_BODY(iseq)) {
-        iseq_clear_ic_references(iseq);
         struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
 	mjit_free_iseq(iseq); /* Notify MJIT */
 #if YJIT_BUILD
