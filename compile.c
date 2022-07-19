@@ -2484,6 +2484,18 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                             generated_iseq[code_index + 1 + j] = (VALUE)cd;
                             break;
                         }
+                      case TS_ICE: /* inline cache: constant entry */
+                        {
+                            VALUE ice = operands[j];
+                            generated_iseq[code_index + 1 + j] = ice;
+
+                            ISEQ_MBITS_SET(mark_offset_bits, code_index + 1 + j);
+                            RB_OBJ_WRITTEN(iseq, Qundef, ice);
+                            FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
+                            needs_bitmap = true;
+
+                            break;
+                        }
 		      case TS_ID: /* ID */
 			generated_iseq[code_index + 1 + j] = SYM2ID(operands[j]);
 			break;
@@ -8942,8 +8954,9 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
         VALUE segments;
         if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache &&
                 (segments = collect_const_segments(iseq, node))) {
-            ADD_INSN1(ret, node, opt_getconstant_path, array_to_inline_cc_entry(segments));
-            RB_OBJ_WRITTEN(iseq, Qundef, segments);
+            VALUE ice = array_to_inline_cc_entry(segments);
+            ADD_INSN1(ret, node, opt_getconstant_path, ice);
+            RB_OBJ_WRITTEN(iseq, Qundef, ice);
         } else {
             /* constant */
             DECL_ANCHOR(pref);
@@ -8983,8 +8996,9 @@ compile_colon3(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
     /* add cache insn */
     if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
         VALUE segments = rb_ary_new_from_args(2, Qnil, ID2SYM(node->nd_mid));
-        ADD_INSN1(ret, node, opt_getconstant_path, array_to_inline_cc_entry(segments));
-        RB_OBJ_WRITTEN(iseq, Qundef, segments);
+        VALUE ice = array_to_inline_cc_entry(segments);
+        ADD_INSN1(ret, node, opt_getconstant_path, ice);
+        RB_OBJ_WRITTEN(iseq, Qundef, ice);
     } else {
         ADD_INSN1(ret, node, putobject, rb_cObject);
         ADD_INSN1(ret, node, putobject, Qtrue);
@@ -9491,7 +9505,9 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 
 	if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
             VALUE segments = rb_ary_new_from_args(1, ID2SYM(node->nd_vid));
-            ADD_INSN1(ret, node, opt_getconstant_path, array_to_inline_cc_entry(segments));
+            VALUE ice = array_to_inline_cc_entry(segments);
+            ADD_INSN1(ret, node, opt_getconstant_path, ice);
+            RB_OBJ_WRITTEN(iseq, Qundef, ice);
 	}
 	else {
 	    ADD_INSN(ret, node, putnil);
@@ -9988,6 +10004,9 @@ insn_data_to_s_detail(INSN *iobj)
                     }
                 }
 		break;
+              case TS_ICE: /* inline cache: constant entry */
+                rb_bug("here0!");
+                break;
 	      case TS_IC:	/* inline cache */
 	      case TS_IVC:	/* inline ivar cache */
 	      case TS_ICVARC:   /* inline cvar cache */
@@ -10412,6 +10431,9 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
 		      case TS_IDLIST:
                         argv[j] = (VALUE)array_to_idlist(op);
 			break;
+                      case TS_ICE: /* inline cache: constant entry */
+                        rb_bug("here1!");
+                        break;
 		      case TS_CDHASH:
 			{
 			    int i;
@@ -10585,6 +10607,7 @@ rb_iseq_mark_insn_storage(struct iseq_compile_data_storage *storage)
                       case TS_CDHASH:
                       case TS_ISEQ:
                       case TS_VALUE:
+                      case TS_ICE:
                       case TS_CALLDATA: // ci is stored.
                         {
                             VALUE op = OPERAND_AT(iobj, j);
@@ -11236,6 +11259,9 @@ ibf_dump_code(struct ibf_dump *dump, const rb_iseq_t *iseq)
               case TS_IDLIST:
                 wv = ibf_dump_object(dump, idlist_to_array((IDLIST)op));
                 break;
+              case TS_ICE: /* inline cache: constant entry */
+                wv = ibf_dump_object(dump, idlist_to_array(((ICE)op)->segments));
+                break;
               case TS_FUNCPTR:
                 rb_raise(rb_eRuntimeError, "TS_FUNCPTR is not supported");
                 goto skip_wv;
@@ -11365,6 +11391,13 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     VALUE op = ibf_load_small_value(load, &reading_pos);
                     VALUE v = ibf_load_object(load, op);
                     code[code_index] = (VALUE)array_to_idlist(v);
+                }
+                break;
+              case TS_ICE: /* inline cache: constant entry */
+                {
+                    VALUE op = ibf_load_small_value(load, &reading_pos);
+                    VALUE v = ibf_load_object(load, op);
+                    code[code_index] = (VALUE)array_to_inline_cc_entry(v);
                 }
                 break;
               case TS_FUNCPTR:
