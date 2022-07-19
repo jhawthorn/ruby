@@ -260,7 +260,7 @@ opt_getconstant_path
 (VALUE val)
 // attr bool leaf = false; /* may autoload */
 {
-    if (ice->value != Qundef && vm_ic_hit_p(ice, GET_EP())) {
+    if (LIKELY(vm_ic_hit_p(ice, GET_EP()))) {
         val = ice->value;
     } else {
         ID *segments = ice->segments;

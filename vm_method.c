@@ -130,7 +130,7 @@ static int
 rb_clear_constant_cache_for_id_i(st_data_t ice, st_data_t idx, st_data_t arg)
 {
     RUBY_ASSERT(IMEMO_TYPE_P(ice, imemo_constcache));
-    ((struct iseq_inline_constant_cache_entry *) ice)->value = Qundef;
+    clear_constant_cache((ICE)ice);
     return ST_CONTINUE;
 }
 

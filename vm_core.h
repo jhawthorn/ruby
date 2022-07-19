@@ -256,6 +256,25 @@ STATIC_ASSERT(sizeof_iseq_inline_constant_cache_entry,
               (offsetof(struct iseq_inline_constant_cache_entry, ic_cref) +
 	       sizeof(const rb_cref_t *)) <= sizeof(struct RObject));
 
+#define IMEMO_CONST_CACHE_UNDEFINED IMEMO_FL_USER0
+#define IMEMO_CONST_CACHE_UNSHAREABLE IMEMO_FL_USER1
+#define IMEMO_CONST_CACHE_DYNAMIC_CREF IMEMO_FL_USER2
+#define IMEMO_CONST_CACHE_DYNAMIC_FLAGS (IMEMO_CONST_CACHE_UNDEFINED | IMEMO_CONST_CACHE_UNSHAREABLE | IMEMO_CONST_CACHE_DYNAMIC_CREF)
+
+static inline void
+clear_constant_cache(struct iseq_inline_constant_cache_entry *ice) {
+    ice->value = Qundef;
+    ice->flags |= IMEMO_CONST_CACHE_UNDEFINED;
+}
+
+static inline struct iseq_inline_constant_cache_entry *
+rb_constcache_new(ID *segments) {
+    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
+    clear_constant_cache(ice);
+    ice->segments = segments;
+    return ice;
+}
+
 struct iseq_inline_constant_cache {
     struct iseq_inline_constant_cache_entry *entry;
 };

@@ -2253,12 +2253,7 @@ static ID *array_to_idlist(VALUE arr) {
 
 static VALUE array_to_inline_cc_entry(VALUE arr) {
     ID *idlist = array_to_idlist(arr);
-
-    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
-    ice->value = Qundef;
-    ice->segments = idlist;
-
-    return (VALUE)ice;
+    return rb_constcache_new(idlist);
 }
 
 static VALUE idlist_to_array(IDLIST ids) {

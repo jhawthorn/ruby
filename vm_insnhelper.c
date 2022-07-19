@@ -4955,8 +4955,6 @@ vm_opt_newarray_min(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr)
 
 #undef id_cmp
 
-#define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
-
 static void
 vm_track_constant_cache(ID id, VALUE ice)
 {
@@ -4993,13 +4991,18 @@ vm_ice_track_const_chain(rb_control_frame_t *cfp, VALUE ice, IDLIST segments)
 static inline bool
 vm_inlined_ic_hit_p(VALUE flags, VALUE value, const rb_cref_t *ic_cref, const VALUE *reg_ep)
 {
-    if ((flags & IMEMO_CONST_CACHE_SHAREABLE) || rb_ractor_main_p()) {
-        VM_ASSERT((flags & IMEMO_CONST_CACHE_SHAREABLE) ? rb_ractor_shareable_p(value) : true);
+    if (flags & IMEMO_CONST_CACHE_UNDEFINED)
+        return false;
 
-        return (ic_cref == NULL || // no need to check CREF
-                ic_cref == vm_get_cref(reg_ep));
-    }
-    return false;
+    if (((flags & IMEMO_CONST_CACHE_UNSHAREABLE)) && !rb_ractor_main_p())
+        return false;
+    VM_ASSERT((flags & IMEMO_CONST_CACHE_UNSHAREABLE) || rb_ractor_shareable_p(value));
+
+    if ((flags & IMEMO_CONST_CACHE_DYNAMIC_CREF) && // no need to check CREF
+                ic_cref != vm_get_cref(reg_ep))
+        return false;
+
+    return true;
 }
 
 static bool
@@ -5023,16 +5026,22 @@ vm_ice_update(const rb_iseq_t *iseq, struct iseq_inline_constant_cache_entry *ic
 
     if (ruby_vm_const_missing_count > 0) {
         ruby_vm_const_missing_count = 0;
-        ice->value = Qundef;
+        clear_constant_cache(ice);
         return;
     }
 
+    // clear existing flags,
+    ice->flags &= ~IMEMO_CONST_CACHE_DYNAMIC_FLAGS;
+
     RB_OBJ_WRITE(ice, &ice->value, val);
     ice->ic_cref = vm_get_const_key_cref(reg_ep);
-    if (rb_ractor_shareable_p(val)) {
-        ice->flags |= IMEMO_CONST_CACHE_SHAREABLE;
-    } else {
-        ice->flags &= ~IMEMO_CONST_CACHE_SHAREABLE;
+
+    if (ice->ic_cref) {
+        ice->flags |= IMEMO_CONST_CACHE_DYNAMIC_CREF;
+    }
+
+    if (!rb_ractor_shareable_p(val)) {
+        ice->flags |= IMEMO_CONST_CACHE_UNSHAREABLE;
     }
 
 #ifndef MJIT_HEADER
