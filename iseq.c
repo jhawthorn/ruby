@@ -3125,7 +3125,14 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 		rb_ary_push(ary, ID2SYM(*seq));
 		break;
               case TS_ICE:		/* ICE (inline constant cache entry) */
-                rb_bug("here!");
+                {
+                    VALUE list = rb_ary_new();
+                    IDLIST ids = ((ICE)*seq)->segments;
+                    for (int i = 0; ids[i]; i++) {
+                        rb_ary_push(list, ID2SYM(ids[i]));
+                    }
+                    rb_ary_push(ary, list);
+                }
                 break;
 	      case TS_IDLIST:
                 {
