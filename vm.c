@@ -2601,11 +2601,20 @@ rb_vm_call_cfunc(VALUE recv, VALUE (*func)(VALUE), VALUE arg,
 
 /* vm */
 
+static enum rb_id_table_iterator_result
+vm_constant_cache_update_references(VALUE ics, void *data) {
+    // Update refs of both keys and values in the second-level tables
+    rb_gc_update_tbl_refs((st_table *)ics);
+    return ID_TABLE_CONTINUE;
+}
+
 void
 rb_vm_update_references(void *ptr)
 {
     if (ptr) {
         rb_vm_t *vm = ptr;
+
+        rb_id_table_foreach_values(vm->constant_cache, vm_constant_cache_update_references, 0);
 
         rb_gc_update_tbl_refs(vm->frozen_strings);
         vm->mark_object_ary = rb_gc_location(vm->mark_object_ary);

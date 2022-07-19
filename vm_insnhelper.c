@@ -5019,6 +5019,8 @@ rb_vm_ic_hit_p(IC ic, const VALUE *reg_ep)
 static void
 vm_ice_update(const rb_iseq_t *iseq, struct iseq_inline_constant_cache_entry *ice, VALUE val, const VALUE *reg_ep, const VALUE *pc)
 {
+    VM_ASSERT(IMEMO_TYPE_P(ice, imemo_constcache));
+
     if (ruby_vm_const_missing_count > 0) {
         ruby_vm_const_missing_count = 0;
         ice->value = Qundef;
