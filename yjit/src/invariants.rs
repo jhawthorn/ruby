@@ -433,13 +433,13 @@ pub fn block_assumptions_free(blockref: &BlockRef) {
 /// Invalidate the block for the matching opt_getinlinecache so it could regenerate code
 /// using the new value in the constant cache.
 #[no_mangle]
-pub extern "C" fn rb_yjit_constant_ic_update(iseq: *const rb_iseq_t, ic: IC, insn_idx: u32) {
+pub extern "C" fn rb_yjit_constant_ic_update(iseq: *const rb_iseq_t, ice: *const iseq_inline_constant_cache_entry, insn_idx: u32) {
     // If YJIT isn't enabled, do nothing
     if !yjit_enabled_p() {
         return;
     }
 
-    if !unsafe { (*(*ic).entry).ic_cref }.is_null() || unsafe { rb_yjit_multi_ractor_p() } {
+    if !unsafe { (*ice).ic_cref }.is_null() || unsafe { rb_yjit_multi_ractor_p() } {
         // We can't generate code in these situations, so no need to invalidate.
         // See gen_opt_getinlinecache.
         return;
@@ -464,22 +464,12 @@ pub extern "C" fn rb_yjit_constant_ic_update(iseq: *const rb_iseq_t, ic: IC, ins
             YARVINSN_opt_getconstant_path.try_into().unwrap()
         );
 
-        // Find the matching opt_getinlinecache and invalidate all the blocks there
-        // RUBY_ASSERT(insn_op_type(BIN(opt_getinlinecache), 1) == TS_IC);
-
-        let ic_pc = unsafe { code.add(insn_idx.as_usize() + 2) };
-        let ic_operand: IC = unsafe { ic_pc.read() }.as_mut_ptr();
-
-        if ic == ic_operand {
-            for block in take_version_list(BlockId {
-                iseq,
-                idx: insn_idx,
-            }) {
-                invalidate_block_version(&block);
-                incr_counter!(invalidate_constant_ic_fill);
-            }
-        } else {
-            panic!("ic->get_insn_index not set properly");
+        for block in take_version_list(BlockId {
+            iseq,
+            idx: insn_idx,
+        }) {
+            invalidate_block_version(&block);
+            incr_counter!(invalidate_constant_ic_fill);
         }
     });
 }

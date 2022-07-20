@@ -73,7 +73,7 @@ static inline void rb_yjit_iseq_mark(void *payload) {}
 static inline void rb_yjit_iseq_update_references(void *payload) {}
 static inline void rb_yjit_iseq_free(void *payload) {}
 static inline void rb_yjit_before_ractor_spawn(void) {}
-static inline void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic, unsigned insn_idx) {}
+static inline void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, ICE ic, unsigned insn_idx) {}
 static inline void rb_yjit_tracing_invalidate_all(void) {}
 
 #endif // #if YJIT_BUILD
