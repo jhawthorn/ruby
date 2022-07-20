@@ -5048,6 +5048,7 @@ vm_ice_update(const rb_iseq_t *iseq, struct iseq_inline_constant_cache_entry *ic
     // MJIT and YJIT can't be on at the same time, so there is no need to
     // notify YJIT about changes to the IC when running inside MJIT code.
     unsigned pos = pc - ISEQ_BODY(iseq)->iseq_encoded;
+    VM_ASSERT(pos < ISEQ_BODY(iseq)->iseq_size);
     rb_yjit_constant_ic_update(iseq, ice, pos);
 #endif
 }

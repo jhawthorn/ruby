@@ -266,7 +266,7 @@ opt_getconstant_path
         ID *segments = ice->segments;
         val = vm_get_ev_const_chain(ec, segments);
         vm_ice_track_const_chain(GET_CFP(), ice, segments);
-        vm_ice_update(GET_ISEQ(), ice, val, GET_EP(), GET_PC() - 3);
+        vm_ice_update(GET_ISEQ(), ice, val, GET_EP(), GET_PC() - 2);
     }
 }
 
