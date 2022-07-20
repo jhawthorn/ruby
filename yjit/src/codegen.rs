@@ -5527,7 +5527,7 @@ fn gen_opt_getconstant_path(
     let idlist: *const ID = unsafe { (*ice).segments };
 
     // See vm_ic_hit_p(). The same conditions are checked in yjit_constant_ic_update().
-    if ice.is_null() {
+    if unsafe { rb_yjit_constcache_undefined(const_cache_as_value) } {
         // In this case, leave a block that unconditionally side exits
         // for the interpreter to invalidate.
         return CantCompile;
@@ -5539,7 +5539,22 @@ fn gen_opt_getconstant_path(
 
     if !unsafe { (*ice).ic_cref }.is_null() {
         // Cache is keyed on a certain lexical scope. Use the interpreter's cache.
-        return CantCompile
+        let side_exit = get_side_exit(jit, ocb, ctx);
+
+        // Call function to verify the cache. It doesn't allocate or call methods.
+        mov(cb, C_ARG_REGS[0], const_ptr_opnd(ice as *const u8));
+        mov(cb, C_ARG_REGS[1], mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_EP));
+        call_ptr(cb, REG0, rb_vm_ic_hit_p as *const u8);
+
+        // Check the result. _Bool is one byte in SysV.
+        test(cb, AL, AL);
+        jz_ptr(cb, counted_exit!(ocb, side_exit, opt_getinlinecache_miss));
+
+        // Push ic->entry->value
+        mov(cb, REG0, const_ptr_opnd(ice as *mut u8));
+        let stack_top = ctx.stack_push(Type::Unknown);
+        mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_ICE_VALUE));
+        mov(cb, stack_top, REG0);
     } else {
         // Optimize for single ractor mode.
         // FIXME: This leaks when st_insert raises NoMemoryError

@@ -806,6 +806,13 @@ rb_IMEMO_TYPE_P(VALUE imemo, enum imemo_type imemo_type)
     return IMEMO_TYPE_P(imemo, imemo_type);
 }
 
+bool
+rb_yjit_constcache_undefined(VALUE imemo)
+{
+    RUBY_ASSERT(IMEMO_TYPE_P(imemo, imemo_constcache));
+    return FL_TEST_RAW(imemo, IMEMO_CONST_CACHE_UNDEFINED);
+}
+
 void
 rb_assert_cme_handle(VALUE handle)
 {

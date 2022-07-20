@@ -1048,6 +1048,9 @@ extern "C" {
     pub fn rb_IMEMO_TYPE_P(imemo: VALUE, imemo_type: imemo_type) -> ::std::os::raw::c_int;
 }
 extern "C" {
+    pub fn rb_yjit_constcache_undefined(imemo: VALUE) -> bool;
+}
+extern "C" {
     pub fn rb_assert_cme_handle(handle: VALUE);
 }
 pub type iseq_callback = ::std::option::Option<unsafe extern "C" fn(arg1: *const rb_iseq_t)>;
