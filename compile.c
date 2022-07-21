@@ -2460,8 +2460,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			    }
 			    break;
 			}
-                      /* [ TS_IVC | TS_ICVARC | TS_ISE | TS_IC ] */
-                      case TS_IC: /* inline cache: constants */
+                      /* [ TS_IVC | TS_ICVARC | TS_ISE ] */
                       case TS_ISE: /* inline storage entry: `once` insn */
                       case TS_ICVARC: /* inline cvar cache */
 		      case TS_IVC: /* inline ivar cache */
@@ -9997,7 +9996,6 @@ insn_data_to_s_detail(INSN *iobj)
               case TS_ICE: /* inline cache: constant entry */
                 rb_bug("here0!");
                 break;
-	      case TS_IC:	/* inline cache */
 	      case TS_IVC:	/* inline ivar cache */
 	      case TS_ICVARC:   /* inline cvar cache */
 	      case TS_ISE:	/* inline storage entry */
@@ -10394,12 +10392,6 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
 			argv[j] = op;
                         if (NUM2UINT(op) >= ISEQ_BODY(iseq)->ise_size) {
                             ISEQ_BODY(iseq)->ise_size = NUM2INT(op) + 1;
-                        }
-                        break;
-		      case TS_IC:
-			argv[j] = op;
-                        if (NUM2UINT(op) >= ISEQ_BODY(iseq)->ic_size) {
-                            ISEQ_BODY(iseq)->ic_size = NUM2INT(op) + 1;
                         }
                         break;
                       case TS_IVC:  /* inline ivar cache */
@@ -11228,7 +11220,6 @@ ibf_dump_code(struct ibf_dump *dump, const rb_iseq_t *iseq)
               case TS_ISEQ:
                 wv = (VALUE)ibf_dump_iseq(dump, (const rb_iseq_t *)op);
                 break;
-              case TS_IC:
               case TS_ISE:
               case TS_IVC:
               case TS_ICVARC:
@@ -11345,7 +11336,6 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     }
                     break;
                 }
-              case TS_IC:
               case TS_ISE:
               case TS_ICVARC:
               case TS_IVC:
@@ -11896,7 +11886,6 @@ ibf_dump_iseq_each(struct ibf_dump *dump, const rb_iseq_t *iseq)
     ibf_dump_write_small_value(dump, body->ivc_size);
     ibf_dump_write_small_value(dump, body->icvarc_size);
     ibf_dump_write_small_value(dump, body->ise_size);
-    ibf_dump_write_small_value(dump, body->ic_size);
     ibf_dump_write_small_value(dump, body->ci_size);
     ibf_dump_write_small_value(dump, body->stack_max);
     ibf_dump_write_small_value(dump, body->catch_except_p);
@@ -12008,7 +11997,6 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     const unsigned int ivc_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
     const unsigned int icvarc_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
     const unsigned int ise_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
-    const unsigned int ic_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
 
     const unsigned int ci_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
     const unsigned int stack_max = (unsigned int)ibf_load_small_value(load, &reading_pos);
@@ -12057,7 +12045,6 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     load_body->ivc_size             = ivc_size;
     load_body->icvarc_size          = icvarc_size;
     load_body->ise_size             = ise_size;
-    load_body->ic_size              = ic_size;
     load_body->is_entries           = ZALLOC_N(union iseq_inline_storage_entry, ISEQ_IS_SIZE(load_body));
                                       ibf_load_ci_entries(load, ci_entries_offset, ci_size, &load_body->call_data);
     load_body->outer_variables      = ibf_load_outer_variables(load, outer_variables_offset);

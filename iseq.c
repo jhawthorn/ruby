@@ -274,17 +274,6 @@ rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
                 }
             }
         }
-
-        // IC Entries
-        for (unsigned int i = 0; i < body->ic_size; i++, is_entries++) {
-            IC ic = (IC)is_entries;
-            if (ic->entry) {
-                VALUE nv = func(data, (VALUE)ic->entry);
-                if ((VALUE)ic->entry != nv) {
-                    ic->entry = (void *)nv;
-                }
-            }
-        }
     }
 
     // Embedded VALUEs
@@ -2152,7 +2141,6 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	    break;
 	}
 
-      case TS_IC:
       case TS_IVC:
       case TS_ICVARC:
       case TS_ISE:
@@ -2988,7 +2976,6 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 		    }
 		}
 		break;
-	      case TS_IC:
               case TS_IVC:
               case TS_ICVARC:
 	      case TS_ISE:

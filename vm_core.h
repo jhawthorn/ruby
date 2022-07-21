@@ -273,10 +273,6 @@ rb_constcache_new(ID *segments) {
     return ice;
 }
 
-struct iseq_inline_constant_cache {
-    struct iseq_inline_constant_cache_entry *entry;
-};
-
 struct iseq_inline_iv_cache_entry {
     struct rb_iv_index_tbl_entry *entry;
 };
@@ -290,7 +286,6 @@ union iseq_inline_storage_entry {
 	struct rb_thread_struct *running_thread;
 	VALUE value;
     } once;
-    struct iseq_inline_constant_cache ic_cache;
     struct iseq_inline_iv_cache_entry iv_cache;
 };
 
@@ -353,7 +348,7 @@ struct rb_mjit_unit;
 
 typedef uintptr_t iseq_bits_t;
 
-#define ISEQ_IS_SIZE(body) (body->ic_size + body->ivc_size + body->ise_size + body->icvarc_size)
+#define ISEQ_IS_SIZE(body) (body->ivc_size + body->ise_size + body->icvarc_size)
 
 struct rb_iseq_constant_body {
     enum iseq_type {
@@ -464,7 +459,7 @@ struct rb_iseq_constant_body {
     const struct rb_iseq_struct *parent_iseq;
     struct rb_iseq_struct *local_iseq; /* local_iseq->flip_cnt can be modified */
 
-    union iseq_inline_storage_entry *is_entries; /* [ TS_IVC | TS_ICVARC | TS_ISE | TS_IC ] */
+    union iseq_inline_storage_entry *is_entries; /* [ TS_IVC | TS_ICVARC | TS_ISE ] */
     struct rb_call_data *call_data; //struct rb_call_data calls[ci_size];
 
     struct {
@@ -476,7 +471,6 @@ struct rb_iseq_constant_body {
     } variable;
 
     unsigned int local_table_size;
-    unsigned int ic_size;     // Number of IC caches
     unsigned int ise_size;    // Number of ISE caches
     unsigned int ivc_size;    // Number of IVC caches
     unsigned int icvarc_size; // Number of ICVARC caches
@@ -1224,7 +1218,6 @@ enum vm_svar_index {
 
 /* inline cache */
 typedef struct iseq_inline_constant_cache_entry *ICE;
-typedef struct iseq_inline_constant_cache *IC;
 typedef struct iseq_inline_iv_cache_entry *IVC;
 typedef struct iseq_inline_cvar_cache_entry *ICVARC;
 typedef union iseq_inline_storage_entry *ISE;

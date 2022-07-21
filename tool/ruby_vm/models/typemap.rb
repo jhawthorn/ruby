@@ -14,7 +14,6 @@ RubyVM::Typemap = {
   "..."            => %w[. TS_VARIABLE],
   "CALL_DATA"      => %w[C TS_CALLDATA],
   "CDHASH"         => %w[H TS_CDHASH],
-  "IC"             => %w[K TS_IC],
   "ICE"            => %w[E TS_ICE],
   "IVC"            => %w[A TS_IVC],
   "ICVARC"         => %w[J TS_ICVARC],
