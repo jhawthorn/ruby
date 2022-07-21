@@ -956,86 +956,98 @@ vm_get_iclass(const rb_control_frame_t *cfp, VALUE klass)
 }
 
 static inline VALUE
+vm_get_ev_const_scope(rb_execution_context_t *ec, ID id, int is_defined)
+{
+    const rb_cref_t *root_cref = vm_get_cref(ec->cfp->ep);
+    const rb_cref_t *cref;
+    VALUE klass = Qnil;
+
+    while (root_cref && CREF_PUSHED_BY_EVAL(root_cref)) {
+        root_cref = CREF_NEXT(root_cref);
+    }
+    cref = root_cref;
+
+    /* in current lexical scope */
+    while (cref && CREF_NEXT(cref)) {
+        if (CREF_PUSHED_BY_EVAL(cref)) {
+            klass = Qnil;
+        }
+        else {
+            klass = CREF_CLASS(cref);
+        }
+        cref = CREF_NEXT(cref);
+
+        if (!NIL_P(klass)) {
+            VALUE av, am = 0;
+            rb_const_entry_t *ce;
+          search_continue:
+            if ((ce = rb_const_lookup(klass, id))) {
+                rb_const_warn_if_deprecated(ce, klass, id);
+                VALUE val = ce->value;
+                if (val == Qundef) {
+                    if (am == klass) break;
+                    am = klass;
+                    if (is_defined) return 1;
+                    if (rb_autoloading_value(klass, id, &av, NULL)) return av;
+                    rb_autoload_load(klass, id);
+                    goto search_continue;
+                }
+                else {
+                    if (is_defined) {
+                        return 1;
+                    }
+                    else {
+                        if (UNLIKELY(!rb_ractor_main_p())) {
+                            if (!rb_ractor_shareable_p(val)) {
+                                rb_raise(rb_eRactorIsolationError,
+                                        "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main ractor.", rb_class_path(klass), rb_id2name(id));
+                            }
+                        }
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+
+    /* search self */
+    if (root_cref && !NIL_P(CREF_CLASS(root_cref))) {
+        klass = vm_get_iclass(ec->cfp, CREF_CLASS(root_cref));
+    }
+    else {
+        klass = CLASS_OF(ec->cfp->self);
+    }
+
+    if (is_defined) {
+        return rb_const_defined(klass, id);
+    }
+    else {
+        return rb_const_get(klass, id);
+    }
+}
+
+static inline VALUE
+vm_get_ev_const_from(VALUE orig_klass, ID id, int is_defined) {
+    vm_check_if_namespace(orig_klass);
+    if (is_defined) {
+        return rb_public_const_defined_from(orig_klass, id);
+    }
+    else {
+        return rb_public_const_get_from(orig_klass, id);
+    }
+}
+
+static inline VALUE
 vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_nil, int is_defined)
 {
     void rb_const_warn_if_deprecated(const rb_const_entry_t *ce, VALUE klass, ID id);
     VALUE val;
 
     if (NIL_P(orig_klass) && allow_nil) {
-	/* in current lexical scope */
-        const rb_cref_t *root_cref = vm_get_cref(ec->cfp->ep);
-	const rb_cref_t *cref;
-	VALUE klass = Qnil;
-
-	while (root_cref && CREF_PUSHED_BY_EVAL(root_cref)) {
-	    root_cref = CREF_NEXT(root_cref);
-	}
-	cref = root_cref;
-	while (cref && CREF_NEXT(cref)) {
-	    if (CREF_PUSHED_BY_EVAL(cref)) {
-		klass = Qnil;
-	    }
-	    else {
-		klass = CREF_CLASS(cref);
-	    }
-	    cref = CREF_NEXT(cref);
-
-	    if (!NIL_P(klass)) {
-		VALUE av, am = 0;
-		rb_const_entry_t *ce;
-	      search_continue:
-		if ((ce = rb_const_lookup(klass, id))) {
-		    rb_const_warn_if_deprecated(ce, klass, id);
-		    val = ce->value;
-		    if (val == Qundef) {
-			if (am == klass) break;
-			am = klass;
-			if (is_defined) return 1;
-			if (rb_autoloading_value(klass, id, &av, NULL)) return av;
-			rb_autoload_load(klass, id);
-			goto search_continue;
-		    }
-		    else {
-			if (is_defined) {
-			    return 1;
-			}
-                        else {
-                            if (UNLIKELY(!rb_ractor_main_p())) {
-                                if (!rb_ractor_shareable_p(val)) {
-                                    rb_raise(rb_eRactorIsolationError,
-                                             "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main ractor.", rb_class_path(klass), rb_id2name(id));
-                                }
-                            }
-			    return val;
-			}
-		    }
-		}
-	    }
-	}
-
-	/* search self */
-	if (root_cref && !NIL_P(CREF_CLASS(root_cref))) {
-	    klass = vm_get_iclass(ec->cfp, CREF_CLASS(root_cref));
-	}
-	else {
-	    klass = CLASS_OF(ec->cfp->self);
-	}
-
-	if (is_defined) {
-	    return rb_const_defined(klass, id);
-	}
-	else {
-	    return rb_const_get(klass, id);
-	}
+        return vm_get_ev_const_scope(ec, id, is_defined);
     }
     else {
-	vm_check_if_namespace(orig_klass);
-	if (is_defined) {
-	    return rb_public_const_defined_from(orig_klass, id);
-	}
-	else {
-	    return rb_public_const_get_from(orig_klass, id);
-	}
+        return vm_get_ev_const_from(orig_klass, id, is_defined);
     }
 }
 
