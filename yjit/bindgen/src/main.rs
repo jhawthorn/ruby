@@ -41,6 +41,7 @@ fn main() {
         .header("internal/re.h")
         .header("include/ruby/ruby.h")
         .header("vm_core.h")
+        .header("internal/imemo.h")
         .header("vm_callinfo.h")
 
         // Our C file for glue code
@@ -267,6 +268,7 @@ fn main() {
         .allowlist_function("rb_yjit_str_simple_append")
         .allowlist_function("rb_ENCODING_GET")
         .allowlist_function("rb_yjit_exit_locations_dict")
+        .allowlist_function("rb_yjit_constcache_undefined")
 
         // from vm_sync.h
         .allowlist_function("rb_vm_barrier")

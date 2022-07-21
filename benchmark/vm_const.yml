@@ -1,7 +1,10 @@
 prelude: |
   Const = 1
+  A = B = C = D = E = F = G = H = I = J = K = L = M = N = O = P = Q = R = S = T = U = V = W = X = Y = Z = 1
 benchmark:
   vm_const: |
     j = Const
     k = Const
+  vm_const_many: |
+    A; B; C; D; E; F; G; H; I; J; K; L; M; N; O; P; Q; R; S; T; U; V; W; X; Y; Z
 loop_count: 30000000

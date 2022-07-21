@@ -247,18 +247,34 @@ struct iseq_inline_constant_cache_entry {
 
     VALUE value;              // v0
     VALUE _unused1;           // v1
-    VALUE _unused2;           // v2
+    ID *segments;              // v2
     const rb_cref_t *ic_cref; // v3
 };
 STATIC_ASSERT(sizeof_iseq_inline_constant_cache_entry,
               (offsetof(struct iseq_inline_constant_cache_entry, ic_cref) +
 	       sizeof(const rb_cref_t *)) <= sizeof(struct RObject));
 
+#define IMEMO_CONST_CACHE_UNDEFINED IMEMO_FL_USER0
+#define IMEMO_CONST_CACHE_UNSHAREABLE IMEMO_FL_USER1
+#define IMEMO_CONST_CACHE_DYNAMIC_CREF IMEMO_FL_USER2
+#define IMEMO_CONST_CACHE_DYNAMIC_FLAGS (IMEMO_CONST_CACHE_UNDEFINED | IMEMO_CONST_CACHE_UNSHAREABLE | IMEMO_CONST_CACHE_DYNAMIC_CREF)
+
+static inline void
+clear_constant_cache(struct iseq_inline_constant_cache_entry *ice) {
+    ice->value = Qundef;
+    ice->flags |= IMEMO_CONST_CACHE_UNDEFINED;
+}
+
+static inline struct iseq_inline_constant_cache_entry *
+rb_constcache_new(ID *segments) {
+    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
+    clear_constant_cache(ice);
+    ice->segments = segments;
+    return ice;
+}
+
 struct iseq_inline_constant_cache {
     struct iseq_inline_constant_cache_entry *entry;
-    // For YJIT: the index to the opt_getinlinecache instruction in the same iseq.
-    // It's set during compile time and constant once set.
-    unsigned get_insn_idx;
 };
 
 struct iseq_inline_iv_cache_entry {
@@ -1207,6 +1223,7 @@ enum vm_svar_index {
 };
 
 /* inline cache */
+typedef struct iseq_inline_constant_cache_entry *ICE;
 typedef struct iseq_inline_constant_cache *IC;
 typedef struct iseq_inline_iv_cache_entry *IVC;
 typedef struct iseq_inline_cvar_cache_entry *ICVARC;
@@ -1217,6 +1234,16 @@ typedef struct rb_call_data *CALL_DATA;
 
 typedef VALUE CDHASH;
 
+/* A null-terminated list of ids, used to represent a constant's path
+ * idNULL is used to represent the :: prefix, and 0 is used to donate the end
+ * of the list.
+ *
+ * For example:
+ *   FOO        {rb_intern("FOO"), 0}
+ *   FOO::BAR   {rb_intern("FOO"), rb_intern("BAR"), 0}
+ *   ::FOO      {idNULL, rb_intern("FOO"), 0}
+ *   ::FOO::BAR {idNULL, rb_intern("FOO"), rb_intern("BAR"), 0}
+ */
 #ifndef FUNC_FASTCALL
 #define FUNC_FASTCALL(x) x
 #endif

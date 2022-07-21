@@ -740,9 +740,10 @@ pub fn gen_single_block(
             .try_into()
             .unwrap();
 
-        // opt_getinlinecache wants to be in a block all on its own. Cut the block short
-        // if we run into it. See gen_opt_getinlinecache() for details.
-        if opcode == YARVINSN_opt_getinlinecache.as_usize() && insn_idx > starting_insn_idx {
+        // We need opt_getconstant_path to be in a block all on its own. Cut the block short
+        // if we run into it. This is necessary because we want to invalidate based on the
+        // instruction's index.
+        if opcode == YARVINSN_opt_getconstant_path.as_usize() && insn_idx > starting_insn_idx {
             jump_to_next_insn(&mut jit, &ctx, cb, ocb);
             break;
         }
@@ -5556,19 +5557,18 @@ fn gen_setclassvariable(
     KeepCompiling
 }
 
-fn gen_opt_getinlinecache(
+fn gen_opt_getconstant_path(
     jit: &mut JITState,
     ctx: &mut Context,
     cb: &mut CodeBlock,
     ocb: &mut OutlinedCb,
 ) -> CodegenStatus {
-    let jump_offset = jit_get_arg(jit, 0);
-    let const_cache_as_value = jit_get_arg(jit, 1);
-    let ic: *const iseq_inline_constant_cache = const_cache_as_value.as_ptr();
+    let const_cache_as_value = jit_get_arg(jit, 0);
+    let ice: *const iseq_inline_constant_cache_entry = const_cache_as_value.as_ptr();
+    let idlist: *const ID = unsafe { (*ice).segments };
 
     // See vm_ic_hit_p(). The same conditions are checked in yjit_constant_ic_update().
-    let ice = unsafe { (*ic).entry };
-    if ice.is_null() {
+    if unsafe { rb_yjit_constcache_undefined(const_cache_as_value) } {
         // In this case, leave a block that unconditionally side exits
         // for the interpreter to invalidate.
         return CantCompile;
@@ -5583,7 +5583,7 @@ fn gen_opt_getinlinecache(
         let side_exit = get_side_exit(jit, ocb, ctx);
 
         // Call function to verify the cache. It doesn't allocate or call methods.
-        mov(cb, C_ARG_REGS[0], const_ptr_opnd(ic as *const u8));
+        mov(cb, C_ARG_REGS[0], const_ptr_opnd(ice as *const u8));
         mov(cb, C_ARG_REGS[1], mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_EP));
         call_ptr(cb, REG0, rb_vm_ic_hit_p as *const u8);
 
@@ -5592,8 +5592,7 @@ fn gen_opt_getinlinecache(
         jz_ptr(cb, counted_exit!(ocb, side_exit, opt_getinlinecache_miss));
 
         // Push ic->entry->value
-        mov(cb, REG0, const_ptr_opnd(ic as *mut u8));
-        mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_IC_ENTRY));
+        mov(cb, REG0, const_ptr_opnd(ice as *mut u8));
         let stack_top = ctx.stack_push(Type::Unknown);
         mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_ICE_VALUE));
         mov(cb, stack_top, REG0);
@@ -5606,22 +5605,12 @@ fn gen_opt_getinlinecache(
 
         // Invalidate output code on any constant writes associated with
         // constants referenced within the current block.
-        assume_stable_constant_names(jit, ocb);
+        assume_stable_constant_names(jit, ocb, idlist);
 
         jit_putobject(jit, ctx, cb, unsafe { (*ice).value });
     }
 
-    // Jump over the code for filling the cache
-    let jump_idx = jit_next_insn_idx(jit) + jump_offset.as_u32();
-    gen_direct_jump(
-        jit,
-        ctx,
-        BlockId {
-            iseq: jit.iseq,
-            idx: jump_idx,
-        },
-        cb,
-    );
+    jump_to_next_insn(jit, ctx, cb, ocb);
     EndBlock
 }
 
@@ -5945,7 +5934,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<InsnGenFn> {
         YARVINSN_opt_size => Some(gen_opt_size),
         YARVINSN_opt_length => Some(gen_opt_length),
         YARVINSN_opt_regexpmatch2 => Some(gen_opt_regexpmatch2),
-        YARVINSN_opt_getinlinecache => Some(gen_opt_getinlinecache),
+        YARVINSN_opt_getconstant_path => Some(gen_opt_getconstant_path),
         YARVINSN_invokebuiltin => Some(gen_invokebuiltin),
         YARVINSN_opt_invokebuiltin_delegate => Some(gen_opt_invokebuiltin_delegate),
         YARVINSN_opt_invokebuiltin_delegate_leave => Some(gen_opt_invokebuiltin_delegate),

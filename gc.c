@@ -612,6 +612,7 @@ typedef struct RVALUE {
 	    rb_env_t env;
 	    struct rb_imemo_tmpbuf_struct alloc;
 	    rb_ast_t ast;
+	    struct iseq_inline_constant_cache_entry ice;
 	} imemo;
 	struct {
 	    struct RBasic basic;
@@ -1182,6 +1183,7 @@ int ruby_enable_autocompact = 0;
 void rb_iseq_mark(const rb_iseq_t *iseq);
 void rb_iseq_update_references(rb_iseq_t *iseq);
 void rb_iseq_free(const rb_iseq_t *iseq);
+void rb_free_constcache(const ICE ice);
 size_t rb_iseq_memsize(const rb_iseq_t *iseq);
 void rb_vm_update_references(void *ptr);
 
@@ -3709,6 +3711,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             break;
           case imemo_constcache:
             RB_DEBUG_COUNTER_INC(obj_imemo_constcache);
+            rb_free_constcache(&RANY(obj)->as.imemo.ice);
             break;
 	}
 	return TRUE;
