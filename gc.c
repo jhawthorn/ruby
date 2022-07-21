@@ -612,6 +612,7 @@ typedef struct RVALUE {
 	    rb_env_t env;
 	    struct rb_imemo_tmpbuf_struct alloc;
 	    rb_ast_t ast;
+	    struct iseq_inline_constant_cache constcache;
 	} imemo;
 	struct {
 	    struct RBasic basic;
@@ -1182,6 +1183,7 @@ int ruby_enable_autocompact = 0;
 void rb_iseq_mark(const rb_iseq_t *iseq);
 void rb_iseq_update_references(rb_iseq_t *iseq);
 void rb_iseq_free(const rb_iseq_t *iseq);
+void rb_free_constcache(const IC ice);
 size_t rb_iseq_memsize(const rb_iseq_t *iseq);
 void rb_vm_update_references(void *ptr);
 
@@ -3009,6 +3011,13 @@ imemo_memsize(VALUE obj)
       case imemo_ast:
         size += rb_ast_memsize(&RANY(obj)->as.imemo.ast);
         break;
+      case imemo_constcache:
+        {
+            ID *ids = RANY(obj)->as.imemo.constcache.segments;
+            while (*ids++) size += sizeof(ID);
+            size += sizeof(ID);
+        }
+        break;
       case imemo_cref:
       case imemo_svar:
       case imemo_throw_data:
@@ -3709,6 +3718,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
             break;
           case imemo_constcache:
             RB_DEBUG_COUNTER_INC(obj_imemo_constcache);
+            rb_free_constcache(&RANY(obj)->as.imemo.constcache);
             break;
 	}
 	return TRUE;
@@ -7126,8 +7136,8 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
         return;
       case imemo_constcache:
         {
-            const struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)obj;
-            gc_mark(objspace, ice->value);
+            const struct iseq_inline_constant_cache *ic = (struct iseq_inline_constant_cache *)obj;
+            gc_mark(objspace, ic->value);
         }
         return;
 #if VM_CHECK_MODE > 0
@@ -10182,8 +10192,8 @@ gc_ref_update_imemo(rb_objspace_t *objspace, VALUE obj)
         break;
       case imemo_constcache:
         {
-            const struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)obj;
-            UPDATE_IF_MOVED(objspace, ice->value);
+            const struct iseq_inline_constant_cache *ic = (struct iseq_inline_constant_cache *)obj;
+            UPDATE_IF_MOVED(objspace, ic->value);
         }
         break;
       case imemo_parser_strterm:

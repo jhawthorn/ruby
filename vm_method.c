@@ -127,9 +127,10 @@ vm_cme_invalidate(rb_callable_method_entry_t *cme)
 }
 
 static int
-rb_clear_constant_cache_for_id_i(st_data_t ic, st_data_t idx, st_data_t arg)
+rb_clear_constant_cache_for_id_i(st_data_t ice, st_data_t idx, st_data_t arg)
 {
-    ((IC) ic)->entry = NULL;
+    RUBY_ASSERT(IMEMO_TYPE_P(ice, imemo_constcache));
+    clear_constant_cache((IC)ice);
     return ST_CONTINUE;
 }
 

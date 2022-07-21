@@ -2251,6 +2251,32 @@ add_adjust_info(struct iseq_insn_info_entry *insns_info, unsigned int *positions
     return TRUE;
 }
 
+static VALUE array_to_constcache(VALUE arr) {
+    RUBY_ASSERT(RB_TYPE_P(arr, T_ARRAY));
+    long size = RARRAY_LEN(arr);
+    ID *ids = (ID *)ALLOC_N(ID, size + 1);
+    for (int i = 0; i < size; i++) {
+        VALUE sym = RARRAY_AREF(arr, i);
+        if (NIL_P(sym)) {
+            ids[i] = idNULL;
+        } else {
+            ids[i] = SYM2ID(sym);
+        }
+    }
+    ids[size] = 0;
+
+    return (VALUE)rb_constcache_new(ids);
+}
+
+static VALUE constcache_to_array(VALUE constcache) {
+    ID *ids = ((IC)constcache)->segments;
+    VALUE arr = rb_ary_new();
+    while (*ids) {
+        rb_ary_push(arr, ID2SYM(*ids++));
+    }
+    return arr;
+}
+
 /**
   ruby insn object list -> raw instruction sequence
  */
@@ -2431,14 +2457,13 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			    }
 			    break;
 			}
-                      /* [ TS_IVC | TS_ICVARC | TS_ISE | TS_IC ] */
-                      case TS_IC: /* inline cache: constants */
+                      /* [ TS_IVC | TS_ICVARC | TS_ISE ] */
                       case TS_ISE: /* inline storage entry: `once` insn */
                       case TS_ICVARC: /* inline cvar cache */
 		      case TS_IVC: /* inline ivar cache */
 			{
 			    unsigned int ic_index = FIX2UINT(operands[j]);
-                            IC ic = &ISEQ_IS_ENTRY_START(body, type)[ic_index].ic_cache;
+                            ISE ic = &ISEQ_IS_ENTRY_START(body, type)[ic_index];
 			    if (UNLIKELY(ic_index >= ISEQ_IS_SIZE(body))) {
                                 BADINSN_DUMP(anchor, &iobj->link, 0);
                                 COMPILE_ERROR(iseq, iobj->insn_info.line_no,
@@ -2447,11 +2472,6 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 			    }
 			    generated_iseq[code_index + 1 + j] = (VALUE)ic;
 
-                            if (insn == BIN(opt_getinlinecache) && type == TS_IC) {
-                                // Store the instruction index for opt_getinlinecache on the IC for
-                                // YJIT to invalidate code when opt_setinlinecache runs.
-                                ic->get_insn_idx = (unsigned int)code_index;
-                            }
 			    break;
 			}
                         case TS_CALLDATA:
@@ -2462,6 +2482,17 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                             cd->ci = source_ci;
                             cd->cc = vm_cc_empty();
                             generated_iseq[code_index + 1 + j] = (VALUE)cd;
+                            break;
+                        }
+                      case TS_IC: /* inline cache: constant entry */
+                        {
+                            VALUE ic = operands[j];
+                            generated_iseq[code_index + 1 + j] = ic;
+
+                            RB_OBJ_WRITTEN(iseq, Qundef, ic);
+                            ISEQ_MBITS_SET(mark_offset_bits, code_index + 1 + j);
+                            needs_bitmap = true;
+
                             break;
                         }
 		      case TS_ID: /* ID */
@@ -5152,6 +5183,30 @@ compile_massign(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node,
         ADD_SEQ(ret, post);
     }
     return COMPILE_OK;
+}
+
+static VALUE
+collect_const_segments(rb_iseq_t *iseq, const NODE *node)
+{
+    VALUE arr = rb_ary_new();
+    for (;;)
+    {
+        switch (nd_type(node)) {
+          case NODE_CONST:
+            rb_ary_unshift(arr, ID2SYM(node->nd_vid));
+            return arr;
+          case NODE_COLON3:
+            rb_ary_unshift(arr, ID2SYM(node->nd_mid));
+            rb_ary_unshift(arr, Qnil);
+            return arr;
+          case NODE_COLON2:
+            rb_ary_unshift(arr, ID2SYM(node->nd_mid));
+            node = node->nd_head;
+            break;
+          default:
+            return Qfalse;
+        }
+    }
 }
 
 static int
@@ -8891,37 +8946,31 @@ compile_match(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, i
 static int
 compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, int popped)
 {
-    const int line = nd_line(node);
     if (rb_is_const_id(node->nd_mid)) {
-	/* constant */
-	LABEL *lend = NEW_LABEL(line);
-        int ic_index = ISEQ_BODY(iseq)->ic_size++;
+        VALUE segments;
+        if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache &&
+                (segments = collect_const_segments(iseq, node))) {
+            VALUE ic = array_to_constcache(segments);
+            ADD_INSN1(ret, node, opt_getconstant_path, ic);
+            RB_OBJ_WRITTEN(iseq, Qundef, ic);
+        } else {
+            /* constant */
+            DECL_ANCHOR(pref);
+            DECL_ANCHOR(body);
 
-	DECL_ANCHOR(pref);
-	DECL_ANCHOR(body);
+            INIT_ANCHOR(pref);
+            INIT_ANCHOR(body);
 
-	INIT_ANCHOR(pref);
-	INIT_ANCHOR(body);
-	CHECK(compile_const_prefix(iseq, node, pref, body));
-	if (LIST_INSN_SIZE_ZERO(pref)) {
-	    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-		ADD_INSN2(ret, node, opt_getinlinecache, lend, INT2FIX(ic_index));
-	    }
-	    else {
-		ADD_INSN(ret, node, putnil);
-	    }
-
-	    ADD_SEQ(ret, body);
-
-	    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-		ADD_INSN1(ret, node, opt_setinlinecache, INT2FIX(ic_index));
-		ADD_LABEL(ret, lend);
-	    }
-	}
-	else {
-	    ADD_SEQ(ret, pref);
-	    ADD_SEQ(ret, body);
-	}
+            CHECK(compile_const_prefix(iseq, node, pref, body));
+            if (LIST_INSN_SIZE_ZERO(pref)) {
+                ADD_INSN(ret, node, putnil);
+                ADD_SEQ(ret, body);
+            }
+            else {
+                ADD_SEQ(ret, pref);
+                ADD_SEQ(ret, body);
+            }
+        }
     }
     else {
 	/* function call */
@@ -8938,25 +8987,18 @@ compile_colon2(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, 
 static int
 compile_colon3(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const node, int popped)
 {
-    const int line = nd_line(node);
-    LABEL *lend = NEW_LABEL(line);
-    int ic_index = ISEQ_BODY(iseq)->ic_size++;
-
     debugi("colon3#nd_mid", node->nd_mid);
 
     /* add cache insn */
     if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	ADD_INSN2(ret, node, opt_getinlinecache, lend, INT2FIX(ic_index));
-	ADD_INSN(ret, node, pop);
-    }
-
-    ADD_INSN1(ret, node, putobject, rb_cObject);
-    ADD_INSN1(ret, node, putobject, Qtrue);
-    ADD_INSN1(ret, node, getconstant, ID2SYM(node->nd_mid));
-
-    if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	ADD_INSN1(ret, node, opt_setinlinecache, INT2FIX(ic_index));
-	ADD_LABEL(ret, lend);
+        VALUE segments = rb_ary_new_from_args(2, Qnil, ID2SYM(node->nd_mid));
+        VALUE ic = array_to_constcache(segments);
+        ADD_INSN1(ret, node, opt_getconstant_path, ic);
+        RB_OBJ_WRITTEN(iseq, Qundef, ic);
+    } else {
+        ADD_INSN1(ret, node, putobject, rb_cObject);
+        ADD_INSN1(ret, node, putobject, Qtrue);
+        ADD_INSN1(ret, node, getconstant, ID2SYM(node->nd_mid));
     }
 
     if (popped) {
@@ -9458,14 +9500,10 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	debugi("nd_vid", node->nd_vid);
 
 	if (ISEQ_COMPILE_DATA(iseq)->option->inline_const_cache) {
-	    LABEL *lend = NEW_LABEL(line);
-	    int ic_index = body->ic_size++;
-
-            ADD_INSN2(ret, node, opt_getinlinecache, lend, INT2FIX(ic_index));
-            ADD_INSN1(ret, node, putobject, Qtrue);
-            ADD_INSN1(ret, node, getconstant, ID2SYM(node->nd_vid));
-            ADD_INSN1(ret, node, opt_setinlinecache, INT2FIX(ic_index));
-	    ADD_LABEL(ret, lend);
+            VALUE segments = rb_ary_new_from_args(1, ID2SYM(node->nd_vid));
+            VALUE ic = array_to_constcache(segments);
+            ADD_INSN1(ret, node, opt_getconstant_path, ic);
+            RB_OBJ_WRITTEN(iseq, Qundef, ic);
 	}
 	else {
 	    ADD_INSN(ret, node, putnil);
@@ -9952,7 +9990,9 @@ insn_data_to_s_detail(INSN *iobj)
 	      case TS_ID:	/* ID */
 		rb_str_concat(str, opobj_inspect(OPERAND_AT(iobj, j)));
 		break;
-	      case TS_IC:	/* inline cache */
+              case TS_IC: /* inline cache: constant entry */
+                rb_bug("here0!");
+                break;
 	      case TS_IVC:	/* inline ivar cache */
 	      case TS_ICVARC:   /* inline cvar cache */
 	      case TS_ISE:	/* inline storage entry */
@@ -10351,12 +10391,6 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
                             ISEQ_BODY(iseq)->ise_size = NUM2INT(op) + 1;
                         }
                         break;
-		      case TS_IC:
-			argv[j] = op;
-                        if (NUM2UINT(op) >= ISEQ_BODY(iseq)->ic_size) {
-                            ISEQ_BODY(iseq)->ic_size = NUM2INT(op) + 1;
-                        }
-                        break;
                       case TS_IVC:  /* inline ivar cache */
 			argv[j] = op;
                         if (NUM2UINT(op) >= ISEQ_BODY(iseq)->ivc_size) {
@@ -10375,6 +10409,13 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
 		      case TS_ID:
 			argv[j] = rb_to_symbol_type(op);
 			break;
+                      case TS_IC: /* inline cache: constant entry */
+                        {
+                            VALUE v = (VALUE)array_to_constcache(op);
+                            argv[j] = v;
+                            RB_OBJ_WRITTEN(iseq, Qundef, v);
+                        }
+                        break;
 		      case TS_CDHASH:
 			{
 			    int i;
@@ -10548,6 +10589,7 @@ rb_iseq_mark_insn_storage(struct iseq_compile_data_storage *storage)
                       case TS_CDHASH:
                       case TS_ISEQ:
                       case TS_VALUE:
+                      case TS_IC:
                       case TS_CALLDATA: // ci is stored.
                         {
                             VALUE op = OPERAND_AT(iobj, j);
@@ -11175,7 +11217,6 @@ ibf_dump_code(struct ibf_dump *dump, const rb_iseq_t *iseq)
               case TS_ISEQ:
                 wv = (VALUE)ibf_dump_iseq(dump, (const rb_iseq_t *)op);
                 break;
-              case TS_IC:
               case TS_ISE:
               case TS_IVC:
               case TS_ICVARC:
@@ -11190,6 +11231,9 @@ ibf_dump_code(struct ibf_dump *dump, const rb_iseq_t *iseq)
                 }
               case TS_ID:
                 wv = ibf_dump_id(dump, (ID)op);
+                break;
+              case TS_IC: /* inline cache: constant entry */
+                wv = ibf_dump_object(dump, constcache_to_array(op));
                 break;
               case TS_FUNCPTR:
                 rb_raise(rb_eRuntimeError, "TS_FUNCPTR is not supported");
@@ -11236,7 +11280,6 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
     for (code_index=0; code_index<iseq_size;) {
         /* opcode */
         const VALUE insn = code[code_index] = ibf_load_small_value(load, &reading_pos);
-        const unsigned int insn_index = code_index;
         const char *types = insn_op_types(insn);
         int op_index;
 
@@ -11290,7 +11333,6 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                     }
                     break;
                 }
-              case TS_IC:
               case TS_ISE:
               case TS_ICVARC:
               case TS_IVC:
@@ -11299,12 +11341,6 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
 
                     ISE ic = ISEQ_IS_ENTRY_START(load_body, operand_type) + op;
                     code[code_index] = (VALUE)ic;
-
-                    if (insn == BIN(opt_getinlinecache) && operand_type == TS_IC) {
-                        // Store the instruction index for opt_getinlinecache on the IC for
-                        // YJIT to invalidate code when opt_setinlinecache runs.
-                        ic->ic_cache.get_insn_idx = insn_index;
-                    }
                 }
                 break;
               case TS_CALLDATA:
@@ -11316,6 +11352,20 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
                 {
                     VALUE op = ibf_load_small_value(load, &reading_pos);
                     code[code_index] = ibf_load_id(load, (ID)(VALUE)op);
+                }
+                break;
+              case TS_IC: /* inline cache: constant entry */
+                {
+                    VALUE op = ibf_load_small_value(load, &reading_pos);
+                    VALUE ary = ibf_load_object(load, op);
+                    VALUE v = array_to_constcache(ary);
+
+                    pinned_list_store(load->current_buffer->obj_list, (long)op, v);
+
+                    code[code_index] = v;
+                    RB_OBJ_WRITTEN(iseqv, Qundef, v);
+                    ISEQ_MBITS_SET(mark_offset_bits, code_index);
+                    needs_bitmap = true;
                 }
                 break;
               case TS_FUNCPTR:
@@ -11833,7 +11883,6 @@ ibf_dump_iseq_each(struct ibf_dump *dump, const rb_iseq_t *iseq)
     ibf_dump_write_small_value(dump, body->ivc_size);
     ibf_dump_write_small_value(dump, body->icvarc_size);
     ibf_dump_write_small_value(dump, body->ise_size);
-    ibf_dump_write_small_value(dump, body->ic_size);
     ibf_dump_write_small_value(dump, body->ci_size);
     ibf_dump_write_small_value(dump, body->stack_max);
     ibf_dump_write_small_value(dump, body->catch_except_p);
@@ -11945,7 +11994,6 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     const unsigned int ivc_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
     const unsigned int icvarc_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
     const unsigned int ise_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
-    const unsigned int ic_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
 
     const unsigned int ci_size = (unsigned int)ibf_load_small_value(load, &reading_pos);
     const unsigned int stack_max = (unsigned int)ibf_load_small_value(load, &reading_pos);
@@ -11994,7 +12042,6 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     load_body->ivc_size             = ivc_size;
     load_body->icvarc_size          = icvarc_size;
     load_body->ise_size             = ise_size;
-    load_body->ic_size              = ic_size;
     load_body->is_entries           = ZALLOC_N(union iseq_inline_storage_entry, ISEQ_IS_SIZE(load_body));
                                       ibf_load_ci_entries(load, ci_entries_offset, ci_size, &load_body->call_data);
     load_body->outer_variables      = ibf_load_outer_variables(load, outer_variables_offset);

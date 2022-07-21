@@ -759,8 +759,7 @@ mod manual_defs {
     // Constants from rb_thread_t in vm_core.h
     pub const RUBY_OFFSET_THREAD_SELF: i32 = 16;
 
-    // Constants from iseq_inline_constant_cache (IC) and iseq_inline_constant_cache_entry (ICE) in vm_core.h
-    pub const RUBY_OFFSET_IC_ENTRY: i32 = 0;
-    pub const RUBY_OFFSET_ICE_VALUE: i32 = 8;
+    // Constants from iseq_inline_constant_cache (IC) in vm_core.h
+    pub const RUBY_OFFSET_IC_VALUE: i32 = 8;
 }
 pub use manual_defs::*;

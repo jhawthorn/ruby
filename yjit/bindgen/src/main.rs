@@ -41,6 +41,7 @@ fn main() {
         .header("internal/re.h")
         .header("include/ruby/ruby.h")
         .header("vm_core.h")
+        .header("internal/imemo.h")
         .header("vm_callinfo.h")
 
         // Our C file for glue code
@@ -225,7 +226,7 @@ fn main() {
         .allowlist_function("rb_vm_frame_method_entry")
         .allowlist_type("IVC") // pointer to iseq_inline_iv_cache_entry
         .allowlist_type("IC")  // pointer to iseq_inline_constant_cache
-        .allowlist_type("iseq_inline_constant_cache_entry")
+        .allowlist_type("iseq_inline_constant_cache")
         .blocklist_type("rb_cref_t")         // don't need this directly, opaqued to allow IC import
         .opaque_type("rb_cref_t")
         .allowlist_type("iseq_inline_iv_cache_entry")
@@ -267,6 +268,7 @@ fn main() {
         .allowlist_function("rb_yjit_str_simple_append")
         .allowlist_function("rb_ENCODING_GET")
         .allowlist_function("rb_yjit_exit_locations_dict")
+        .allowlist_function("rb_yjit_constcache_undefined")
 
         // from vm_sync.h
         .allowlist_function("rb_vm_barrier")

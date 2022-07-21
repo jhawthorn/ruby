@@ -102,68 +102,33 @@ compile_data_free(struct iseq_compile_data *compile_data)
     }
 }
 
-struct iseq_clear_ic_references_data {
-    IC ic;
-};
+static void remove_from_constant_cache(ID id, st_data_t ice) {
+    rb_vm_t *vm = GET_VM();
+    VALUE lookup_result;
 
-// This iterator is used to walk through the instructions and clean any
-// references to ICs that are contained within this ISEQ out of the VM's
-// constant cache table. It passes around a struct that holds the current IC
-// we're looking for, which can be NULL (if we haven't hit an opt_getinlinecache
-// instruction yet) or set to an IC (if we've hit an opt_getinlinecache and
-// haven't yet hit the associated opt_setinlinecache).
-static bool
-iseq_clear_ic_references_i(VALUE *code, VALUE insn, size_t index, void *data)
-{
-    struct iseq_clear_ic_references_data *ic_data = (struct iseq_clear_ic_references_data *) data;
+    if (rb_id_table_lookup(vm->constant_cache, id, &lookup_result)) {
+        st_table *ics = (st_table *)lookup_result;
+        st_delete(ics, &ice, NULL);
 
-    switch (insn) {
-      case BIN(opt_getinlinecache): {
-        RUBY_ASSERT_ALWAYS(ic_data->ic == NULL);
-
-        ic_data->ic = (IC) code[index + 2];
-        return true;
-      }
-      case BIN(getconstant): {
-        if (ic_data->ic != NULL) {
-            ID id = (ID) code[index + 1];
-            rb_vm_t *vm = GET_VM();
-            VALUE lookup_result;
-
-            if (rb_id_table_lookup(vm->constant_cache, id, &lookup_result)) {
-                st_table *ics = (st_table *)lookup_result;
-                st_data_t ic = (st_data_t)ic_data->ic;
-                st_delete(ics, &ic, NULL);
-
-                if (ics->num_entries == 0) {
-                    rb_id_table_delete(vm->constant_cache, id);
-                    st_free_table(ics);
-                }
-            }
+        if (ics->num_entries == 0) {
+            rb_id_table_delete(vm->constant_cache, id);
+            st_free_table(ics);
         }
-
-        return true;
-      }
-      case BIN(opt_setinlinecache): {
-        RUBY_ASSERT_ALWAYS(ic_data->ic != NULL);
-
-        ic_data->ic = NULL;
-        return true;
-      }
-      default:
-        return true;
     }
 }
 
-// When an ISEQ is being freed, all of its associated ICs are going to go away
-// as well. Because of this, we need to walk through the ISEQ, find any
-// opt_getinlinecache calls, and clear out the VM's constant cache of associated
-// ICs.
-static void
-iseq_clear_ic_references(const rb_iseq_t *iseq)
+void
+rb_free_constcache(IC ice)
 {
-    struct iseq_clear_ic_references_data data = { .ic = NULL };
-    rb_iseq_each(iseq, 0, iseq_clear_ic_references_i, (void *) &data);
+    // For each segment of the constant path and remove our constant cache from the
+    // global invalidation table.
+    ID *segments = ice->segments;
+    for (int i = 0; segments[i]; i++) {
+        ID id = segments[i];
+        if (id == idNULL) continue;
+        remove_from_constant_cache(id, (st_data_t)ice);
+    }
+    xfree(segments);
 }
 
 void
@@ -172,7 +137,6 @@ rb_iseq_free(const rb_iseq_t *iseq)
     RUBY_FREE_ENTER("iseq");
 
     if (iseq && ISEQ_BODY(iseq)) {
-        iseq_clear_ic_references(iseq);
         struct rb_iseq_constant_body *const body = ISEQ_BODY(iseq);
 	mjit_free_iseq(iseq); /* Notify MJIT */
 #if YJIT_BUILD
@@ -307,17 +271,6 @@ rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
                 VALUE nv = func(data, is->once.value);
                 if (is->once.value != nv) {
                     is->once.value = nv;
-                }
-            }
-        }
-
-        // IC Entries
-        for (unsigned int i = 0; i < body->ic_size; i++, is_entries++) {
-            IC ic = (IC)is_entries;
-            if (ic->entry) {
-                VALUE nv = func(data, (VALUE)ic->entry);
-                if ((VALUE)ic->entry != nv) {
-                    ic->entry = (void *)nv;
                 }
             }
         }
@@ -2136,7 +2089,21 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	ret = rb_inspect(ID2SYM(op));
 	break;
 
+      case TS_IC:		/* IC (inline constant cache) */
+        {
+            ID *ids = ((IC)op)->segments;
+            ret = rb_str_new2(rb_id2name(ids[0]));
+            for (int i = 1; ids[i]; i++) {
+                rb_str_catf(ret, "::%s", rb_id2name(ids[i]));
+            }
+        }
+        break;
       case TS_VALUE:		/* VALUE */
+        if (RB_TYPE_P(op, T_IMEMO)) {
+            ret = rb_sprintf("FIXME: it's an imemo!");
+            break;
+        }
+
 	op = obj_resurrect(op);
 	if (insn == BIN(defined) && op_no == 1 && FIXNUM_P(op)) {
 	    /* should be DEFINED_REF */
@@ -2174,7 +2141,6 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	    break;
 	}
 
-      case TS_IC:
       case TS_IVC:
       case TS_ICVARC:
       case TS_ISE:
@@ -3010,7 +2976,6 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 		    }
 		}
 		break;
-	      case TS_IC:
               case TS_IVC:
               case TS_ICVARC:
 	      case TS_ISE:
@@ -3050,6 +3015,16 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 	      case TS_ID:
 		rb_ary_push(ary, ID2SYM(*seq));
 		break;
+              case TS_IC:		/* IC (inline constant cache) */
+                {
+                    VALUE list = rb_ary_new();
+                    ID *ids = ((IC)*seq)->segments;
+                    for (int i = 0; ids[i]; i++) {
+                        rb_ary_push(list, ID2SYM(ids[i]));
+                    }
+                    rb_ary_push(ary, list);
+                }
+                break;
 	      case TS_CDHASH:
 		{
 		    VALUE hash = *seq;

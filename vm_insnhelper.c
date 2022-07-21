@@ -1040,6 +1040,27 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
 }
 
 static inline VALUE
+vm_get_ev_const_chain(rb_execution_context_t *ec, ID *segments)
+{
+    VALUE val;
+    int idx = 0;
+    int allow_nil = TRUE;
+    val = Qnil;
+    if (segments[0] == idNULL) {
+        val = rb_cObject;
+        idx++;
+        allow_nil = FALSE;
+    }
+    while (segments[idx]) {
+        ID id = segments[idx++];
+        val = vm_get_ev_const(ec, val, id, allow_nil, 0);
+        allow_nil = FALSE;
+    }
+    return val;
+}
+
+
+static inline VALUE
 vm_get_cvar_base(const rb_cref_t *cref, const rb_control_frame_t *cfp, int top_level_raise)
 {
     VALUE klass;
@@ -4931,55 +4952,35 @@ vm_opt_newarray_min(rb_execution_context_t *ec, rb_num_t num, const VALUE *ptr)
 
 #undef id_cmp
 
-#define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
-
-// This is the iterator used by vm_ic_compile for rb_iseq_each. It is used as a
-// callback for each instruction within the ISEQ, and is meant to return a
-// boolean indicating whether or not to keep iterating.
-//
-// This is used to walk through the ISEQ and find all getconstant instructions
-// between the starting opt_getinlinecache and the ending opt_setinlinecache and
-// associating the inline cache with the constant name components on the VM.
-static bool
-vm_ic_compile_i(VALUE *code, VALUE insn, size_t index, void *ic)
+static void
+vm_track_constant_cache(ID id, VALUE ic)
 {
-    if (insn == BIN(opt_setinlinecache)) {
-        return false;
+    struct rb_id_table *const_cache = GET_VM()->constant_cache;
+    VALUE lookup_result;
+    st_table *ics;
+
+    if (rb_id_table_lookup(const_cache, id, &lookup_result)) {
+        ics = (st_table *)lookup_result;
+    }
+    else {
+        ics = st_init_numtable();
+        rb_id_table_insert(const_cache, id, (VALUE)ics);
     }
 
-    if (insn == BIN(getconstant)) {
-        ID id = code[index + 1];
-        struct rb_id_table *const_cache = GET_VM()->constant_cache;
-        VALUE lookup_result;
-        st_table *ics;
-
-        if (rb_id_table_lookup(const_cache, id, &lookup_result)) {
-            ics = (st_table *)lookup_result;
-        }
-        else {
-            ics = st_init_numtable();
-            rb_id_table_insert(const_cache, id, (VALUE)ics);
-        }
-
-        st_insert(ics, (st_data_t) ic, (st_data_t) Qtrue);
-    }
-
-    return true;
+    st_insert(ics, (st_data_t) ic, (st_data_t) Qtrue);
 }
 
-// Loop through the instruction sequences starting at the opt_getinlinecache
-// call and gather up every getconstant's ID. Associate that with the VM's
-// constant cache so that whenever one of the constants changes the inline cache
-// will get busted.
 static void
-vm_ic_compile(rb_control_frame_t *cfp, IC ic)
+vm_ic_track_const_chain(rb_control_frame_t *cfp, VALUE ic, ID *segments)
 {
-    const rb_iseq_t *iseq = cfp->iseq;
-
     RB_VM_LOCK_ENTER();
-    {
-        rb_iseq_each(iseq, cfp->pc - ISEQ_BODY(iseq)->iseq_encoded, vm_ic_compile_i, (void *) ic);
+
+    for (int i = 0; segments[i]; i++) {
+        VALUE id = segments[i];
+        if (id == idNULL) continue;
+        vm_track_constant_cache(id, ic);
     }
+
     RB_VM_LOCK_LEAVE();
 }
 
@@ -4987,47 +4988,68 @@ vm_ic_compile(rb_control_frame_t *cfp, IC ic)
 static inline bool
 vm_inlined_ic_hit_p(VALUE flags, VALUE value, const rb_cref_t *ic_cref, const VALUE *reg_ep)
 {
-    if ((flags & IMEMO_CONST_CACHE_SHAREABLE) || rb_ractor_main_p()) {
-        VM_ASSERT((flags & IMEMO_CONST_CACHE_SHAREABLE) ? rb_ractor_shareable_p(value) : true);
+    if (UNLIKELY(flags & IMEMO_CONST_CACHE_UNDEFINED))
+        return false;
 
-        return (ic_cref == NULL || // no need to check CREF
-                ic_cref == vm_get_cref(reg_ep));
-    }
-    return false;
+    if (UNLIKELY((flags & IMEMO_CONST_CACHE_UNSHAREABLE)) && !rb_ractor_main_p())
+        return false;
+    VM_ASSERT((flags & IMEMO_CONST_CACHE_UNSHAREABLE) || rb_ractor_shareable_p(value));
+
+    if (UNLIKELY(flags & IMEMO_CONST_CACHE_DYNAMIC_CREF) && // no need to check CREF
+                ic_cref != vm_get_cref(reg_ep))
+        return false;
+
+    return true;
 }
 
 static bool
-vm_ic_hit_p(const struct iseq_inline_constant_cache_entry *ice, const VALUE *reg_ep)
+vm_ic_hit_p(const struct iseq_inline_constant_cache *ic, const VALUE *reg_ep)
 {
-    VM_ASSERT(IMEMO_TYPE_P(ice, imemo_constcache));
-    return vm_inlined_ic_hit_p(ice->flags, ice->value, ice->ic_cref, reg_ep);
+    VM_ASSERT(IMEMO_TYPE_P(ic, imemo_constcache));
+    return vm_inlined_ic_hit_p(ic->flags, ic->value, ic->ic_cref, reg_ep);
 }
 
 // YJIT needs this function to never allocate and never raise
 bool
 rb_vm_ic_hit_p(IC ic, const VALUE *reg_ep)
 {
-    return ic->entry && vm_ic_hit_p(ic->entry, reg_ep);
+    return vm_ic_hit_p(ic, reg_ep);
 }
 
 static void
-vm_ic_update(const rb_iseq_t *iseq, IC ic, VALUE val, const VALUE *reg_ep)
+vm_ic_update(const rb_iseq_t *iseq, struct iseq_inline_constant_cache *ic, VALUE val, const VALUE *reg_ep, const VALUE *pc)
 {
+    VM_ASSERT(IMEMO_TYPE_P(ic, imemo_constcache));
+
+    RB_VM_LOCK_ENTER();
+
     if (ruby_vm_const_missing_count > 0) {
         ruby_vm_const_missing_count = 0;
-        ic->entry = NULL;
-        return;
+        clear_constant_cache(ic);
+    } else {
+        // clear existing flags,
+        ic->flags &= ~IMEMO_CONST_CACHE_DYNAMIC_FLAGS;
+
+        RB_OBJ_WRITE(ic, &ic->value, val);
+        ic->ic_cref = vm_get_const_key_cref(reg_ep);
+
+        if (ic->ic_cref) {
+            ic->flags |= IMEMO_CONST_CACHE_DYNAMIC_CREF;
+        }
+
+        if (!rb_ractor_shareable_p(val)) {
+            ic->flags |= IMEMO_CONST_CACHE_UNSHAREABLE;
+        }
     }
 
-    struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
-    RB_OBJ_WRITE(ice, &ice->value, val);
-    ice->ic_cref = vm_get_const_key_cref(reg_ep);
-    if (rb_ractor_shareable_p(val)) ice->flags |= IMEMO_CONST_CACHE_SHAREABLE;
-    RB_OBJ_WRITE(iseq, &ic->entry, ice);
+    RB_VM_LOCK_LEAVE();
+
 #ifndef MJIT_HEADER
     // MJIT and YJIT can't be on at the same time, so there is no need to
     // notify YJIT about changes to the IC when running inside MJIT code.
-    rb_yjit_constant_ic_update(iseq, ic);
+    unsigned pos = pc - ISEQ_BODY(iseq)->iseq_encoded;
+    VM_ASSERT(pos < ISEQ_BODY(iseq)->iseq_size);
+    rb_yjit_constant_ic_update(iseq, ic, pos);
 #endif
 }
 
