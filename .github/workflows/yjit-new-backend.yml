@@ -76,10 +76,11 @@ jobs:
           bootstraptest/test_objectspace.rb \
           bootstraptest/test_string.rb \
           bootstraptest/test_struct.rb \
-          bootstraptest/test_yjit_new_backend.rb
+          bootstraptest/test_yjit_new_backend.rb \
+          bootstraptest/test_yjit_rust_port.rb
 
       #bootstraptest/test_proc.rb
-      #bootstraptest/test_yjit_rust_port.rb
+      #bootstraptest/test_yjit.rb
 
       # Check that we can do a full build
       #- run: make -j
