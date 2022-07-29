@@ -942,6 +942,7 @@ static int
 verify_class_iv_matches_shape_i(st_data_t key, st_data_t value, st_data_t data)
 {
     rb_shape_t *shape = rb_shape_get_shape(data);
+    RUBY_ASSERT(shape);
 
     VALUE idx;
     int found = rb_shape_get_iv_index(shape, (ID)key, &idx);
@@ -960,7 +961,9 @@ void
 verify_class_iv_matches_shape(VALUE obj)
 {
     st_table *iv_tbl = RCLASS_IV_TBL(obj);
-    st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
+    if (iv_tbl) {
+        st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
+    }
 }
 
 
