@@ -2530,7 +2530,6 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
 {
     VALUE val = Qnil;
     const ID id = id_for_var(obj, name, an, instance);
-    st_data_t n, v;
     uint32_t index;
 
     rb_check_frozen(obj);
@@ -2550,10 +2549,10 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-	n = id;
-	if (RCLASS_IV_TBL(obj) && lock_st_delete(RCLASS_IV_TBL(obj), &n, &v)) {
-	    return (VALUE)v;
-	}
+        val = rb_class_ivar_delete(obj, id, Qundef);
+        if (val != Qundef) {
+            return val;
+        }
 	break;
       default:
 	if (FL_TEST(obj, FL_EXIVAR)) {
@@ -2985,7 +2984,7 @@ autoload_delete(VALUE module, ID name)
 
             // If the autoload table is empty, we can delete it.
             if (table->num_entries == 0) {
-                rb_class_ivar_delete(module, autoload);
+                rb_class_ivar_delete(module, autoload, Qundef);
             }
         }
     }
@@ -3771,10 +3770,7 @@ set_namespace_path_i(ID id, VALUE v, void *payload)
         return ID_TABLE_CONTINUE;
     }
     set_namespace_path(value, build_const_path(parental_path, id));
-    if (RCLASS_IV_TBL(value)) {
-        st_data_t tmp = tmp_classpath;
-        st_delete(RCLASS_IV_TBL(value), &tmp, 0);
-    }
+    rb_class_ivar_delete(value, tmp_classpath, Qundef);
 
     return ID_TABLE_CONTINUE;
 }
@@ -4133,8 +4129,6 @@ static void
 cvar_overtaken(VALUE front, VALUE target, ID id)
 {
     if (front && target != front) {
-	st_data_t did = (st_data_t)id;
-
         if (original_module(front) != original_module(target)) {
             rb_raise(rb_eRuntimeError,
                      "class variable % "PRIsVALUE" of %"PRIsVALUE" is overtaken by %"PRIsVALUE"",
@@ -4142,7 +4136,7 @@ cvar_overtaken(VALUE front, VALUE target, ID id)
 		       rb_class_name(original_module(target)));
 	}
 	if (BUILTIN_TYPE(front) == T_CLASS) {
-	    st_delete(RCLASS_IV_TBL(front), &did, 0);
+            rb_class_ivar_delete(front, id, Qundef);
 	}
     }
 }
@@ -4437,13 +4431,13 @@ VALUE
 rb_mod_remove_cvar(VALUE mod, VALUE name)
 {
     const ID id = id_for_var_message(mod, name, class, "wrong class variable name %1$s");
-    st_data_t val, n = id;
 
     if (!id) {
         goto not_defined;
     }
     rb_check_frozen(mod);
-    if (RCLASS_IV_TBL(mod) && st_delete(RCLASS_IV_TBL(mod), &n, &val)) {
+    VALUE val = rb_class_ivar_delete(mod, id, Qundef);
+    if (val != Qundef) {
 	return (VALUE)val;
     }
     if (rb_cvar_defined(mod, id)) {
