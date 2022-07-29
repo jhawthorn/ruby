@@ -2956,10 +2956,11 @@ autoload_delete(VALUE module, ID name)
 {
     RUBY_ASSERT_CRITICAL_SECTION_ENTER();
 
-    st_data_t value, load = 0, key = name;
+    st_data_t load = 0, key = name;
 
-    if (st_lookup(RCLASS_IV_TBL(module), (st_data_t)autoload, &value)) {
-        struct st_table *table = check_autoload_table((VALUE)value);
+    VALUE table_value = rb_class_ivar_lookup(module, autoload, 0);
+    if (table_value) {
+        struct st_table *table = check_autoload_table(table_value);
 
         st_delete(table, &key, &load);
 
@@ -2984,8 +2985,7 @@ autoload_delete(VALUE module, ID name)
 
             // If the autoload table is empty, we can delete it.
             if (table->num_entries == 0) {
-                name = autoload;
-                st_delete(RCLASS_IV_TBL(module), &name, &value);
+                rb_class_ivar_delete(module, autoload);
             }
         }
     }
