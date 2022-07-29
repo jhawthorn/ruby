@@ -2880,23 +2880,14 @@ autoload_feature_lookup_or_create(VALUE feature, struct autoload_data **autoload
 static struct st_table *
 autoload_table_lookup_or_create(VALUE module)
 {
-    // Get or create an autoload table in the class instance variables:
-    struct st_table *table = RCLASS_IV_TBL(module);
-    VALUE autoload_table_value;
-
-    if (table && st_lookup(table, (st_data_t)autoload, &autoload_table_value)) {
-        return check_autoload_table((VALUE)autoload_table_value);
+    VALUE autoload_table_value = rb_class_ivar_lookup(module, autoload, 0);
+    if (autoload_table_value) {
+        return check_autoload_table(autoload_table_value);
+    } else {
+        autoload_table_value = TypedData_Wrap_Struct(0, &autoload_table_type, 0);
+        rb_class_ivar_set(module, autoload, autoload_table_value);
+        return (DATA_PTR(autoload_table_value) = st_init_numtable());
     }
-
-    if (!table) {
-        table = RCLASS_IV_TBL(module) = st_init_numtable();
-    }
-
-    autoload_table_value = TypedData_Wrap_Struct(0, &autoload_table_type, 0);
-    st_add_direct(table, (st_data_t)autoload, (st_data_t)autoload_table_value);
-
-    RB_OBJ_WRITTEN(module, Qnil, autoload_table_value);
-    return (DATA_PTR(autoload_table_value) = st_init_numtable());
 }
 
 static VALUE
