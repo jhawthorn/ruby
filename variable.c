@@ -117,13 +117,13 @@ classname(VALUE klass, int *permanent)
     *permanent = 0;
     if (!RCLASS_EXT(klass)) return Qnil;
 
-    VALUE classpath = rb_class_ivar_lookup(ivtbl, classpath, Qnil);
+    VALUE classpath = rb_class_ivar_lookup(klass, classpath, Qnil);
     if (RTEST(classpath)) {
         *permanent = 1;
         return classpath;
     }
 
-    return rb_class_ivar_lookup(ivtbl, tmp_classpath, Qnil);;
+    return rb_class_ivar_lookup(klass, tmp_classpath, Qnil);;
 }
 
 /*
@@ -2681,7 +2681,7 @@ autoload_data(VALUE mod, ID id)
     // Look up the instance variable table for `autoload`, then index into that table with the given constant name `id`.
 
     VALUE tbl_value = rb_class_ivar_lookup(mod, id, 0);
-    if (!tbl_value || !(tbl = check_autoload_table(tbl_val)) || !st_lookup(tbl, (st_data_t)id, &val)) {
+    if (!tbl_value || !(tbl = check_autoload_table(tbl_value)) || !st_lookup(tbl, (st_data_t)id, &val)) {
         return 0;
     }
 
@@ -4181,9 +4181,7 @@ find_cvar(VALUE klass, VALUE * front, VALUE * target, ID id)
 static void
 check_for_cvar_table(VALUE subclass, VALUE key)
 {
-    st_table *tbl = RCLASS_IV_TBL_any(subclass);
-
-    if (tbl && st_lookup(tbl, key, NULL)) {
+    if (RTEST(rb_class_ivar_defined(subclass, key))) {
         RB_DEBUG_COUNTER_INC(cvar_class_invalidate);
         ruby_vm_global_cvar_state++;
         return;
