@@ -144,6 +144,7 @@ RCLASS_SHAPE_ID(VALUE obj)
 static inline st_table **RCLASS_IV_TBL_inline(VALUE c) {
     //RUBY_ASSERT(!RB_TYPE_P(c, T_ICLASS));
     if (RB_TYPE_P(c, T_ICLASS)) {
+        rb_bug("attempted to access iv tbl on iclass");
         // origins don't have this case
         if (FL_TEST_RAW(c, RICLASS_IS_ORIGIN)) {
             return &(RCLASS_EXT(c)->iv_tbl);

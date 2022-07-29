@@ -2679,7 +2679,9 @@ autoload_data(VALUE mod, ID id)
     st_data_t val;
 
     // Look up the instance variable table for `autoload`, then index into that table with the given constant name `id`.
-    if (!st_lookup(RCLASS_IV_TBL(mod), autoload, &val) || !(tbl = check_autoload_table((VALUE)val)) || !st_lookup(tbl, (st_data_t)id, &val)) {
+
+    VALUE tbl_value = rb_class_ivar_lookup(mod, id, 0);
+    if (!tbl_value || !(tbl = check_autoload_table(tbl_val)) || !st_lookup(tbl, (st_data_t)id, &val)) {
         return 0;
     }
 
