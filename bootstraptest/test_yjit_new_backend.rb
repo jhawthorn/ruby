@@ -201,6 +201,14 @@ assert_equal 'foo', %q{
     Foo.foo
 }
 
+# setglobal
+assert_equal 'foo', %q{
+    def foo()
+      $foo = "foo"
+    end
+    foo()
+    $foo
+}
 
 
 
