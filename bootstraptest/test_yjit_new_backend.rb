@@ -215,9 +215,9 @@ assert_equal 'foo', %q{
 }
 
 # getspecial
-assert_equal 'nil', %q{
+assert_equal '[nil, nil, nil, nil, nil]', %q{
     def foo()
-      $1
+      [$&, $`, $', $+, $1]
     end
     foo().inspect
 }
