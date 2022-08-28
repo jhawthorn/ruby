@@ -424,6 +424,38 @@ struct fstr_update_arg {
     bool copy;
 };
 
+static void
+fstr_compute_hash(VALUE str)
+{
+    RUBY_ASSERT(!FL_TEST(str, STR_NOFREE | STR_SHARED));
+
+    RUBY_ASSERT(!FL_TEST(str, RSTRING_CACHED_HASH));
+
+    if (TERM_LEN(str) != 1) {
+        return;
+    }
+
+    unsigned long len = RSTRING_LEN(str);
+    unsigned long termlen = 1; // TERM_LEN(str) == 1
+    unsigned long capa = rb_str_capacity(str);
+
+    if (len + termlen + sizeof(st_index_t) <= capa) {
+        st_index_t hash = rb_str_hash(str);
+
+        char *ptr = RSTRING_PTR(str);
+        st_index_t *hash_ptr = (st_index_t *)(ptr + len + termlen);
+        *hash_ptr = hash;
+
+        if (!STR_EMBED_P(str)) {
+            RSTRING(str)->as.heap.aux.capa -= sizeof(st_index_t);
+        }
+
+        RBASIC(str)->flags |= RSTRING_CACHED_HASH;
+    } else {
+        rb_bug("not enough capacity to compute hash");
+    }
+}
+
 static int
 fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int existing)
 {
@@ -444,32 +476,22 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
         return ST_STOP;
     }
     else {
-        if (FL_TEST_RAW(str, STR_FAKESTR)) {
-            if (arg->copy) {
-                VALUE new_str = str_new(rb_cString, RSTRING(str)->as.heap.ptr, RSTRING(str)->as.heap.len);
-                rb_enc_copy(new_str, str);
-                str = new_str;
-            }
-            else {
-                str = str_new_static(rb_cString, RSTRING(str)->as.heap.ptr,
-                                     RSTRING(str)->as.heap.len,
-                                     ENCODING_GET(str));
-            }
-            OBJ_FREEZE_RAW(str);
-        }
-        else {
-            if (!OBJ_FROZEN(str))
-                str = str_new_frozen(rb_cString, str);
-            if (STR_SHARED_P(str)) { /* str should not be shared */
-                /* shared substring  */
-                str_make_independent(str);
-                assert(OBJ_FROZEN(str));
-            }
-            if (!BARE_STRING_P(str)) {
-                str = str_new_frozen(rb_cString, str);
-            }
-        }
+        int termlen = TERM_LEN(str);
+        char *ptr = RSTRING_PTR(str);
+        long len = RSTRING_LEN(str);
+        long capa = len + TERM_LEN(str) + sizeof(st_index_t);
+
+        // FIXME: always allocates a new string. Wasteful?
+        VALUE new_str = rb_str_buf_new(capa);
+        rb_enc_copy(new_str, str);
+        memcpy(RSTRING_PTR(new_str), ptr, len);
+        STR_SET_LEN(new_str, len);
+        TERM_FILL(RSTRING_PTR(new_str) + len, termlen);
+        str = new_str;
+
+        fstr_compute_hash(str);
         RBASIC(str)->flags |= RSTRING_FSTR;
+        OBJ_FREEZE_RAW(str);
 
         *key = *value = arg->fstr = str;
         return ST_CONTINUE;
@@ -887,10 +909,14 @@ static size_t
 str_capacity(VALUE str, const int termlen)
 {
     if (STR_EMBED_P(str)) {
+        long reserved = termlen;
+        if (FL_TEST(str, RSTRING_CACHED_HASH)) {
+            reserved += sizeof(st_index_t);
+        }
 #if USE_RVARGC
-        return str_embed_capa(str) - termlen;
+        return str_embed_capa(str) - reserved;
 #else
-        return (RSTRING_EMBED_LEN_MAX + 1 - termlen);
+        return (RSTRING_EMBED_LEN_MAX + 1 - reserved);
 #endif
     }
     else if (FL_TEST(str, STR_SHARED|STR_NOFREE)) {
@@ -3561,6 +3587,21 @@ rb_str_prepend_multi(int argc, VALUE *argv, VALUE str)
 st_index_t
 rb_str_hash(VALUE str)
 {
+    if (FL_TEST(str, RSTRING_CACHED_HASH)) {
+        RUBY_ASSERT(!FL_TEST(str, STR_NOFREE));
+        RUBY_ASSERT(!FL_TEST(str, STR_SHARED));
+        RUBY_ASSERT(OBJ_FROZEN(str));
+
+        // cache only available for TERM_LEN 1
+        RUBY_ASSERT(TERM_LEN(str) == 1);
+
+        char *ptr = RSTRING_PTR(str);
+        long len = RSTRING_LEN(str);
+        unsigned long termlen = 1; // TERM_LEN(str) == 1
+        st_index_t *hash_ptr = (st_index_t *)(ptr + len + termlen);
+        return *hash_ptr;
+    }
+
     int e = ENCODING_GET(str);
     if (e && is_ascii_string(str)) {
         e = 0;

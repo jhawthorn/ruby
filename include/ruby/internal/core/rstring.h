@@ -199,7 +199,9 @@ enum ruby_rstring_flags {
      * Given there are more "polite" ways to create fstrings, it seems this bit
      * need not be exposed to extension libraries.  Might better be hidden.
      */
-    RSTRING_FSTR            = RUBY_FL_USER17
+    RSTRING_FSTR            = RUBY_FL_USER17,
+
+    RSTRING_CACHED_HASH     = RUBY_FL_USER0
 };
 
 #if !USE_RVARGC
