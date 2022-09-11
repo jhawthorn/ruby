@@ -5,53 +5,27 @@ prelude: |
   class StringSubclass < String
   end
 benchmark:
-  binary_concat_7bit: |
-    buffer = String.new(capacity: 4096, encoding: Encoding::BINARY)
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-  utf8_concat_7bit: |
-    buffer = String.new(capacity: 4096, encoding: Encoding::UTF_8)
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
   utf8_concat_UTF8: |
-    buffer = String.new(capacity: 4096, encoding: Encoding::UTF_8)
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
-    buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+    1000.times do
+      buffer = String.new(capacity: 4096, encoding: Encoding::UTF_8)
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+      buffer << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK << UCHUNK
+    end
   subclass_concat_7bit: |
-    buffer = StringSubclass.new(capacity: 4096, encoding: Encoding::UTF_8)
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-    buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
-  interpolation: |
-    buffer = "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}" \
-      "#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}#{CHUNK}"
+    1000.times do
+      buffer = StringSubclass.new(capacity: 4096, encoding: Encoding::UTF_8)
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+      buffer << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK << CHUNK
+    end
