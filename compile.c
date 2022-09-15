@@ -3610,6 +3610,44 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
         }
     }
 
+    // setlocal/getlocal => dup/setlocal
+    if (IS_INSN_ID(iobj, setlocal)) {
+        LINK_ELEMENT *niobj = &iobj->link;
+        if (IS_NEXT_INSN_ID(niobj, dup)) {
+            niobj = niobj->next;
+        }
+
+        if (IS_NEXT_INSN_ID(niobj, getlocal)) {
+            LINK_ELEMENT *get1 = niobj->next;
+            if (OPERAND_AT(iobj, 0) == OPERAND_AT(get1, 0) &&
+                OPERAND_AT(iobj, 1) == OPERAND_AT(get1, 1)) {
+                NODE dummy_line_node = generate_dummy_line_node(iobj->insn_info.line_no, iobj->insn_info.node_id);
+                INSERT_BEFORE_INSN(iobj, &dummy_line_node, dup);
+                ELEM_REMOVE(get1);
+                goto again;
+            }
+        }
+    }
+
+    // getlocal/getlocal => getlocal/dup
+    if (IS_INSN_ID(iobj, getlocal)) {
+        LINK_ELEMENT *niobj = &iobj->link;
+        if (IS_NEXT_INSN_ID(niobj, dup)) {
+            niobj = niobj->next;
+        }
+
+        if (IS_NEXT_INSN_ID(niobj, getlocal)) {
+            INSN *get1 = (INSN *)(niobj);
+            INSN *get2 = (INSN *)(niobj->next);
+            if (OPERAND_AT(get1, 0) == OPERAND_AT(get2, 0) &&
+                OPERAND_AT(get1, 1) == OPERAND_AT(get2, 1)) {
+                get2->insn_id = BIN(dup);
+                get2->operand_size = 0;
+                goto again;
+            }
+        }
+    }
+
     /*
     *  getlocal x, y
     *  dup
