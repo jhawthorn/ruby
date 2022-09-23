@@ -17,4 +17,5 @@ prelude: |
   end
 benchmark:
   vm_cvar: A.foo
-loop_count: 600000
+  vm_class_variable_get: A.class_variable_get :@@foo
+loop_count: 5000000
