@@ -892,6 +892,53 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
+// debug
+
+void
+print_shape(rb_shape_t *shape) {
+    if (shape->parent) print_shape(shape->parent);
+    switch (shape->type) {
+        case SHAPE_IVAR:
+          fprintf(stderr, "  %s\n", rb_id2name(shape->edge_name));
+          break;
+        case SHAPE_IVAR_UNDEF:
+          fprintf(stderr, "  %s (deleted)\n", rb_id2name(shape->edge_name));
+          break;
+        case SHAPE_ROOT:
+          break;
+        case SHAPE_FROZEN:
+          fprintf(stderr, "  (frozen)\n");
+          break;
+    }
+}
+
+static int
+verify_class_iv_matches_shape_i(st_data_t key, st_data_t value, st_data_t data)
+{
+    rb_shape_t *shape = rb_shape_get_shape(data);
+
+    attr_index_t idx;
+    int found = rb_shape_get_iv_index(shape, (ID)key, &idx);
+    if (!found) {
+        fprintf(stderr, "shape %li:\n", SHAPE_ID(shape));
+        print_shape(shape);
+
+        rb_bug("class shape does not match iv table. Expected to find %s in shape %li", rb_id2name(key), SHAPE_ID(shape));
+    }
+    return ST_CONTINUE;
+}
+
+void
+verify_class_iv_matches_shape(VALUE obj)
+{
+    st_table *iv_tbl = RCLASS_IV_TBL(obj);
+
+    if (iv_tbl) {
+        st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
+    }
+}
+
+
 static void
 IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 {
@@ -1167,7 +1214,6 @@ lock_st_insert(st_table *tab, st_data_t key, st_data_t value)
     RB_VM_LOCK_LEAVE();
     return r;
 }
-
 VALUE
 rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
 {
@@ -1186,6 +1232,8 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
       case T_MODULE:
         {
             st_data_t val;
+
+            verify_class_iv_matches_shape(obj);
 
             if (RCLASS_IV_TBL(obj) &&
                 lock_st_lookup(RCLASS_IV_TBL(obj), (st_data_t)id, &val)) {
@@ -1258,12 +1306,19 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
+        verify_class_iv_matches_shape(obj);
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+        if (rb_shape_get_iv_index(shape, id, &index)) {
+            rb_shape_transition_shape_remove_ivar(obj, id, shape);
+        }
         if (RCLASS_IV_TBL(obj)) {
             st_data_t id_data = (st_data_t)id, val;
             if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
+                verify_class_iv_matches_shape(obj);
                 return (VALUE)val;
             }
         }
+        verify_class_iv_matches_shape(obj);
         break;
       case T_OBJECT: {
         rb_shape_t * shape = rb_shape_get_shape(obj);
@@ -1583,10 +1638,12 @@ ivar_set(VALUE obj, ID id, VALUE val)
       }
       case T_CLASS:
       case T_MODULE:
-        // TODO: Transition shapes on classes
-        //rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
+        verify_class_iv_matches_shape(obj);
+        rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
+        verify_class_iv_matches_shape(obj);
+
         break;
       default:
         generic_ivar_set(obj, id, val);
@@ -1620,6 +1677,8 @@ rb_ivar_defined(VALUE obj, ID id)
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:
+        verify_class_iv_matches_shape(obj);
+
         if (RCLASS_IV_TBL(obj) && lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id)) {
             return Qtrue;
         }
@@ -3886,6 +3945,8 @@ rb_iv_set(VALUE obj, const char *name, VALUE val)
 int
 rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 {
+    rb_shape_transition_shape(obj, key, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
+
     if (!RCLASS_IV_TBL(obj)) {
         RCLASS_IV_TBL(obj) = st_init_numtable();
     }
@@ -3893,6 +3954,9 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
     st_table *tbl = RCLASS_IV_TBL(obj);
     int result = lock_st_insert(tbl, (st_data_t)key, (st_data_t)value);
     RB_OBJ_WRITTEN(obj, Qundef, value);
+
+    verify_class_iv_matches_shape(obj);
+
     return result;
 }
 
@@ -3906,6 +3970,8 @@ tbl_copy_i(st_data_t key, st_data_t value, st_data_t data)
 void
 rb_iv_tbl_copy(VALUE dst, VALUE src)
 {
+    verify_class_iv_matches_shape(src);
+
     st_table *orig_tbl = RCLASS_IV_TBL(src);
     if (!orig_tbl) return;
 
@@ -3914,6 +3980,9 @@ rb_iv_tbl_copy(VALUE dst, VALUE src)
 
     RUBY_ASSERT(!RCLASS_IV_TBL(dst));
     RCLASS_IV_TBL(dst) = new_tbl;
+    rb_shape_set_shape(dst, rb_shape_get_shape(src));
+
+    verify_class_iv_matches_shape(dst);
 }
 
 MJIT_FUNC_EXPORTED rb_const_entry_t *
