@@ -52,12 +52,6 @@ shape_set_shape_id(rb_shape_t *shape, shape_id_t id) {
 }
 
 #if !SHAPE_IN_BASIC_FLAGS
-static inline shape_id_t
-RCLASS_SHAPE_ID(VALUE obj)
-{
-    return RCLASS_EXT(obj)->shape_id;
-}
-
 shape_id_t rb_generic_shape_id(VALUE obj);
 #endif
 
