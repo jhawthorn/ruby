@@ -944,6 +944,8 @@ gen_ivtbl_get_unlocked(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 MJIT_FUNC_EXPORTED int
 rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl)
 {
+    RUBY_ASSERT(!RB_TYPE_P(obj, T_ICLASS));
+
     st_data_t data;
     int r = 0;
 
