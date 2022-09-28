@@ -40,6 +40,10 @@ struct rb_cvar_class_tbl_entry {
 
 struct rb_classext_struct {
     struct st_table *iv_tbl;
+
+    VALUE *iv_ptr;
+    uint32_t numiv; // FIXME: alignment
+
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE /* otherwise m_tbl is in struct RClass */
     struct rb_id_table *m_tbl;
 #endif
@@ -96,6 +100,10 @@ typedef struct rb_classext_struct rb_classext_t;
 #endif
 #define RCLASS_IV_TBL(c) (RCLASS_EXT(c)->iv_tbl)
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
+
+#define RCLASS_NUMIV(c) (RCLASS_EXT(c)->numiv)
+#define RCLASS_IVPTR(c) (RCLASS_EXT(c)->iv_ptr)
+
 #if SIZEOF_SERIAL_T == SIZEOF_VALUE
 # define RCLASS_M_TBL(c) (RCLASS_EXT(c)->m_tbl)
 #else
