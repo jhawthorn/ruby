@@ -1678,13 +1678,6 @@ rb_ivar_defined(VALUE obj, ID id)
       case T_CLASS:
       case T_MODULE:
         verify_class_iv_matches_shape(obj);
-
-        if (RCLASS_IV_TBL(obj) && lock_st_is_member(RCLASS_IV_TBL(obj), (st_data_t)id)) {
-            return Qtrue;
-        }
-        else {
-            return Qfalse;
-        }
       default:
         return RBOOL(rb_shape_get_iv_index(rb_shape_get_shape(obj), id, &index));
     }
