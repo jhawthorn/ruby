@@ -1120,53 +1120,6 @@ gen_ivtbl_count(const struct gen_ivtbl *ivtbl)
     return n;
 }
 
-static int
-lock_st_lookup(st_table *tab, st_data_t key, st_data_t *value)
-{
-    int r;
-    RB_VM_LOCK_ENTER();
-    {
-        r = st_lookup(tab, key, value);
-    }
-    RB_VM_LOCK_LEAVE();
-    return r;
-}
-
-static int
-lock_st_delete(st_table *tab, st_data_t *key, st_data_t *value)
-{
-    int r;
-    RB_VM_LOCK_ENTER();
-    {
-        r = st_delete(tab, key, value);
-    }
-    RB_VM_LOCK_LEAVE();
-    return r;
-}
-
-static int
-lock_st_is_member(st_table *tab, st_data_t key)
-{
-    int r;
-    RB_VM_LOCK_ENTER();
-    {
-        r = st_is_member(tab, key);
-    }
-    RB_VM_LOCK_LEAVE();
-    return r;
-}
-
-static int
-lock_st_insert(st_table *tab, st_data_t key, st_data_t value)
-{
-    int r;
-    RB_VM_LOCK_ENTER();
-    {
-        r = st_insert(tab, key, value);
-    }
-    RB_VM_LOCK_LEAVE();
-    return r;
-}
 VALUE
 rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
 {
