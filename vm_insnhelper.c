@@ -1134,9 +1134,17 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             break;
         case T_CLASS:
         case T_MODULE:
-            {
+            ivar_list = RCLASS_IVPTR(obj);
+
+#if !SHAPE_IN_BASIC_FLAGS
+            shape_id = RCLASS_SHAPE_ID(obj);
+#endif
+            if (UNLIKELY(!rb_ractor_main_p())) {
+                // If not on the main ractor, we have to check the sharability
+                // of the value we find in the ivar.
                 goto general_path;
             }
+            break;
         default:
             if (FL_TEST_RAW(obj, FL_EXIVAR)) {
                 struct gen_ivtbl *ivtbl;
