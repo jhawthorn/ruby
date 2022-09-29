@@ -39,8 +39,6 @@ struct rb_cvar_class_tbl_entry {
 };
 
 struct rb_classext_struct {
-    struct st_table *iv_tbl;
-
     VALUE *iv_ptr;
     uint32_t numiv; // FIXME: alignment
 
@@ -98,7 +96,6 @@ typedef struct rb_classext_struct rb_classext_t;
 #else
 #  define RCLASS_EXT(c) (RCLASS(c)->ptr)
 #endif
-#define RCLASS_IV_TBL(c) (RCLASS_EXT(c)->iv_tbl)
 #define RCLASS_CONST_TBL(c) (RCLASS_EXT(c)->const_tbl)
 
 #define RCLASS_NUMIV(c) (RCLASS_EXT(c)->numiv)
