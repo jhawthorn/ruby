@@ -931,19 +931,19 @@ verify_class_iv_matches_shape_i(st_data_t key, st_data_t value, st_data_t data)
 void
 verify_class_iv_matches_shape(VALUE obj)
 {
-    st_table *iv_tbl = RCLASS_IV_TBL(obj);
+    //st_table *iv_tbl = RCLASS_IV_TBL(obj);
 
-    if (iv_tbl) {
-        st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
-    }
+    //if (iv_tbl) {
+    //    st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
+    //}
 
-    rb_shape_t *shape = rb_shape_get_shape(obj);
-    //RUBY_ASSERT(shape->iv_count == RCLASS_NUMIV(obj));
-    if (shape->iv_count > 0) {
-        RUBY_ASSERT(RCLASS_IVPTR(obj));
-    }
-    //RUBY_ASSERT(shape);
-    //RUBY_ASSERT(!RCLASS_IV_TBL(obj));
+    //rb_shape_t *shape = rb_shape_get_shape(obj);
+    ////RUBY_ASSERT(shape->iv_count == RCLASS_NUMIV(obj));
+    //if (shape->iv_count > 0) {
+    //    RUBY_ASSERT(RCLASS_IVPTR(obj));
+    //}
+    ////RUBY_ASSERT(shape);
+    ////RUBY_ASSERT(!RCLASS_IV_TBL(obj));
 }
 
 
