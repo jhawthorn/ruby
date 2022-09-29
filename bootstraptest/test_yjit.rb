@@ -3309,3 +3309,13 @@ assert_equal 'true', %q{
   end
   foo(Foo.new)
 }
+
+# bmethod
+assert_equal '[1, 2, 3]', %q{
+  one = 1
+  define_method(:foo) do
+    one
+  end
+
+  3.times.map { |i| foo + i }
+}

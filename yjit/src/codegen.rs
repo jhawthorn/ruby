@@ -4016,6 +4016,7 @@ struct ControlFrame {
     pc: Option<u64>,
     frame_type: u32,
     block_handler: BlockHandler,
+    prev_ep: Option<*const VALUE>,
     cme: *const rb_callable_method_entry_t,
     local_size: i32
 }
@@ -4057,7 +4058,7 @@ fn gen_push_frame(
         }
     }
 
-    asm.comment("push cme, block handler, frame type");
+    asm.comment("push cme, specval, frame type");
 
     // Write method entry at sp[-3]
     // sp[-3] = me;
@@ -4067,16 +4068,21 @@ fn gen_push_frame(
 
     // Write block handler at sp[-2]
     // sp[-2] = block_handler;
-    let block_handler: Opnd = match frame.block_handler {
-        BlockHandler::None => {
+    let specval: Opnd = match (frame.prev_ep, frame.block_handler) {
+        (None, BlockHandler::None) => {
             VM_BLOCK_HANDLER_NONE.into()
         },
-        BlockHandler::CurrentFrame => {
+        (None, BlockHandler::CurrentFrame) => {
             let cfp_self = asm.lea(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SELF));
             asm.or(cfp_self, Opnd::Imm(1))
         },
+        (Some(prev_ep), BlockHandler::None) => {
+            let tagged_prev_ep = (prev_ep as usize) | 1;
+            VALUE(tagged_prev_ep).into()
+        },
+        (_, _) => panic!("specval can only be one of prev_ep or block_handler")
     };
-    asm.store(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -2), block_handler);
+    asm.store(Opnd::mem(64, sp, SIZEOF_VALUE_I32 * -2), specval);
 
     // Write env flags at sp[-1]
     // sp[-1] = frame_type;
@@ -4255,6 +4261,7 @@ fn gen_send_cfunc(
         cme,
         recv,
         sp,
+        prev_ep: None,
         pc: Some(0),
         iseq: None,
         local_size: 0,
@@ -4422,6 +4429,132 @@ fn push_splat_args(required_args: i32, ctx: &mut Context, asm: &mut Assembler, o
             asm.mov(top, Opnd::mem(64, ary_opnd, i * (SIZEOF_VALUE as i32)));
         }
     }
+}
+
+fn gen_send_bmethod(
+    jit: &mut JITState,
+    ctx: &mut Context,
+    asm: &mut Assembler,
+    ocb: &mut OutlinedCb,
+    ci: *const rb_callinfo,
+    cme: *const rb_callable_method_entry_t,
+    block: Option<IseqPtr>,
+    argc: i32,
+) -> CodegenStatus {
+    assert!(argc == 0);
+    assert!(block == None);
+
+    let procv = unsafe { rb_get_def_bmethod_proc((*cme).def) };
+
+    let proc = unsafe { rb_yjit_get_proc_ptr(procv) };
+    let block = unsafe { &(*proc).block };
+
+    if block.type_ != block_type_iseq {
+        return CantCompile;
+    }
+
+    let capture = unsafe { block.as_.captured.as_ref() };
+
+    let self_ = capture.self_;
+    let iseq = unsafe { *capture.code.iseq.as_ref() };
+
+
+    let num_params = 0; // FIXME
+    let num_locals = unsafe { get_iseq_body_local_table_size(iseq) as i32 } - (num_params as i32);
+
+    asm.comment("bmethod");
+
+    // Points to the receiver operand on the stack
+    let recv = ctx.stack_opnd(argc);
+
+    // Store the updated SP on the current frame (pop arguments and receiver)
+    asm.comment("store caller sp");
+    let caller_sp = asm.lea(ctx.sp_opnd((SIZEOF_VALUE as isize) * -((argc as isize) + 1)));
+    asm.store(Opnd::mem(64, CFP, RUBY_OFFSET_CFP_SP), caller_sp);
+
+    // Store the next PC in the current frame
+    jit_save_pc(jit, asm);
+
+    // Adjust the callee's stack pointer
+    let offs = (SIZEOF_VALUE as isize) * (3 + (num_locals as isize));
+    let callee_sp = asm.lea(ctx.sp_opnd(offs));
+
+    let is_lambda = false; // fixme
+
+    // Write env flags at sp[-1]
+    // sp[-1] = frame_type;
+    let frame_type = VM_FRAME_MAGIC_BLOCK | if is_lambda { VM_FRAME_FLAG_LAMBDA } else {0};
+
+    gen_push_frame(jit, ctx, asm, true, ControlFrame {
+        frame_type,
+        block_handler: BlockHandler::None,
+        cme,
+        recv,
+        sp: callee_sp,
+        prev_ep: Some(capture.ep),
+        pc: None,
+        iseq: Some(iseq),
+        local_size: 0,
+    });
+
+    // Stub so we can return to JITted code
+    let return_block = BlockId {
+        iseq: jit.iseq,
+        idx: jit_next_insn_idx(jit),
+    };
+
+    // Create a context for the callee
+    let mut callee_ctx = Context::new(); // Was DEFAULT_CTX
+
+    // Set the argument types in the callee's context
+    for arg_idx in 0..argc {
+        let stack_offs: u16 = (argc - arg_idx - 1).try_into().unwrap();
+        let arg_type = ctx.get_opnd_type(StackOpnd(stack_offs));
+        callee_ctx.set_local_type(arg_idx.try_into().unwrap(), arg_type);
+    }
+
+    let recv_type = ctx.get_opnd_type(StackOpnd(argc.try_into().unwrap()));
+    callee_ctx.upgrade_opnd_type(SelfOpnd, recv_type);
+
+    // The callee might change locals through Kernel#binding and other means.
+    ctx.clear_local_types();
+
+    // Pop arguments and receiver in return context, push the return value
+    // After the return, sp_offset will be 1. The codegen for leave writes
+    // the return value in case of JIT-to-JIT return.
+    let mut return_ctx = *ctx;
+    return_ctx.stack_pop((argc + 1).try_into().unwrap());
+    return_ctx.stack_push(Type::Unknown);
+    return_ctx.set_sp_offset(1);
+    return_ctx.reset_chain_depth();
+
+    // Write the JIT return address on the callee frame
+    gen_branch(
+        jit,
+        ctx,
+        asm,
+        ocb,
+        return_block,
+        &return_ctx,
+        Some(return_block),
+        Some(&return_ctx),
+        gen_return_branch,
+    );
+
+    let start_pc_offset = 0; // FIXME
+
+    // Directly jump to the entry point of the callee
+    gen_direct_jump(
+        jit,
+        &callee_ctx,
+        BlockId {
+            iseq: iseq,
+            idx: start_pc_offset,
+        },
+        asm,
+    );
+
+    EndBlock
 }
 
 fn gen_send_iseq(
@@ -4883,6 +5016,7 @@ fn gen_send_iseq(
         cme,
         recv,
         sp: callee_sp,
+        prev_ep: None,
         iseq: Some(iseq),
         pc: None, // We are calling into jitted code, which will set the PC as necessary
         local_size: num_locals
@@ -5224,8 +5358,16 @@ fn gen_send_general(
             }
             // Block method, e.g. define_method(:foo) { :my_block }
             VM_METHOD_TYPE_BMETHOD => {
-                gen_counter_incr!(asm, send_bmethod);
-                return CantCompile;
+                if flags & VM_CALL_KWARG != 0 {
+                    gen_counter_incr!(asm, send_bmethod);
+                    return CantCompile;
+                } else if argc != 0 {
+                    // For now just the common case from Rails' class_attribute
+                    gen_counter_incr!(asm, send_bmethod);
+                    return CantCompile;
+                } else {
+                    return gen_send_bmethod(jit, ctx, asm, ocb, ci, cme, block, argc);
+                }
             }
             VM_METHOD_TYPE_ZSUPER => {
                 gen_counter_incr!(asm, send_zsuper_method);
