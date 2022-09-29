@@ -1332,13 +1332,6 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
         if (rb_shape_get_iv_index(shape, id, &index)) {
             rb_shape_transition_shape_remove_ivar(obj, id, shape);
         }
-        if (RCLASS_IV_TBL(obj)) {
-            st_data_t id_data = (st_data_t)id, val;
-            if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
-                verify_class_iv_matches_shape(obj);
-                return (VALUE)val;
-            }
-        }
         verify_class_iv_matches_shape(obj);
         break;
       case T_OBJECT: {
@@ -1995,12 +1988,6 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-        if (RCLASS_IV_TBL(obj)) {
-            st_data_t id_data = (st_data_t)id, val;
-            if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
-                //(VALUE)val;
-            }
-        }
         rb_shape_t * shape = rb_shape_get_shape(obj);
         if (rb_shape_get_iv_index(shape, id, &index)) {
             rb_shape_transition_shape_remove_ivar(obj, id, shape);
