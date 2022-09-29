@@ -936,6 +936,14 @@ verify_class_iv_matches_shape(VALUE obj)
     if (iv_tbl) {
         st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
     }
+
+    rb_shape_t *shape = rb_shape_get_shape(obj);
+    //RUBY_ASSERT(shape->iv_count == RCLASS_NUMIV(obj));
+    if (shape->iv_count > 0) {
+        RUBY_ASSERT(RCLASS_IVPTR(obj));
+    }
+    //RUBY_ASSERT(shape);
+    //RUBY_ASSERT(!RCLASS_IV_TBL(obj));
 }
 
 
@@ -1231,12 +1239,20 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
       case T_CLASS:
       case T_MODULE:
         {
-            st_data_t val;
-
             verify_class_iv_matches_shape(obj);
 
-            if (RCLASS_IV_TBL(obj) &&
-                lock_st_lookup(RCLASS_IV_TBL(obj), (st_data_t)id, &val)) {
+#if !SHAPE_IN_BASIC_FLAGS
+            shape_id = RCLASS_SHAPE_ID(obj);
+#endif
+            ivar_list = RCLASS_IVPTR(obj);
+
+            attr_index_t index = 0;
+            shape = rb_shape_get_shape_by_id(shape_id);
+            if (rb_shape_get_iv_index(shape, id, &index)) {
+                RUBY_ASSERT(ivar_list);
+
+                VALUE val = ivar_list[index];
+
                 if (rb_is_instance_id(id) &&
                     UNLIKELY(!rb_ractor_main_p()) &&
                     !rb_ractor_shareable_p(val)) {
@@ -1248,6 +1264,11 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
             else {
                 return undef;
             }
+#if !SHAPE_IN_BASIC_FLAGS
+            shape_id = ROBJECT_SHAPE_ID(obj);
+#endif
+            ivar_list = ROBJECT_IVPTR(obj);
+            break;
         }
       case T_OBJECT:
         {
@@ -1639,7 +1660,6 @@ ivar_set(VALUE obj, ID id, VALUE val)
       case T_CLASS:
       case T_MODULE:
         verify_class_iv_matches_shape(obj);
-        rb_shape_transition_shape(obj, id, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
         verify_class_iv_matches_shape(obj);
@@ -1720,6 +1740,15 @@ gen_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
     if (!rb_gen_ivtbl_get(obj, 0, &ivtbl)) return;
 
     iterate_over_shapes_with_callback(shape, ivtbl->ivptr, func, arg);
+}
+
+static void
+class_ivar_each(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
+{
+    RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
+
+    rb_shape_t* shape = rb_shape_get_shape(obj);
+    iterate_over_shapes_with_callback(shape, RCLASS_IVPTR(obj), func, arg);
 }
 
 void
@@ -1806,13 +1835,7 @@ rb_ivar_foreach(VALUE obj, rb_ivar_foreach_callback_func *func, st_data_t arg)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(0);
-        if (RCLASS_IV_TBL(obj)) {
-            RB_VM_LOCK_ENTER();
-            {
-                st_foreach_safe(RCLASS_IV_TBL(obj), func, arg);
-            }
-            RB_VM_LOCK_LEAVE();
-        }
+        class_ivar_each(obj, func, arg);
         break;
       default:
         if (FL_TEST(obj, FL_EXIVAR)) {
@@ -1844,8 +1867,15 @@ rb_ivar_count(VALUE obj)
         break;
       case T_CLASS:
       case T_MODULE:
-        if ((tbl = RCLASS_IV_TBL(obj)) != 0) {
-            return tbl->num_entries;
+        if (rb_shape_get_shape(obj)->iv_count > 0) {
+            st_index_t i, count, num = RCLASS_NUMIV(obj);
+            const VALUE *const ivptr = RCLASS_IVPTR(obj);
+            for (i = count = 0; i < num; ++i) {
+                if (ivptr[i] != Qundef) {
+                    count++;
+                }
+            }
+            return count;
         }
         break;
       default:
@@ -1970,6 +2000,13 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
             if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
                 return (VALUE)val;
             }
+        }
+        rb_shape_t * shape = rb_shape_get_shape(obj);
+        if (rb_shape_get_iv_index(shape, id, &index)) {
+            rb_shape_transition_shape_remove_ivar(obj, id, shape);
+            val = RCLASS_IVPTR(obj)[index];
+            RCLASS_IVPTR(obj)[index] = Qundef;
+            return val;
         }
         break;
       case T_OBJECT: {
@@ -3939,7 +3976,26 @@ rb_iv_set(VALUE obj, const char *name, VALUE val)
 int
 rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 {
+    verify_class_iv_matches_shape(obj);
+
     rb_shape_transition_shape(obj, key, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
+
+    rb_shape_t * shape = rb_shape_get_shape(obj);
+    attr_index_t idx;
+    int found = rb_shape_get_iv_index(shape, key, &idx);
+
+    if (!found) {
+        rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(key));
+    }
+
+    if (RCLASS_NUMIV(obj) <= idx) {
+        size_t newsize = RCLASS_NUMIV(obj) + 1;
+        REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
+        RCLASS_NUMIV(obj) = newsize;
+    }
+
+    RCLASS_IVPTR(obj)[idx] = value;
+    RB_OBJ_WRITTEN(obj, Qundef, value);
 
     if (!RCLASS_IV_TBL(obj)) {
         RCLASS_IV_TBL(obj) = st_init_numtable();
@@ -3974,6 +4030,12 @@ rb_iv_tbl_copy(VALUE dst, VALUE src)
 
     RUBY_ASSERT(!RCLASS_IV_TBL(dst));
     RCLASS_IV_TBL(dst) = new_tbl;
+
+    RUBY_ASSERT(!RCLASS_IVPTR(dst));
+    RCLASS_IVPTR(dst) = ALLOC_N(VALUE, RCLASS_NUMIV(src));
+    MEMCPY(RCLASS_IVPTR(dst), RCLASS_IVPTR(src), VALUE, RCLASS_NUMIV(src));
+    RCLASS_NUMIV(dst) = RCLASS_NUMIV(src);
+
     rb_shape_set_shape(dst, rb_shape_get_shape(src));
 
     verify_class_iv_matches_shape(dst);
