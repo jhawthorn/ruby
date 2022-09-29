@@ -892,61 +892,6 @@ rb_alias_variable(ID name1, ID name2)
     entry1->var = entry2->var;
 }
 
-// debug
-
-void
-print_shape(rb_shape_t *shape) {
-    if (shape->parent) print_shape(shape->parent);
-    switch (shape->type) {
-        case SHAPE_IVAR:
-          fprintf(stderr, "  %s\n", rb_id2name(shape->edge_name));
-          break;
-        case SHAPE_IVAR_UNDEF:
-          fprintf(stderr, "  %s (deleted)\n", rb_id2name(shape->edge_name));
-          break;
-        case SHAPE_ROOT:
-          break;
-        case SHAPE_FROZEN:
-          fprintf(stderr, "  (frozen)\n");
-          break;
-    }
-}
-
-static int
-verify_class_iv_matches_shape_i(st_data_t key, st_data_t value, st_data_t data)
-{
-    rb_shape_t *shape = rb_shape_get_shape(data);
-
-    attr_index_t idx;
-    int found = rb_shape_get_iv_index(shape, (ID)key, &idx);
-    if (!found) {
-        fprintf(stderr, "shape %li:\n", SHAPE_ID(shape));
-        print_shape(shape);
-
-        rb_bug("class shape does not match iv table. Expected to find %s in shape %li", rb_id2name(key), SHAPE_ID(shape));
-    }
-    return ST_CONTINUE;
-}
-
-void
-verify_class_iv_matches_shape(VALUE obj)
-{
-    //st_table *iv_tbl = RCLASS_IV_TBL(obj);
-
-    //if (iv_tbl) {
-    //    st_foreach(iv_tbl, verify_class_iv_matches_shape_i, (st_data_t)obj);
-    //}
-
-    //rb_shape_t *shape = rb_shape_get_shape(obj);
-    ////RUBY_ASSERT(shape->iv_count == RCLASS_NUMIV(obj));
-    //if (shape->iv_count > 0) {
-    //    RUBY_ASSERT(RCLASS_IVPTR(obj));
-    //}
-    ////RUBY_ASSERT(shape);
-    ////RUBY_ASSERT(!RCLASS_IV_TBL(obj));
-}
-
-
 static void
 IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(ID id)
 {
@@ -1239,8 +1184,6 @@ rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
       case T_CLASS:
       case T_MODULE:
         {
-            verify_class_iv_matches_shape(obj);
-
 #if !SHAPE_IN_BASIC_FLAGS
             shape_id = RCLASS_SHAPE_ID(obj);
 #endif
@@ -1327,7 +1270,6 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
       case T_CLASS:
       case T_MODULE:
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
-        verify_class_iv_matches_shape(obj);
         rb_shape_t * shape = rb_shape_get_shape(obj);
         if (rb_shape_get_iv_index(shape, id, &index)) {
             rb_shape_transition_shape_remove_ivar(obj, id, shape);
@@ -1335,7 +1277,6 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
             RCLASS_IVPTR(obj)[index] = Qundef;
             return val;
         }
-        verify_class_iv_matches_shape(obj);
         break;
       case T_OBJECT: {
         rb_shape_t * shape = rb_shape_get_shape(obj);
@@ -1655,10 +1596,8 @@ ivar_set(VALUE obj, ID id, VALUE val)
       }
       case T_CLASS:
       case T_MODULE:
-        verify_class_iv_matches_shape(obj);
         IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR(id);
         rb_class_ivar_set(obj, id, val);
-        verify_class_iv_matches_shape(obj);
 
         break;
       default:
@@ -1693,7 +1632,6 @@ rb_ivar_defined(VALUE obj, ID id)
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
       case T_MODULE:
-        verify_class_iv_matches_shape(obj);
       default:
         return RBOOL(rb_shape_get_iv_index(rb_shape_get_shape(obj), id, &index));
     }
@@ -3963,8 +3901,6 @@ rb_iv_set(VALUE obj, const char *name, VALUE val)
 int
 rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 {
-    verify_class_iv_matches_shape(obj);
-
     RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
 
     rb_shape_t * shape = rb_shape_get_shape(obj);
@@ -4001,8 +3937,6 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
     RCLASS_IVPTR(obj)[idx] = value;
     RB_OBJ_WRITTEN(obj, Qundef, value);
 
-    verify_class_iv_matches_shape(obj);
-
     return result;
 }
 
@@ -4019,15 +3953,10 @@ rb_iv_tbl_copy(VALUE dst, VALUE src)
     RUBY_ASSERT(rb_type(dst) == rb_type(src));
     RUBY_ASSERT(RB_TYPE_P(dst, T_CLASS) || RB_TYPE_P(dst, T_MODULE));
 
-    verify_class_iv_matches_shape(dst);
-    verify_class_iv_matches_shape(src);
-
     RUBY_ASSERT(RCLASS_SHAPE_ID(dst) == ROOT_SHAPE_ID);
     RUBY_ASSERT(!RCLASS_IVPTR(dst));
 
     rb_ivar_foreach(src, tbl_copy_i, dst);
-
-    verify_class_iv_matches_shape(dst);
 }
 
 MJIT_FUNC_EXPORTED rb_const_entry_t *
