@@ -1998,7 +1998,7 @@ rb_obj_remove_instance_variable(VALUE obj, VALUE name)
         if (RCLASS_IV_TBL(obj)) {
             st_data_t id_data = (st_data_t)id, val;
             if (lock_st_delete(RCLASS_IV_TBL(obj), &id_data, &val)) {
-                return (VALUE)val;
+                //(VALUE)val;
             }
         }
         rb_shape_t * shape = rb_shape_get_shape(obj);
