@@ -3975,31 +3975,40 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 {
     verify_class_iv_matches_shape(obj);
 
-    rb_shape_transition_shape(obj, key, rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj)));
+    RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
 
     rb_shape_t * shape = rb_shape_get_shape(obj);
     attr_index_t idx;
     int found = rb_shape_get_iv_index(shape, key, &idx);
 
+    int result = 1;
+
     if (!found) {
-        rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(key));
+        result = 0;
+
+        // Move to a shape which fits the new ivar
+        shape = rb_shape_get_next(shape, obj, key);
+        rb_shape_set_shape(obj, shape);
+
+        found = rb_shape_get_iv_index(shape, key, &idx);
+
+        // Because we transitioned to a new shape, we need to
+        if (RCLASS_NUMIV(obj) <= idx) {
+            size_t newsize = RCLASS_NUMIV(obj) + 1;
+            REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
+            RCLASS_NUMIV(obj) = newsize;
+        }
+
+        // If still not found it's a bug
+        if (!found) {
+            rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(key));
+        }
     }
 
-    if (RCLASS_NUMIV(obj) <= idx) {
-        size_t newsize = RCLASS_NUMIV(obj) + 1;
-        REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
-        RCLASS_NUMIV(obj) = newsize;
-    }
+    RUBY_ASSERT(found);
+    RUBY_ASSERT(RCLASS_IVPTR(obj));
 
     RCLASS_IVPTR(obj)[idx] = value;
-    RB_OBJ_WRITTEN(obj, Qundef, value);
-
-    if (!RCLASS_IV_TBL(obj)) {
-        RCLASS_IV_TBL(obj) = st_init_numtable();
-    }
-
-    st_table *tbl = RCLASS_IV_TBL(obj);
-    int result = lock_st_insert(tbl, (st_data_t)key, (st_data_t)value);
     RB_OBJ_WRITTEN(obj, Qundef, value);
 
     verify_class_iv_matches_shape(obj);
