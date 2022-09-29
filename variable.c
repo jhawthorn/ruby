@@ -3907,37 +3907,42 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
     attr_index_t idx;
     int found = rb_shape_get_iv_index(shape, key, &idx);
 
-    int result = 1;
+    if (found) {
+        // Changing an existing instance variable
+        RUBY_ASSERT(RCLASS_IVPTR(obj));
 
-    if (!found) {
-        result = 0;
+        RCLASS_IVPTR(obj)[idx] = value;
+        RB_OBJ_WRITTEN(obj, Qundef, value);
 
-        // Move to a shape which fits the new ivar
-        shape = rb_shape_get_next(shape, obj, key);
-        rb_shape_set_shape(obj, shape);
+        return 1;
+    } else {
+        // Creating and setting a new instance variable
 
-        found = rb_shape_get_iv_index(shape, key, &idx);
+        RB_VM_LOCK_ENTER();
 
-        // Because we transitioned to a new shape, we need to
-        if (RCLASS_NUMIV(obj) <= idx) {
-            size_t newsize = RCLASS_NUMIV(obj) + 1;
-            REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
-            RCLASS_NUMIV(obj) = newsize;
+        {
+            // Move to a shape which fits the new ivar
+            shape = rb_shape_get_next(shape, obj, key);
+            rb_shape_set_shape(obj, shape);
+
+            found = rb_shape_get_iv_index(shape, key, &idx);
+            RUBY_ASSERT(found);
+
+            // We may need to allocate more space
+            if (RCLASS_NUMIV(obj) <= idx) {
+                size_t newsize = RCLASS_NUMIV(obj) + 1;
+                REALLOC_N(RCLASS_IVPTR(obj), VALUE, newsize);
+                RCLASS_NUMIV(obj) = newsize;
+            }
+
+            RCLASS_IVPTR(obj)[idx] = value;
+            RB_OBJ_WRITTEN(obj, Qundef, value);
         }
 
-        // If still not found it's a bug
-        if (!found) {
-            rb_bug("unreachable.  Shape was not found for id: %s", rb_id2name(key));
-        }
+        RB_VM_LOCK_LEAVE();
+
+        return 0;
     }
-
-    RUBY_ASSERT(found);
-    RUBY_ASSERT(RCLASS_IVPTR(obj));
-
-    RCLASS_IVPTR(obj)[idx] = value;
-    RB_OBJ_WRITTEN(obj, Qundef, value);
-
-    return result;
 }
 
 static int
