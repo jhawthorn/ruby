@@ -1331,6 +1331,9 @@ rb_ivar_delete(VALUE obj, ID id, VALUE undef)
         rb_shape_t * shape = rb_shape_get_shape(obj);
         if (rb_shape_get_iv_index(shape, id, &index)) {
             rb_shape_transition_shape_remove_ivar(obj, id, shape);
+            val = RCLASS_IVPTR(obj)[index];
+            RCLASS_IVPTR(obj)[index] = Qundef;
+            return val;
         }
         verify_class_iv_matches_shape(obj);
         break;
