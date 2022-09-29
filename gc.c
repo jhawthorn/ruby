@@ -3466,9 +3466,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
       case T_CLASS:
         rb_id_table_free(RCLASS_M_TBL(obj));
         cc_table_free(objspace, obj, FALSE);
-        if (RCLASS_IV_TBL(obj)) {
-            st_free_table(RCLASS_IV_TBL(obj));
-        }
         if (RCLASS_IVPTR(obj)) {
             xfree(RCLASS_IVPTR(obj));
         }
@@ -4920,9 +4917,6 @@ obj_memsize_of(VALUE obj, int use_all_types)
         if (RCLASS_EXT(obj)) {
             if (RCLASS_M_TBL(obj)) {
                 size += rb_id_table_memsize(RCLASS_M_TBL(obj));
-            }
-            if (RCLASS_IV_TBL(obj)) {
-                size += st_memsize(RCLASS_IV_TBL(obj));
             }
             size += SIZEOF_VALUE * RCLASS_NUMIV(obj);
             if (RCLASS_CVC_TBL(obj)) {
@@ -7290,7 +7284,6 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 
         mark_m_tbl(objspace, RCLASS_M_TBL(obj));
         cc_table_mark(objspace, obj);
-        mark_tbl_no_pin(objspace, RCLASS_IV_TBL(obj));
         for (attr_index_t i = 0; i < RCLASS_NUMIV(obj); i++) {
             gc_mark(objspace, RCLASS_IVPTR(obj)[i]);
         }
@@ -10536,7 +10529,6 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
         update_cvc_tbl(objspace, obj);
         update_superclasses(objspace, obj);
 
-        gc_update_tbl_refs(objspace, RCLASS_IV_TBL(obj));
         for (attr_index_t i = 0; i < RCLASS_NUMIV(obj); i++) {
             UPDATE_IF_MOVED(objspace, RCLASS_IVPTR(obj)[i]);
         }
@@ -10554,9 +10546,6 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
             UPDATE_IF_MOVED(objspace, RCLASS(obj)->super);
         }
         if (!RCLASS_EXT(obj)) break;
-        if (RCLASS_IV_TBL(obj)) {
-            gc_update_tbl_refs(objspace, RCLASS_IV_TBL(obj));
-        }
         update_class_ext(objspace, RCLASS_EXT(obj));
         update_m_tbl(objspace, RCLASS_CALLABLE_M_TBL(obj));
         update_cc_tbl(objspace, obj);
