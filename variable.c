@@ -4013,6 +4013,9 @@ tbl_copy_i(st_data_t key, st_data_t val, st_data_t dest) {
 void
 rb_iv_tbl_copy(VALUE dst, VALUE src)
 {
+    RUBY_ASSERT(rb_type(dst) == rb_type(src));
+    RUBY_ASSERT(RB_TYPE_P(dst, T_CLASS) || RB_TYPE_P(dst, T_MODULE));
+
     verify_class_iv_matches_shape(dst);
     verify_class_iv_matches_shape(src);
 
