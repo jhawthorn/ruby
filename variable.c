@@ -3259,10 +3259,7 @@ set_namespace_path_i(ID id, VALUE v, void *payload)
         return ID_TABLE_CONTINUE;
     }
     set_namespace_path(value, build_const_path(parental_path, id));
-    if (RCLASS_IV_TBL(value)) {
-        st_data_t tmp = tmp_classpath;
-        st_delete(RCLASS_IV_TBL(value), &tmp, 0);
-    }
+    rb_attr_delete(value, tmp_classpath);
 
     return ID_TABLE_CONTINUE;
 }
