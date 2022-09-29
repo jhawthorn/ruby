@@ -3469,6 +3469,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
         if (RCLASS_IV_TBL(obj)) {
             st_free_table(RCLASS_IV_TBL(obj));
         }
+        if (RCLASS_IVPTR(obj)) {
+            xfree(RCLASS_IVPTR(obj));
+        }
         if (RCLASS_CONST_TBL(obj)) {
             rb_free_const_table(RCLASS_CONST_TBL(obj));
         }
@@ -4921,6 +4924,7 @@ obj_memsize_of(VALUE obj, int use_all_types)
             if (RCLASS_IV_TBL(obj)) {
                 size += st_memsize(RCLASS_IV_TBL(obj));
             }
+            size += SIZEOF_VALUE * RCLASS_NUMIV(obj);
             if (RCLASS_CVC_TBL(obj)) {
                 size += rb_id_table_memsize(RCLASS_CVC_TBL(obj));
             }
@@ -7287,6 +7291,9 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         mark_m_tbl(objspace, RCLASS_M_TBL(obj));
         cc_table_mark(objspace, obj);
         mark_tbl_no_pin(objspace, RCLASS_IV_TBL(obj));
+        for (attr_index_t i = 0; i < RCLASS_NUMIV(obj); i++) {
+            gc_mark(objspace, RCLASS_IVPTR(obj)[i]);
+        }
         mark_const_tbl(objspace, RCLASS_CONST_TBL(obj));
         break;
 
@@ -10530,6 +10537,9 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
         update_superclasses(objspace, obj);
 
         gc_update_tbl_refs(objspace, RCLASS_IV_TBL(obj));
+        for (attr_index_t i = 0; i < RCLASS_NUMIV(obj); i++) {
+            UPDATE_IF_MOVED(objspace, RCLASS_IVPTR(obj)[i]);
+        }
 
         update_class_ext(objspace, RCLASS_EXT(obj));
         update_const_tbl(objspace, RCLASS_CONST_TBL(obj));
