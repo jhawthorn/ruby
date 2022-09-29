@@ -4008,32 +4008,22 @@ rb_class_ivar_set(VALUE obj, ID key, VALUE value)
 }
 
 static int
-tbl_copy_i(st_data_t key, st_data_t value, st_data_t data)
-{
-    RB_OBJ_WRITTEN((VALUE)data, Qundef, (VALUE)value);
+tbl_copy_i(st_data_t key, st_data_t val, st_data_t dest) {
+    rb_class_ivar_set(dest, key, val);
+
     return ST_CONTINUE;
 }
 
 void
 rb_iv_tbl_copy(VALUE dst, VALUE src)
 {
+    verify_class_iv_matches_shape(dst);
     verify_class_iv_matches_shape(src);
 
-    st_table *orig_tbl = RCLASS_IV_TBL(src);
-    if (!orig_tbl) return;
-
-    st_table *new_tbl = st_copy(orig_tbl);
-    st_foreach(new_tbl, tbl_copy_i, (st_data_t)dst);
-
-    RUBY_ASSERT(!RCLASS_IV_TBL(dst));
-    RCLASS_IV_TBL(dst) = new_tbl;
-
+    RUBY_ASSERT(RCLASS_SHAPE_ID(dst) == ROOT_SHAPE_ID);
     RUBY_ASSERT(!RCLASS_IVPTR(dst));
-    RCLASS_IVPTR(dst) = ALLOC_N(VALUE, RCLASS_NUMIV(src));
-    MEMCPY(RCLASS_IVPTR(dst), RCLASS_IVPTR(src), VALUE, RCLASS_NUMIV(src));
-    RCLASS_NUMIV(dst) = RCLASS_NUMIV(src);
 
-    rb_shape_set_shape(dst, rb_shape_get_shape(src));
+    rb_ivar_foreach(src, tbl_copy_i, dst);
 
     verify_class_iv_matches_shape(dst);
 }
