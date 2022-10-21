@@ -90,6 +90,13 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     RBASIC_SET_SHAPE_ID(obj, shape_id);
 }
 
+static inline shape_id_t
+RCLASS_SHAPE_ID(VALUE obj)
+{
+    RUBY_ASSERT(RB_TYPE_P(obj, T_CLASS) || RB_TYPE_P(obj, T_MODULE));
+    return RBASIC_SHAPE_ID(obj);
+}
+
 #else
 
 static inline shape_id_t
@@ -105,6 +112,12 @@ ROBJECT_SET_SHAPE_ID(VALUE obj, shape_id_t shape_id)
     RBASIC(obj)->flags &= SHAPE_FLAG_MASK;
     RBASIC(obj)->flags |= ((VALUE)(shape_id) << SHAPE_FLAG_SHIFT);
 }
+
+shape_id_t rb_rclass_shape_id(VALUE obj);
+static inline shape_id_t RCLASS_SHAPE_ID(VALUE obj) {
+    rb_rclass_shape_id(obj);
+}
+
 #endif
 
 bool rb_shape_root_shape_p(rb_shape_t* shape);
