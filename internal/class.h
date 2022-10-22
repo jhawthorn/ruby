@@ -59,6 +59,7 @@ struct rb_classext_struct {
     rb_alloc_func_t allocator;
     const VALUE includer;
     uint32_t max_iv_count;
+    VALUE classpath;
 #if !SHAPE_IN_BASIC_FLAGS
     shape_id_t shape_id;
 #endif
@@ -96,11 +97,13 @@ typedef struct rb_classext_struct rb_classext_t;
 #define RCLASS_SUBCLASSES(c) (RCLASS_EXT(c)->subclasses)
 #define RCLASS_SUPERCLASS_DEPTH(c) (RCLASS_EXT(c)->superclass_depth)
 #define RCLASS_SUPERCLASSES(c) (RCLASS_EXT(c)->superclasses)
+#define RCLASS_CLASSPATH(c) (RCLASS_EXT(c)->classpath)
 
 #define RICLASS_IS_ORIGIN FL_USER0
 #define RCLASS_CLONED     FL_USER1
 #define RCLASS_SUPERCLASSES_INCLUDE_SELF FL_USER2
 #define RICLASS_ORIGIN_SHARED_MTBL FL_USER3
+#define RCLASS_CLASSPATH_PERMANENT FL_USER4
 
 /* class.c */
 void rb_class_subclass_add(VALUE super, VALUE klass);

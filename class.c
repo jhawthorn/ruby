@@ -225,6 +225,7 @@ class_alloc(VALUE flags, VALUE klass)
     RCLASS_SET_ORIGIN((VALUE)obj, (VALUE)obj);
     RB_OBJ_WRITE(obj, &RCLASS_REFINED_CLASS(obj), Qnil);
     RCLASS_ALLOCATOR(obj) = 0;
+    RCLASS_CLASSPATH(obj) = Qnil;
 
     return (VALUE)obj;
 }
@@ -412,13 +413,7 @@ copy_tables(VALUE clone, VALUE orig)
     }
     RCLASS_M_TBL(clone) = 0;
     if (RCLASS_IV_TBL(orig)) {
-        st_data_t id;
-
         rb_iv_tbl_copy(clone, orig);
-        CONST_ID(id, "__tmp_classpath__");
-        st_delete(RCLASS_IV_TBL(clone), &id, 0);
-        CONST_ID(id, "__classpath__");
-        st_delete(RCLASS_IV_TBL(clone), &id, 0);
     }
     if (RCLASS_CONST_TBL(orig)) {
         struct clone_const_arg arg;
