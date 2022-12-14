@@ -39,6 +39,8 @@ static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 struct gen_ivtbl;
 int rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl);
 
+void rb_warmup_constant_caches(void);
+
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */
 void rb_mark_generic_ivar(VALUE);

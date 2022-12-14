@@ -3923,3 +3923,93 @@ rb_const_lookup(VALUE klass, ID id)
     }
     return NULL;
 }
+
+#include "internal/sanitizers.h"
+#include "gc.h"
+
+#define CLASS_OR_MODULE_P(obj) \
+    (!SPECIAL_CONST_P(obj) && \
+     (BUILTIN_TYPE(obj) == T_CLASS || BUILTIN_TYPE(obj) == T_MODULE))
+
+static VALUE
+safe_constant_read(const ID *segments)
+{
+    RUBY_ASSERT_ALWAYS(*segments == idNULL);
+    segments++;
+
+    VALUE val = rb_cObject;
+    while (*segments) {
+        if (!CLASS_OR_MODULE_P(val)) return Qundef;
+
+        rb_const_entry_t *ce = rb_const_lookup(val, *segments++);
+        if (!ce) return Qundef;
+        if (RB_CONST_PRIVATE_P(ce)) return Qundef;
+        if (RB_CONST_DEPRECATED_P(ce)) return Qundef;
+
+        val = ce->value;
+        if (UNDEF_P(val)) return Qundef;
+    }
+    return val;
+}
+
+static void
+warmup_constant_cache_ment(rb_method_entry_t *ment)
+{
+    if (!ment->def || ment->def->type != VM_METHOD_TYPE_ISEQ)
+        return;
+
+    const rb_iseq_t *iseq = ment->def->body.iseq.iseqptr;
+    //const rb_cref_t *cref = ment->def->body.iseq.cref;
+    struct rb_iseq_constant_body *body = iseq->body;
+
+    for (unsigned int ic_idx = 0; ic_idx < body->ic_size; ic_idx++) {
+        IC ic = &ISEQ_IS_IC_ENTRY(body, ic_idx);
+
+        // Skip if already warm
+        if (ic->entry) continue;
+
+        // for testing: only absolute constant references
+        if (ic->segments[0] != idNULL)
+            continue;
+
+        VALUE val = safe_constant_read(ic->segments);
+        rb_obj_info_dump((VALUE)ment);
+        rb_obj_info_dump(val);
+        fprintf(stderr, "ic:%p\n", ic);
+
+        struct iseq_inline_constant_cache_entry *ice = (struct iseq_inline_constant_cache_entry *)rb_imemo_new(imemo_constcache, 0, 0, 0, 0);
+        RB_OBJ_WRITE(ice, &ice->value, val);
+        ice->ic_cref = NULL; // FIXME
+        if (rb_ractor_shareable_p(val)) ice->flags |= IMEMO_CONST_CACHE_SHAREABLE;
+        RB_OBJ_WRITE(iseq, &ic->entry, ice);
+
+        // fixme: yjit invalidate?
+    }
+}
+
+static int
+warmup_constant_cache_i(void *vstart, void *vend, size_t stride, void *data)
+{
+    VALUE v = (VALUE)vstart;
+    for (; v != (VALUE)vend; v += stride) {
+        void *ptr = asan_poisoned_object_p(v);
+        asan_unpoison_object(v, false);
+
+        if (IMEMO_TYPE_P(v, imemo_ment)) {
+            rb_method_entry_t *ment = (rb_method_entry_t *)v;
+            warmup_constant_cache_ment(ment);
+        }
+
+        asan_poison_object_if(ptr, v);
+    }
+    return 0;
+}
+
+void rb_warmup_constant_caches(void) {
+    fprintf(stderr, "!!! warmup\n");
+    rb_objspace_each_objects(warmup_constant_cache_i, NULL);
+}
+
+
+
+

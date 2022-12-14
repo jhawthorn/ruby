@@ -114,6 +114,8 @@ struct MEMO {
     } u3;
 };
 
+#define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
+
 /* ment is in method.h */
 
 #define THROW_DATA_P(err) imemo_throw_data_p((VALUE)err)

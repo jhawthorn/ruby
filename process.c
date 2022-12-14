@@ -8767,6 +8767,13 @@ proc_rb_f_kill(int c, const VALUE *v, VALUE _)
     return rb_f_kill(c, v);
 }
 
+static VALUE
+proc_warmup(VALUE _)
+{
+    rb_warmup_constant_caches();
+    return Qnil;
+}
+
 VALUE rb_mProcess;
 static VALUE rb_mProcUID;
 static VALUE rb_mProcGID;
@@ -9049,6 +9056,8 @@ InitVM_process(void)
     rb_define_module_function(rb_mProcess, "daemon", proc_daemon, -1);
 
     rb_define_module_function(rb_mProcess, "times", rb_proc_times, 0);
+
+    rb_define_module_function(rb_mProcess, "warmup", proc_warmup, 0);
 
 #if defined(RUBY_CLOCK_REALTIME)
 #elif defined(RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME)

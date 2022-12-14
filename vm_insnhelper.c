@@ -5228,8 +5228,6 @@ rb_vm_opt_newarray_min(rb_execution_context_t *ec, rb_num_t num, const VALUE *pt
 
 #undef id_cmp
 
-#define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
-
 static void
 vm_track_constant_cache(ID id, void *ic)
 {
