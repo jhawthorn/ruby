@@ -269,6 +269,23 @@ CREF_OMOD_SHARED_UNSET(rb_cref_t *cref)
     cref->flags &= ~CREF_FL_OMOD_SHARED;
 }
 
+#include "internal/class.h" // for RCLASS_CLONED
+
+/* Whether constant references relative to this CREF can be safely cached */
+static inline bool
+cref_const_cacheable(const rb_cref_t *cref)
+{
+    while (cref) {
+        if (FL_TEST(CREF_CLASS(cref), FL_SINGLETON) ||
+            FL_TEST(CREF_CLASS(cref), RCLASS_CLONED)) {
+            return FALSE;
+        }
+        cref = CREF_NEXT(cref);
+    }
+    /* does not include singleton class */
+    return TRUE;
+}
+
 enum {
     RAISED_EXCEPTION = 1,
     RAISED_STACKOVERFLOW = 2,
