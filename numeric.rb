@@ -300,6 +300,34 @@ class Integer
   def denominator
     1
   end
+
+  def times
+    unless Primitive.cexpr! 'rb_block_given_p()'
+      return Primitive.cexpr! 'SIZED_ENUMERATOR(self, 0, 0, int_dotimes_size)'
+    end
+
+    i = self
+    while i >= 10
+      yield
+      yield
+      yield
+      yield
+      yield
+      yield
+      yield
+      yield
+      yield
+      yield
+      i -= 10
+    end
+
+    while i > 0
+      yield
+      i -= 10
+    end
+
+    self
+  end
 end
 
 #  call-seq:
