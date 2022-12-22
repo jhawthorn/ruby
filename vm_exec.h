@@ -163,6 +163,22 @@ default:                        \
 #define DISPATCH_ORIGINAL_INSN(x) goto  start_of_##x;
 #endif
 
+#if 0
+#define DEBUG_QUICKEN(old_insn, new_insn) fprintf(stderr, "%s -> %s\n", #old_insn, #new_insn)
+#else
+#define DEBUG_QUICKEN(old_insn, new_insn)
+#endif
+
+#define QUICKEN2(old_insn, new_insn) do { \
+    RUBY_ASSERT(leaf); \
+    const VALUE *insn_pc = GET_PC(); \
+    DEBUG_QUICKEN(old_insn, new_insn); \
+    RUBY_ASSERT(*insn_pc == (VALUE)LABEL_PTR(old_insn)); \
+    *((VALUE *)insn_pc) = (VALUE)LABEL_PTR(new_insn); \
+    DISPATCH_ORIGINAL_INSN(new_insn); \
+} while (0)
+#define QUICKEN(x) QUICKEN2(NAME_OF_CURRENT_INSN, x)
+
 #define VM_SP_CNT(ec, sp) ((sp) - (ec)->vm_stack)
 
 #ifdef MJIT_HEADER

@@ -3729,9 +3729,9 @@ iseq_specialized_instruction(rb_iseq_t *iseq, INSN *iobj)
                 break;
               case 1:
                 switch (vm_ci_mid(ci)) {
-                  case idPLUS:	 SP_INSN(plus);	  return COMPILE_OK;
-                  case idMINUS:	 SP_INSN(minus);  return COMPILE_OK;
-                  case idMULT:	 SP_INSN(mult);	  return COMPILE_OK;
+                  case idPLUS:	 SP_INSN(plus_adaptive);	  return COMPILE_OK;
+                  case idMINUS:	 SP_INSN(minus_adaptive);  return COMPILE_OK;
+                  case idMULT:	 SP_INSN(mult_adaptive);	  return COMPILE_OK;
                   case idDIV:	 SP_INSN(div);	  return COMPILE_OK;
                   case idMOD:	 SP_INSN(mod);	  return COMPILE_OK;
                   case idEq:	 SP_INSN(eq);	  return COMPILE_OK;

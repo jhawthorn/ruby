@@ -1089,6 +1089,47 @@ opt_case_dispatch
 
 /** simple functions */
 
+DEFINE_INSN
+opt_plus_adaptive
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (FIXNUM_2_P(recv, obj)) {
+        QUICKEN(opt_plus_fixnum);
+    } else if (FLONUM_2_P(recv, obj)) {
+        QUICKEN(opt_plus_flonum);
+    } else {
+        QUICKEN(opt_plus);
+    }
+}
+
+DEFINE_INSN
+opt_plus_fixnum
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (LIKELY(FIXNUM_2_P(recv, obj))) {
+        val = rb_fix_plus_fix(recv, obj);
+    } else {
+        QUICKEN(opt_plus);
+    }
+}
+
+DEFINE_INSN
+opt_plus_flonum
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (LIKELY(FLONUM_2_P(recv, obj))) {
+        val = DBL2NUM(RFLOAT_VALUE(recv) + RFLOAT_VALUE(obj));
+    } else {
+        QUICKEN(opt_plus);
+    }
+}
+
 /* optimized X+Y. */
 DEFINE_INSN
 opt_plus
@@ -1103,6 +1144,47 @@ opt_plus
     }
 }
 
+DEFINE_INSN
+opt_minus_adaptive
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (FIXNUM_2_P(recv, obj)) {
+        QUICKEN(opt_minus_fixnum);
+    } else if (FLONUM_2_P(recv, obj)) {
+        QUICKEN(opt_minus_flonum);
+    } else {
+        QUICKEN(opt_minus);
+    }
+}
+
+DEFINE_INSN
+opt_minus_fixnum
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (LIKELY(FIXNUM_2_P(recv, obj))) {
+        val = rb_fix_minus_fix(recv, obj);
+    } else {
+        QUICKEN(opt_minus);
+    }
+}
+
+DEFINE_INSN
+opt_minus_flonum
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (LIKELY(FLONUM_2_P(recv, obj))) {
+        val = DBL2NUM(RFLOAT_VALUE(recv) - RFLOAT_VALUE(obj));
+    } else {
+        QUICKEN(opt_minus);
+    }
+}
+
 /* optimized X-Y. */
 DEFINE_INSN
 opt_minus
@@ -1114,6 +1196,47 @@ opt_minus
 
     if (val == Qundef) {
         CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_mult_adaptive
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (FIXNUM_2_P(recv, obj)) {
+        QUICKEN(opt_mult_fixnum);
+    } else if (FLONUM_2_P(recv, obj)) {
+        QUICKEN(opt_mult_flonum);
+    } else {
+        QUICKEN(opt_mult);
+    }
+}
+
+DEFINE_INSN
+opt_mult_fixnum
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (LIKELY(FIXNUM_2_P(recv, obj))) {
+        val = rb_fix_mul_fix(recv, obj);
+    } else {
+        QUICKEN(opt_mult);
+    }
+}
+
+DEFINE_INSN
+opt_mult_flonum
+(CALL_DATA cd)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+    if (LIKELY(FLONUM_2_P(recv, obj))) {
+        val = DBL2NUM(RFLOAT_VALUE(recv) * RFLOAT_VALUE(obj));
+    } else {
+        QUICKEN(opt_mult);
     }
 }
 
