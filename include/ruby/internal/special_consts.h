@@ -100,6 +100,7 @@ ruby_special_consts {
     RUBY_Qtrue          = 0x14, /* ...0001 0100 */
     RUBY_Qundef         = 0x24, /* ...0010 0100 */
     RUBY_IMMEDIATE_MASK = 0x07, /* ...0000 0111 */
+    RUBY_IMMEDIATE_SHIFT = 3,
     RUBY_FIXNUM_FLAG    = 0x01, /* ...xxxx xxx1 */
     RUBY_FLONUM_MASK    = 0x03, /* ...0000 0011 */
     RUBY_FLONUM_FLAG    = 0x02, /* ...xxxx xx10 */
@@ -110,6 +111,7 @@ ruby_special_consts {
     RUBY_Qtrue          = 0x06, /* ...0000 0110 */
     RUBY_Qundef         = 0x0a, /* ...0000 1010 */
     RUBY_IMMEDIATE_MASK = 0x03, /* ...0000 0011 */
+    RUBY_IMMEDIATE_SHIFT = 2,
     RUBY_FIXNUM_FLAG    = 0x01, /* ...xxxx xxx1 */
     RUBY_FLONUM_MASK    = 0x00, /* any values ANDed with FLONUM_MASK cannot be FLONUM_FLAG */
     RUBY_FLONUM_FLAG    = 0x02, /* ...0000 0010 */
@@ -325,7 +327,10 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline bool
 RB_SPECIAL_CONST_P(VALUE obj)
 {
-    return RB_IMMEDIATE_P(obj) || obj == RUBY_Qfalse;
+    SIGNED_VALUE x = obj;
+    //return (((x - 1) & ~x) <= RUBY_IMMEDIATE_SHIFT);
+    //return (((x & -x) - 1) <= RUBY_IMMEDIATE_SHIFT);
+    return ((x & -x) <= RUBY_IMMEDIATE_SHIFT + 1);
 }
 
 RBIMPL_ATTR_CONST()
