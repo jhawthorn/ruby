@@ -299,12 +299,11 @@ RBIMPL_ATTR_CONSTEXPR(CXX11)
 RBIMPL_ATTR_ARTIFICIAL()
 /**
  * Checks if  the given  object is  an immediate  i.e. an  object which  has no
- * corresponding storage inside of the object space.
+ * corresponding storage inside of the object space (and also isn't Qfalse).
  *
  * @param[in]  obj    An arbitrary ruby object.
- * @retval     true   `obj` is a Flonum.
+ * @retval     true   `obj` is an immediate value
  * @retval     false  Anything else.
- * @see        RB_FLOAT_TYPE_P()
  * @note       The concept of "immediate" is purely C specific.
  */
 static inline bool
