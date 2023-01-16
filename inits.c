@@ -42,6 +42,7 @@ rb_call_inits(void)
     CALL(jump);
     CALL(Numeric);
     CALL(Bignum);
+    CALL(special_const_lookup);
     CALL(syserr);
     CALL(Array);
     CALL(Hash);

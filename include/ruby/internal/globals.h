@@ -155,6 +155,8 @@ RUBY_EXTERN VALUE rb_stdin;                      /**< `STDIN` constant. */
 RUBY_EXTERN VALUE rb_stdout;                     /**< `STDOUT` constant. */
 RUBY_EXTERN VALUE rb_stderr;                     /**< `STDERR` constant. */
 
+RUBY_EXTERN VALUE special_const_class_lookup[32];
+
 RBIMPL_ATTR_PURE()
 /**
  * Object  to class  mapping  function.   Every object  have  its class.   This
@@ -173,24 +175,10 @@ rb_class_of(VALUE obj)
 {
     if (! RB_SPECIAL_CONST_P(obj)) {
         return RBASIC_CLASS(obj);
-    }
-    else if (obj == RUBY_Qfalse) {
-        return rb_cFalseClass;
-    }
-    else if (obj == RUBY_Qnil) {
-        return rb_cNilClass;
-    }
-    else if (obj == RUBY_Qtrue) {
-        return rb_cTrueClass;
-    }
-    else if (RB_FIXNUM_P(obj)) {
-        return rb_cInteger;
-    }
-    else if (RB_STATIC_SYM_P(obj)) {
-        return rb_cSymbol;
-    }
-    else if (RB_FLONUM_P(obj)) {
-        return rb_cFloat;
+    } else {
+        VALUE klass = special_const_class_lookup[obj & 0x1f];
+        RUBY_ASSERT(klass);
+        return klass;
     }
 
 #if !RUBY_DEBUG

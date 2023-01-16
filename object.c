@@ -59,6 +59,8 @@
  * \{
  */
 
+VALUE special_const_class_lookup[32];
+
 VALUE rb_cBasicObject;
 VALUE rb_mKernel;
 VALUE rb_cObject;
@@ -4585,6 +4587,23 @@ InitVM_Object(void)
     rb_define_method(rb_cFalseClass, "===", case_equal, 1);
     rb_undef_alloc_func(rb_cFalseClass);
     rb_undef_method(CLASS_OF(rb_cFalseClass), "new");
+}
+
+void
+Init_special_const_lookup(void)
+{
+    for (VALUE i = 0; i <= 32; i++) {
+        if (RB_FIXNUM_P(i)) {
+            special_const_class_lookup[i] = rb_cInteger;
+        } else if (RB_STATIC_SYM_P(i)) {
+            special_const_class_lookup[i] = rb_cSymbol;
+        } else if (RB_FLONUM_P(i)) {
+            special_const_class_lookup[i] = rb_cFloat;
+        }
+    }
+    special_const_class_lookup[Qfalse] = rb_cFalseClass;
+    special_const_class_lookup[Qnil] = rb_cNilClass;
+    special_const_class_lookup[Qtrue] = rb_cTrueClass;
 }
 
 #include "kernel.rbinc"
