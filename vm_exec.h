@@ -83,14 +83,14 @@ error !
 #define INSN_FUNC_PARAMS rb_execution_context_t *ec, rb_control_frame_t *reg_cfp
 #define INSN_FUNC_ARGS ec, reg_cfp
 
-typedef INSN_FUNC_RET insn_func_ptr_t(INSN_FUNC_PARAMS);
+typedef INSN_FUNC_RET rb_insn_tailcall_func_t(INSN_FUNC_PARAMS);
 
 #define INSN_ENTRY(insn) \
   static INSN_FUNC_RET \
     FUNC_FASTCALL(LABEL(insn))(INSN_FUNC_PARAMS) {
 
 #define TC_DISPATCH(insn) \
-  MUSTTAIL return (*(insn_func_ptr_t *)GET_CURRENT_INSN())(INSN_FUNC_ARGS);
+  MUSTTAIL return (*(rb_insn_tailcall_func_t *)GET_CURRENT_INSN())(INSN_FUNC_ARGS);
 
 //#define END_INSN(insn) return reg_cfp;}
 #define END_INSN(insn) TC_DISPATCH(__NEXT_INSN__);}
