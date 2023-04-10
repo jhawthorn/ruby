@@ -66,7 +66,7 @@ static void vm_insns_counter_count_insn(int insn) {}
 #endif
 /* #define DECL_SC_REG(r, reg) VALUE reg_##r */
 
-#if !OPT_CALL_THREADED_CODE
+#if !OPT_CALL_THREADED_CODE && !OPT_TAILCALL_THREADED_CODE
 static VALUE
 vm_exec_core(rb_execution_context_t *ec, VALUE initial)
 {
@@ -158,7 +158,7 @@ rb_vm_get_insns_address_table(void)
     return (const void **)vm_exec_core(0, 0);
 }
 
-#else /* OPT_CALL_THREADED_CODE */
+#else /* OPT_CALL_THREADED_CODE || OPT_TAILCALL_THREADED_CODE */
 
 #include "vm.inc"
 #include "vmtc.inc"

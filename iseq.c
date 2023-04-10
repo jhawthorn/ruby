@@ -3280,7 +3280,7 @@ static insn_data_t insn_data[VM_INSTRUCTION_SIZE/2];
 void
 rb_vm_encoded_insn_data_table_init(void)
 {
-#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE || OPT_TAILCALL_THREADED_CODE
     const void * const *table = rb_vm_get_insns_address_table();
 #define INSN_CODE(insn) ((VALUE)table[insn])
 #else
@@ -3347,7 +3347,7 @@ rb_vm_insn_addr2opcode(const void *addr)
 int
 rb_vm_insn_decode(const VALUE encoded)
 {
-#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE || OPT_TAILCALL_THREADED_CODE
     int insn = rb_vm_insn_addr2insn((void *)encoded);
 #else
     int insn = (int)encoded;
