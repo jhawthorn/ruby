@@ -176,13 +176,9 @@ vm_exec_core(rb_execution_context_t *ec, VALUE initial)
     rb_thread_t *th;
 
 #ifdef OPT_TAILCALL_THREADED_CODE
-    while (1) {
-        reg_cfp = ((rb_insn_tailcall_func_t) (*GET_PC()))(INSN_FUNC_ARGS);
+    reg_cfp = ((rb_insn_tailcall_func_t *) (*GET_PC()))(INSN_FUNC_ARGS);
 
-        if (UNLIKELY(reg_cfp == 0)) {
-            break;
-        }
-    }
+    RUBY_ASSERT_ALWAYS(reg_cfp == 0);
 #else
     while (1) {
         reg_cfp = ((rb_insn_func_t) (*GET_PC()))(ec, reg_cfp);
