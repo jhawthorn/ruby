@@ -231,7 +231,7 @@ jobs:
       - name: setenv
         run: |
           echo "GNUMAKEFLAGS=-sj$((1 + $(nproc --all)))" >> $GITHUB_ENV
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           path: src
       - uses: actions/cache@v3
