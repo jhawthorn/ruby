@@ -1020,8 +1020,19 @@ thread_join_sleep(VALUE arg)
         end = rb_hrtime_add(*limit, rb_hrtime_now());
     }
 
+#ifdef RB_INTERNAL_THREAD_HOOK
+    bool hook_triggered = false;
+#endif
+
     while (!thread_finished(target_th)) {
         VALUE scheduler = rb_fiber_scheduler_current();
+
+#ifdef RB_INTERNAL_THREAD_HOOK
+        if (!hook_triggered) {
+            RB_INTERNAL_THREAD_HOOK(RUBY_INTERNAL_THREAD_EVENT_SUSPENDED, th);
+            hook_triggered = true;
+        }
+#endif
 
         if (scheduler != Qnil) {
             rb_fiber_scheduler_block(scheduler, target_th->self, p->timeout);
