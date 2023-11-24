@@ -79,6 +79,46 @@ class TestThreadInstrumentation < Test::Unit::TestCase
     w&.close
   end
 
+  def test_queue_releases_gvl
+    queue1 = Queue.new
+    queue2 = Queue.new
+
+    thread = Thread.new do
+      queue1 << true
+      queue2.pop
+    end
+
+    queue1.pop
+    queue2 << true
+    thread.join
+
+    full_timeline = Bug::ThreadInstrumentation.unregister_callback
+    timeline = timeline_for(thread, full_timeline)
+    assert_consistent_timeline(timeline)
+    #assert_equal %i(started ready resumed suspended ready resumed exited), timeline
+  end
+
+  def test_thread_blocked_forever
+    mutex = Mutex.new
+    mutex.lock
+
+    thread = Thread.new do
+      mutex.lock
+    end
+    10.times { Thread.pass }
+    sleep 0.1
+
+    full_timeline = Bug::ThreadInstrumentation.unregister_callback
+    p thread
+
+    mutex.unlock
+    thread.join
+
+    timeline = timeline_for(thread, full_timeline)
+    assert_consistent_timeline(timeline)
+    assert_equal %i(started ready resumed suspended), timeline
+  end
+
   def test_thread_instrumentation_fork_safe
     skip "No fork()" unless Process.respond_to?(:fork)
 
