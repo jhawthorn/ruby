@@ -4681,6 +4681,12 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
         for (; p < pend; p += stride) {
             VALUE vp = (VALUE)p;
             void *poisoned = asan_unpoison_object_temporary(vp);
+
+            if (rb_free_at_exit && FL_TEST(vp, FL_EXIVAR)) {
+                rb_free_generic_ivar(vp);
+                FL_UNSET(vp, FL_EXIVAR);
+            }
+
             switch (BUILTIN_TYPE(vp)) {
               case T_DATA:
                 if (!DATA_PTR(p) || !RANY(p)->as.data.dfree) break;
