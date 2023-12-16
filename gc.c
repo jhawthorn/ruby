@@ -4605,6 +4605,7 @@ rb_objspace_free_objects(rb_objspace_t *objspace)
         uintptr_t pend = p + page->total_slots * stride;
         for (; p < pend; p += stride) {
             VALUE vp = (VALUE)p;
+            void *poisoned = asan_unpoison_object_temporary(vp);
             switch (BUILTIN_TYPE(vp)) {
               case T_DATA: {
                 if (rb_obj_is_mutex(vp) || rb_obj_is_thread(vp) || rb_obj_is_main_ractor(vp)) {
@@ -4617,6 +4618,10 @@ rb_objspace_free_objects(rb_objspace_t *objspace)
                 break;
               default:
                 break;
+            }
+            if (poisoned) {
+                GC_ASSERT(BUILTIN_TYPE(vp) == T_NONE);
+                asan_poison_object(vp);
             }
         }
     }
