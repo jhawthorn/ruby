@@ -2995,7 +2995,6 @@ ruby_vm_destruct(rb_vm_t *vm)
         rb_ractor_set_current_ec(vm->ractor.main_ractor, NULL);
 
         if (rb_free_on_exit) {
-            rb_free_default_rand_key();
             rb_free_encoded_insn_data();
             rb_free_global_enc_table();
             rb_free_loaded_builtin_table();
