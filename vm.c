@@ -2992,6 +2992,8 @@ ruby_vm_destruct(rb_vm_t *vm)
 
     if (vm) {
         rb_thread_t *th = vm->ractor.main_thread;
+        rb_ractor_set_current_ec(vm->ractor.main_ractor, NULL);
+
         VALUE *stack = th->ec->vm_stack;
         if (rb_free_on_exit) {
             rb_free_default_rand_key();
