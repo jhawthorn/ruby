@@ -103,12 +103,14 @@
 #ifdef NOT_RUBY
 #include "regint.h"
 #include "st.h"
+#include <assert.h>
 #elif defined RUBY_EXPORT
 #include "internal.h"
 #include "internal/bits.h"
 #include "internal/hash.h"
 #include "internal/sanitizers.h"
 #include "internal/st.h"
+#include "ruby_assert.h"
 #endif
 
 #include <stdio.h>
@@ -116,7 +118,6 @@
 #include <stdlib.h>
 #endif
 #include <string.h>
-#include <assert.h>
 
 #ifdef __GNUC__
 #define PREFETCH(addr, write_p) __builtin_prefetch(addr, write_p)
@@ -790,7 +791,7 @@ rebuild_table_with(st_table *const new_tab, st_table *const tab)
         ni++;
     }
 
-    RUBY_ASSERT(new_tab->num_entries == tab->num_entries);
+    assert(new_tab->num_entries == tab->num_entries);
 }
 
 static void
@@ -1180,7 +1181,7 @@ st_add_direct_with_hash(st_table *tab,
     st_index_t ind;
     st_index_t bin_ind;
 
-    RUBY_ASSERT(hash != RESERVED_HASH_VAL);
+    assert(hash != RESERVED_HASH_VAL);
 
     rebuild_table_if_necessary(tab);
     ind = tab->entries_bound++;
