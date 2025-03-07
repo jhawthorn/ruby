@@ -543,6 +543,8 @@ rb_fstring(VALUE str)
     return fstr;
 }
 
+static pthread_rwlock_t fstring_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 static VALUE
 register_fstring(VALUE str, bool copy, bool force_precompute_hash)
 {
@@ -559,14 +561,30 @@ register_fstring(VALUE str, bool copy, bool force_precompute_hash)
     }
 #endif
 
+    VALUE found_fstr = Qfalse;
+    st_table *frozen_strings = rb_vm_fstring_table();
+    if (!pthread_rwlock_tryrdlock(&fstring_lock)) {
+        int found = st_lookup(frozen_strings, (st_data_t)str, &found_fstr);
+        pthread_rwlock_unlock(&fstring_lock);
+
+        if (found && !rb_objspace_garbage_object_p(found_fstr)) {
+            RUBY_ASSERT(OBJ_FROZEN(found_fstr));
+            RUBY_ASSERT(RBASIC_CLASS(found_fstr) == rb_cString);
+            return found_fstr;
+        }
+    }
+
+    //hash = do_hash(key, tab);
+
     RB_VM_LOCK_ENTER();
+    pthread_rwlock_wrlock(&fstring_lock);
     {
-        st_table *frozen_strings = rb_vm_fstring_table();
         do {
             args.fstr = str;
             st_update(frozen_strings, (st_data_t)str, fstr_update_callback, (st_data_t)&args);
         } while (UNDEF_P(args.fstr));
     }
+    pthread_rwlock_unlock(&fstring_lock);
     RB_VM_LOCK_LEAVE();
 
     RUBY_ASSERT(OBJ_FROZEN(args.fstr));
