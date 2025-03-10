@@ -563,8 +563,15 @@ register_fstring(VALUE str, bool copy, bool force_precompute_hash)
 
     VALUE found_fstr = Qfalse;
     st_table *frozen_strings = rb_vm_fstring_table();
+
+    // HACK: We can't block on this lock because the lock could be held by
+    // someone who calls vm_barrier and will need to stop this thread or will
+    // deadlock. For now, just try to grab the lock and give up if it isn't
+    // free.
     if (!pthread_rwlock_tryrdlock(&fstring_lock)) {
+        // HACK: Must not allocate or VM_LOCK until rwlock is free
         int found = st_lookup(frozen_strings, (st_data_t)str, &found_fstr);
+
         pthread_rwlock_unlock(&fstring_lock);
 
         if (found && !rb_objspace_garbage_object_p(found_fstr)) {
@@ -574,8 +581,7 @@ register_fstring(VALUE str, bool copy, bool force_precompute_hash)
         }
     }
 
-    //hash = do_hash(key, tab);
-
+    // HACK: Acquire the VM lock AND the write lock to avoid deadlocking
     RB_VM_LOCK_ENTER();
     pthread_rwlock_wrlock(&fstring_lock);
     {
