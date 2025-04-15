@@ -289,6 +289,12 @@ class TestClass < Test::Unit::TestCase
     assert_raise_with_message(TypeError, /prohibited/) {
       allocator.bind_call(Rational)
     }
+    assert_raise_with_message(TypeError, /prohibited/) {
+      allocator.bind_call(Rational.dup)
+    }
+    assert_raise_with_message(TypeError, /prohibited/) {
+      allocator.bind_call(Class.new(Rational))
+    }
   end
 
   def test_nonascii_name

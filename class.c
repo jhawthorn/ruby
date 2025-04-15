@@ -556,6 +556,7 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
         rb_singleton_class_attached(METACLASS_OF(clone), (VALUE)clone);
     }
     RCLASS_SET_ALLOCATOR(clone, RCLASS_ALLOCATOR(orig));
+    RCLASS_EXT(clone)->alloc_prohibited = RCLASS_EXT(orig)->alloc_prohibited;
     copy_tables(clone, orig);
     if (RCLASS_M_TBL(orig)) {
         struct clone_method_arg arg;
