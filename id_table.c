@@ -324,3 +324,52 @@ rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_table_for
     }
 }
 
+#include "ruby/thread_native.h"
+
+struct rb_concurrent_id_table {
+    struct rb_id_table table;
+    rb_nativethread_lock_t lock;
+};
+
+struct rb_concurrent_id_table *rb_concurrent_id_table_create(size_t size) {
+    struct rb_concurrent_id_table *tbl = ALLOC(struct rb_concurrent_id_table);
+    rb_native_mutex_initialize(&tbl->lock);
+    rb_id_table_init(&tbl->table, (int)size);
+    return tbl;
+}
+
+void rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl) {
+    xfree(tbl->table.items);
+    rb_native_mutex_destroy(&tbl->lock);
+    xfree(tbl);
+}
+
+int rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val) {
+    // This may allocate, so we acquire the VM lock outside of the mutex lock to
+    // guarantee ordering of locks and prevent deadlocks
+    int ret;
+    RB_VM_LOCK_ENTER();
+    {
+        rb_native_mutex_lock(&tbl->lock);
+        ret = rb_id_table_insert(&tbl->table, id, val);
+        rb_native_mutex_unlock(&tbl->lock);
+    }
+    RB_VM_LOCK_LEAVE();
+    return ret;
+}
+
+int rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp) {
+    rb_native_mutex_lock(&tbl->lock);
+    // must never allocate or RB_VM_LOCK_ENTER
+    int ret = rb_id_table_lookup(&tbl->table, id, valp);
+    rb_native_mutex_unlock(&tbl->lock);
+    return ret;
+}
+
+int rb_concurrent_id_table_delete(struct rb_concurrent_id_table *tbl, ID id) {
+    rb_native_mutex_lock(&tbl->lock);
+    // must never allocate or RB_VM_LOCK_ENTER
+    int ret = rb_id_table_delete(&tbl->table, id);
+    rb_native_mutex_unlock(&tbl->lock);
+    return ret;
+}

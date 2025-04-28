@@ -5,6 +5,7 @@
 #include "ruby/ruby.h"
 
 struct rb_id_table;
+struct rb_concurrent_id_table;
 
 /* compatible with ST_* */
 enum rb_id_table_iterator_result {
@@ -35,5 +36,11 @@ void rb_id_table_foreach_values_with_replace(struct rb_id_table *tbl, rb_id_tabl
 RUBY_SYMBOL_EXPORT_BEGIN
 size_t rb_id_table_size(const struct rb_id_table *tbl);
 RUBY_SYMBOL_EXPORT_END
+
+struct rb_concurrent_id_table *rb_concurrent_id_table_create(size_t size);
+void rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl);
+int rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val);
+int rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp);
+int rb_concurrent_id_table_delete(struct rb_concurrent_id_table *tbl, ID id);
 
 #endif	/* RUBY_ID_TABLE_H */
