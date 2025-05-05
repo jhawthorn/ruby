@@ -30,6 +30,7 @@
 #include "internal/symbol.h"
 #include "internal/thread.h"
 #include "internal/variable.h"
+#include "ruby/atomic.h"
 #include "ruby/encoding.h"
 #include "ruby/st.h"
 #include "ruby/util.h"
@@ -1561,7 +1562,9 @@ general_ivar_set(VALUE obj, ID id, VALUE val, void *data,
                  void (*shape_resize_ivptr_func)(VALUE, attr_index_t, attr_index_t, void *),
                  void (*set_shape_func)(VALUE, rb_shape_t *, void *),
                  void (*transition_too_complex_func)(VALUE, void *),
-                 st_table *(*too_complex_table_func)(VALUE, void *))
+                 st_table *(*too_complex_table_func)(VALUE, void *),
+                 bool atomic
+                 )
 {
     struct general_ivar_set_result result = {
         .index = 0,
@@ -1599,7 +1602,13 @@ general_ivar_set(VALUE obj, ID id, VALUE val, void *data,
     }
 
     VALUE *table = shape_ivptr_func(obj, data);
-    RB_OBJ_WRITE(obj, &table[index], val);
+
+    if (atomic) {
+        RUBY_ATOMIC_VALUE_SET(table[index], val);
+        RB_OBJ_WRITTEN(obj, Qnil, val);
+    } else {
+        RB_OBJ_WRITE(obj, &table[index], val);
+    }
 
     result.index = index;
     return result;
@@ -1742,7 +1751,8 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
                      generic_ivar_set_shape_resize_ivptr,
                      generic_ivar_set_set_shape,
                      generic_ivar_set_transition_too_complex,
-                     generic_ivar_set_too_complex_table);
+                     generic_ivar_set_too_complex_table,
+                     false);
 }
 
 void
@@ -1819,7 +1829,9 @@ rb_obj_ivar_set(VALUE obj, ID id, VALUE val)
                             obj_ivar_set_shape_resize_ivptr,
                             obj_ivar_set_set_shape,
                             obj_ivar_set_transition_too_complex,
-                            obj_ivar_set_too_complex_table).index;
+                            obj_ivar_set_too_complex_table,
+                            false
+                            ).index;
 }
 
 /* Set the instance variable +val+ on object +obj+ at ivar name +id+.
@@ -4289,9 +4301,13 @@ class_ivar_set_shape_ivptr(VALUE obj, void *_data)
 }
 
 static void
-class_ivar_set_shape_resize_ivptr(VALUE obj, attr_index_t _old_capa, attr_index_t new_capa, void *_data)
+class_ivar_set_shape_resize_ivptr(VALUE obj, attr_index_t old_capa, attr_index_t new_capa, void *_data)
 {
-    REALLOC_N(RCLASS_IVPTR(obj), VALUE, new_capa);
+    // leak old array on purpose. TODO: deferred reclamation
+
+    VALUE *new_ptr = ALLOC_N(VALUE, new_capa);
+    MEMCPY(new_ptr, RCLASS_IVPTR(obj), VALUE, old_capa);
+    RUBY_ATOMIC_PTR_SET(RCLASS_IVPTR(obj), new_ptr);
 }
 
 static void
@@ -4328,7 +4344,8 @@ rb_class_ivar_set(VALUE obj, ID id, VALUE val)
                                     class_ivar_set_shape_resize_ivptr,
                                     class_ivar_set_set_shape,
                                     class_ivar_set_transition_too_complex,
-                                    class_ivar_set_too_complex_table).existing;
+                                    class_ivar_set_too_complex_table,
+                                    true).existing;
     }
     RB_VM_LOCK_LEAVE();
 
