@@ -800,4 +800,11 @@ RCLASS_SET_CLONED(VALUE klass, bool cloned)
     RCLASSEXT_CLONED(RCLASS_EXT_PRIME(klass)) = cloned;
 }
 
+static inline bool
+RCLASS_INITIALIZED_P(VALUE klass)
+{
+    VM_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_MODULE) || RB_TYPE_P(klass, T_ICLASS));
+    return RCLASSEXT_SUPER(RCLASS_EXT_PRIME(klass)) != 0 || klass == rb_cBasicObject;
+}
+
 #endif /* INTERNAL_CLASS_H */

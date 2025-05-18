@@ -286,10 +286,30 @@ rb_obj_not_equal(VALUE obj1, VALUE obj2)
 VALUE
 rb_class_real(VALUE cl)
 {
-    while (cl &&
-        (RCLASS_SINGLETON_P(cl) || BUILTIN_TYPE(cl) == T_ICLASS)) {
-        cl = RCLASS_SUPER(cl);
+    if (!cl) return 0;
+    if (BUILTIN_TYPE(cl) == T_MODULE) {
+        return cl;
     }
+    while (BUILTIN_TYPE(cl) != T_CLASS) {
+        cl = RCLASS_SUPER(cl);
+
+        // Class super chain will always end with a real class
+        RUBY_ASSERT(cl);
+    }
+
+    // This loop almost always only iteraces once, except for singleton classes
+    // of singleton classes
+    while (RCLASS_SINGLETON_P(cl)) {
+        VALUE *superclasses = RCLASS_SUPERCLASSES(cl);
+        int superclass_depth = RCLASS_SUPERCLASS_DEPTH(cl);
+        RUBY_ASSERT(superclasses);
+        RUBY_ASSERT(superclass_depth > 0);
+        cl = superclasses[superclass_depth - 1];
+    }
+
+    RUBY_ASSERT(RB_TYPE_P(cl, T_CLASS));
+    RUBY_ASSERT(!RCLASS_SINGLETON_P(cl));
+
     return cl;
 }
 
@@ -2152,7 +2172,7 @@ class_get_alloc_func(VALUE klass)
 {
     rb_alloc_func_t allocator;
 
-    if (RCLASS_SUPER(klass) == 0 && klass != rb_cBasicObject) {
+    if (!RCLASS_INITIALIZED_P(klass)) {
         rb_raise(rb_eTypeError, "can't instantiate uninitialized class");
     }
     if (RCLASS_SINGLETON_P(klass)) {
@@ -2174,8 +2194,10 @@ class_call_alloc_func(rb_alloc_func_t allocator, VALUE klass)
 
     obj = (*allocator)(klass);
 
-    if (rb_obj_class(obj) != rb_class_real(klass)) {
-        rb_raise(rb_eTypeError, "wrong instance allocation");
+    if (UNLIKELY(CLASS_OF(obj) != klass)) {
+        if (rb_obj_class(obj) != rb_class_real(klass)) {
+            rb_raise(rb_eTypeError, "wrong instance allocation");
+        }
     }
     return obj;
 }
