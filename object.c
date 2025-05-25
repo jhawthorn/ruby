@@ -2115,7 +2115,7 @@ rb_class_initialize(int argc, VALUE *argv, VALUE klass)
     else {
         super = argv[0];
         rb_check_inheritable(super);
-        if (super != rb_cBasicObject && !RCLASS_SUPER(super)) {
+        if (!RCLASS_INITIALIZED_P(super)) {
             rb_raise(rb_eTypeError, "can't inherit uninitialized class");
         }
     }
