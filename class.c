@@ -42,6 +42,8 @@
  * 2:    RCLASS_PRIME_CLASSEXT_PRIME_WRITABLE
  *           This class's prime classext is the only classext and writable from any namespaces.
  *           If unset, the prime classext is writable only from the root namespace.
+ * 3:    RCLASS_IS_INITIALIZED
+ *           Module has not been initialized.
  * if !SHAPE_IN_BASIC_FLAGS
  * 4-19: SHAPE_FLAG_MASK
  *           Shape ID for the class.
@@ -64,13 +66,13 @@
  * 0:    RCLASS_IS_ROOT
  *           The class has been added to the VM roots. Will always be marked and pinned.
  *           This is done for classes defined from C to allow storing them in global variables.
- * 1:    RMODULE_ALLOCATED_BUT_NOT_INITIALIZED
- *           Module has not been initialized.
+ * 1:    RMODULE_IS_REFINEMENT
+ *           Module is used for refinements.
  * 2:    RCLASS_PRIME_CLASSEXT_PRIME_WRITABLE
  *           This module's prime classext is the only classext and writable from any namespaces.
  *           If unset, the prime classext is writable only from the root namespace.
- * 3:    RMODULE_IS_REFINEMENT
- *           Module is used for refinements.
+ * 3:    RCLASS_IS_INITIALIZED
+ *           Module has not been initialized.
  * if !SHAPE_IN_BASIC_FLAGS
  * 4-19: SHAPE_FLAG_MASK
  *           Shape ID for the module.
@@ -990,21 +992,16 @@ copy_tables(VALUE clone, VALUE orig)
 
 static bool ensure_origin(VALUE klass);
 
-/**
- * If this flag is set, that module is allocated but not initialized yet.
- */
-enum {RMODULE_ALLOCATED_BUT_NOT_INITIALIZED = RUBY_FL_USER1};
-
 static inline bool
 RMODULE_UNINITIALIZED(VALUE module)
 {
-    return FL_TEST_RAW(module, RMODULE_ALLOCATED_BUT_NOT_INITIALIZED);
+    return !FL_TEST_RAW(module, RCLASS_IS_INITIALIZED);
 }
 
 void
 rb_module_set_initialized(VALUE mod)
 {
-    FL_UNSET_RAW(mod, RMODULE_ALLOCATED_BUT_NOT_INITIALIZED);
+    FL_SET_RAW(mod, RCLASS_IS_INITIALIZED);
     /* no more re-initialization */
 }
 
@@ -1562,7 +1559,6 @@ rb_module_s_alloc(VALUE klass)
 {
     VALUE mod = class_alloc(T_MODULE, klass);
     class_initialize_method_table(mod);
-    FL_SET(mod, RMODULE_ALLOCATED_BUT_NOT_INITIALIZED);
     return mod;
 }
 
