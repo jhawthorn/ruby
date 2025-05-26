@@ -1397,6 +1397,16 @@ void
 Init_class_hierarchy(void)
 {
     rb_cBasicObject = boot_defclass("BasicObject", 0);
+
+    /* BasicObject is the only initialized class which has depth = 0
+     * To avoid special casing it, we give it a special static array with NULL
+     * at superclasses[-1]
+     */
+    static VALUE basicobject_superclasses[2];
+    basicobject_superclasses[0] = 0;
+    basicobject_superclasses[1] = rb_cBasicObject;
+    RCLASS_WRITE_SUPERCLASSES(rb_cBasicObject, 0, &basicobject_superclasses[1], true);
+
     rb_cObject = boot_defclass("Object", rb_cBasicObject);
     rb_vm_register_global_object(rb_cObject);
 
