@@ -762,6 +762,9 @@ rb_class_boot(VALUE super)
     class_initialize_method_table(klass);
 
     class_associate_super(klass, super, true);
+    if (super && !UNDEF_P(super)) {
+        rb_class_set_initialized(klass);
+    }
 
     return (VALUE)klass;
 }
@@ -1003,7 +1006,7 @@ rb_class_set_initialized(VALUE klass)
 void
 rb_module_check_initializable(VALUE mod)
 {
-    if (!RCLASS_INITIALIZED_P(mod)) {
+    if (RCLASS_INITIALIZED_P(mod)) {
         rb_raise(rb_eTypeError, "already initialized module");
     }
 }
@@ -1012,9 +1015,11 @@ rb_module_check_initializable(VALUE mod)
 VALUE
 rb_mod_init_copy(VALUE clone, VALUE orig)
 {
+    RUBY_ASSERT(RB_TYPE_P(orig, T_CLASS) || RB_TYPE_P(orig, T_MODULE));
+    RUBY_ASSERT(BUILTIN_TYPE(clone) == BUILTIN_TYPE(orig));
+
     switch (BUILTIN_TYPE(clone)) {
       case T_CLASS:
-      case T_ICLASS:
         class_init_copy_check(clone, orig);
         break;
       case T_MODULE:
@@ -1024,6 +1029,8 @@ rb_mod_init_copy(VALUE clone, VALUE orig)
         break;
     }
     if (!OBJ_INIT_COPY(clone, orig)) return clone;
+
+    rb_class_set_initialized(clone);
 
     /* cloned flag is refer at constant inline cache
      * see vm_get_const_key_cref() in vm_insnhelper.c
@@ -1272,6 +1279,7 @@ make_metaclass(VALUE klass)
     super = RCLASS_SUPER(klass);
     while (RB_TYPE_P(super, T_ICLASS)) super = RCLASS_SUPER(super);
     class_associate_super(metaclass, super ? ENSURE_EIGENCLASS(super) : rb_cClass, true);
+    rb_class_set_initialized(klass);
 
     // Full class ancestry may not have been filled until we reach here.
     rb_class_update_superclasses(METACLASS_OF(metaclass));
