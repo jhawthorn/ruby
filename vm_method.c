@@ -1388,13 +1388,20 @@ rb_undef_alloc_func(VALUE klass)
 rb_alloc_func_t
 rb_get_alloc_func(VALUE klass)
 {
-    Check_Type(klass, T_CLASS);
+    RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS));
 
-    for (; klass; klass = RCLASS_SUPER(klass)) {
+    VALUE *superclasses = RCLASS_SUPERCLASSES(klass);
+    int superclass_depth = RCLASS_SUPERCLASS_DEPTH(klass);
+
+    do {
         rb_alloc_func_t allocator = RCLASS_ALLOCATOR(klass);
         if (allocator == UNDEF_ALLOC_FUNC) break;
         if (allocator) return allocator;
-    }
+
+        RUBY_ASSERT(superclass_depth > 0);
+        klass = superclasses[--superclass_depth];
+    } while(klass);
+
     return 0;
 }
 
