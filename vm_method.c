@@ -1389,20 +1389,29 @@ rb_alloc_func_t
 rb_get_alloc_func(VALUE klass)
 {
     RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS));
+    RUBY_ASSERT(RCLASS_INITIALIZED_P(klass));
+    RUBY_ASSERT(!RCLASS_SINGLETON_P(klass));
 
+    /* Try in the given class */
+    rb_alloc_func_t allocator = RCLASS_ALLOCATOR(klass);
+    if (allocator == UNDEF_ALLOC_FUNC) return 0;
+    if (allocator) return allocator;
+
+    /* Try in all parent classes */
     VALUE *superclasses = RCLASS_SUPERCLASSES(klass);
     int superclass_depth = RCLASS_SUPERCLASS_DEPTH(klass);
 
-    do {
-        rb_alloc_func_t allocator = RCLASS_ALLOCATOR(klass);
-        if (allocator == UNDEF_ALLOC_FUNC) break;
-        if (allocator) return allocator;
+    /* Assume we'll always reach BasicObject, and it has an allocator */
+    RUBY_ASSERT(superclass_depth > 0);
+    RUBY_ASSERT(superclasses[0] == rb_cBasicObject);
+    RUBY_ASSERT(RCLASS_ALLOCATOR(rb_cBasicObject));
 
-        RUBY_ASSERT(superclass_depth > 0);
+    for (;;) {
         klass = superclasses[--superclass_depth];
-    } while(klass);
-
-    return 0;
+        rb_alloc_func_t allocator = RCLASS_ALLOCATOR(klass);
+        if (allocator == UNDEF_ALLOC_FUNC) return 0;
+        if (allocator) return allocator;
+    }
 }
 
 const rb_method_entry_t *

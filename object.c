@@ -2168,8 +2168,10 @@ class_call_alloc_func(rb_alloc_func_t allocator, VALUE klass)
 
     obj = (*allocator)(klass);
 
-    if (UNLIKELY(CLASS_OF(obj) != klass)) {
-        if (rb_obj_class(obj) != rb_class_real(klass)) {
+    RUBY_ASSERT(klass == rb_class_real(klass));
+
+    if (UNLIKELY(RBASIC_CLASS(obj) != klass)) {
+        if (rb_obj_class(obj) != klass) {
             rb_raise(rb_eTypeError, "wrong instance allocation");
         }
     }
@@ -2179,7 +2181,7 @@ class_call_alloc_func(rb_alloc_func_t allocator, VALUE klass)
 VALUE
 rb_obj_alloc(VALUE klass)
 {
-    Check_Type(klass, T_CLASS);
+    RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS));
     return rb_class_alloc(klass);
 }
 
