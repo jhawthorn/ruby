@@ -80,6 +80,29 @@ round_capa(int capa)
     return (capa + 1) << 2;
 }
 
+struct id_table_probe {
+    int ix;
+    int d;
+    int mask;
+};
+
+static int
+id_table_probe_start(struct id_table_probe *probe, struct rb_id_table *tbl, id_key_t key)
+{
+    probe->mask = tbl->capa - 1;
+    probe->ix = key & probe->mask;
+    probe->d = 1;
+    return probe->ix;
+}
+
+static int
+id_table_probe_next(struct id_table_probe *probe)
+{
+    probe->ix = (probe->ix + probe->d) & probe->mask;
+    probe->d++;
+    return probe->ix;
+}
+
 struct rb_id_table *
 rb_id_table_init(struct rb_id_table *tbl, size_t s_capa)
 {
@@ -137,14 +160,12 @@ static int
 hash_table_index(struct rb_id_table* tbl, id_key_t key)
 {
     if (tbl->capa > 0) {
-        int mask = tbl->capa - 1;
-        int ix = key & mask;
-        int d = 1;
+        struct id_table_probe probe;
+        int ix = id_table_probe_start(&probe, tbl, key);
         while (key != ITEM_GET_KEY(tbl, ix)) {
             if (!ITEM_COLLIDED(tbl, ix))
                 return -1;
-            ix = (ix + d) & mask;
-            d++;
+            ix = id_table_probe_next(&probe);
         }
         return ix;
     }
@@ -154,14 +175,12 @@ hash_table_index(struct rb_id_table* tbl, id_key_t key)
 static void
 hash_table_raw_insert(struct rb_id_table *tbl, id_key_t key, VALUE val)
 {
-    int mask = tbl->capa - 1;
-    int ix = key & mask;
-    int d = 1;
+    struct id_table_probe probe;
+    int ix = id_table_probe_start(&probe, tbl, key);
     RUBY_ASSERT(key != 0);
     while (ITEM_KEY_ISSET(tbl, ix)) {
         ITEM_SET_COLLIDED(tbl, ix);
-        ix = (ix + d) & mask;
-        d++;
+        ix = id_table_probe_next(&probe);
     }
     tbl->num++;
     if (!ITEM_COLLIDED(tbl, ix)) {
