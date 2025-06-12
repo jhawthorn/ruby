@@ -465,18 +465,50 @@ rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl)
 int
 rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp)
 {
-    return rb_managed_id_table_lookup(tbl->managed_table, id, valp);
+    VALUE current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+    return rb_managed_id_table_lookup(current_table, id, valp);
 }
 
 int
 rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val)
 {
-    return rb_managed_id_table_insert(tbl->managed_table, id, val);
+    VALUE current_table, new_table;
+
+retry:
+    current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+    new_table = rb_managed_id_table_dup(current_table);
+    rb_managed_id_table_insert(new_table, id, val);
+
+    if (current_table != RUBY_ATOMIC_VALUE_CAS(tbl->managed_table, current_table, new_table)) {
+        goto retry;
+    }
+
+    return TRUE;
 }
 
 int
 rb_concurrent_id_table_compare_and_swap(struct rb_concurrent_id_table *tbl, ID id, VALUE expected, VALUE desired)
 {
-    rb_notimpl();
-    return FALSE;
+    VALUE current_table, new_table;
+
+retry:
+    current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+
+    VALUE actual_val;
+    if (!rb_managed_id_table_lookup(current_table, id, &actual_val)) {
+        return FALSE; // Key doesn't exist, CAS fails
+    }
+
+    if (actual_val != expected) {
+        return FALSE; // Value doesn't match expected
+    }
+
+    new_table = rb_managed_id_table_dup(current_table);
+    rb_managed_id_table_insert(new_table, id, desired);
+
+    if (current_table != RUBY_ATOMIC_VALUE_CAS(tbl->managed_table, current_table, new_table)) {
+        goto retry;
+    }
+
+    return TRUE;
 }
