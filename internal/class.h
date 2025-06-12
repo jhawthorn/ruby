@@ -83,7 +83,7 @@ struct rb_classext_struct {
     struct rb_id_table *m_tbl;
     struct rb_id_table *const_tbl;
     struct rb_id_table *callable_m_tbl;
-    struct rb_id_table *cc_tbl; /* ID -> [[ci1, cc1], [ci2, cc2] ...] */
+    struct rb_concurrent_id_table cc_tbl; /* ID -> [[ci1, cc1], [ci2, cc2] ...] */
     struct rb_id_table *cvc_tbl;
     VALUE *superclasses;
     /**
@@ -250,7 +250,7 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 #define RCLASS_WRITABLE_M_TBL(c) (RCLASS_EXT_WRITABLE(c)->m_tbl)
 #define RCLASS_WRITABLE_CONST_TBL(c) (RCLASS_EXT_WRITABLE(c)->const_tbl)
 #define RCLASS_WRITABLE_CALLABLE_M_TBL(c) (RCLASS_EXT_WRITABLE(c)->callable_m_tbl)
-#define RCLASS_WRITABLE_CC_TBL(c) (RCLASS_EXT_WRITABLE(c)->cc_tbl)
+#define RCLASS_WRITABLE_CC_TBL(c) (&RCLASS_EXT_WRITABLE(c)->cc_tbl)
 #define RCLASS_WRITABLE_CVC_TBL(c) (RCLASS_EXT_WRITABLE(c)->cvc_tbl)
 #define RCLASS_WRITABLE_SUBCLASSES(c) (RCLASS_EXT_WRITABLE(c)->subclasses)
 

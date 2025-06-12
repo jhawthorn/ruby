@@ -466,6 +466,7 @@ int
 rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp)
 {
     VALUE current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+    RUBY_ASSERT(current_table != 0); // Table must be initialized
     return rb_managed_id_table_lookup(current_table, id, valp);
 }
 

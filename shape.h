@@ -50,7 +50,7 @@ extern ID ruby_internal_object_id;
 typedef struct redblack_node redblack_node_t;
 
 struct rb_shape {
-    VALUE edges; // id_table from ID (ivar) to next shape
+    struct rb_concurrent_id_table edges; // concurrent id_table from ID (ivar) to next shape
     ID edge_name; // ID (ivar) for transition from parent to rb_shape
     redblack_node_t *ancestor_index;
     shape_id_t parent_id;

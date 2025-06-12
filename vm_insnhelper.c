@@ -1972,21 +1972,71 @@ static VALUE vm_call_general(rb_execution_context_t *ec, rb_control_frame_t *reg
 static VALUE vm_mtbl_dump(VALUE klass, ID target_mid);
 
 static struct rb_class_cc_entries *
-vm_ccs_create(VALUE klass, struct rb_id_table *cc_tbl, ID mid, const rb_callable_method_entry_t *cme)
+vm_ccs_create(VALUE klass, struct rb_concurrent_id_table *cc_tbl, ID mid, const rb_callable_method_entry_t *cme)
 {
-    struct rb_class_cc_entries *ccs = ALLOC(struct rb_class_cc_entries);
+    METHOD_ENTRY_CACHED_SET((rb_callable_method_entry_t *)cme);
+    
+    VALUE ccs_obj = vm_ccs_create_obj(cme, 0);
+    struct rb_class_cc_entries *ccs = RTYPEDDATA_GET_DATA(ccs_obj);
+
+    VALUE existing_val;
+    if (!rb_concurrent_id_table_insert_if_absent(cc_tbl, mid, (VALUE)ccs, &existing_val)) {
+        // Another thread beat us to it, use theirs
+        ccs = (struct rb_class_cc_entries *)existing_val;
+    }
+    RB_OBJ_WRITTEN(klass, Qundef, cme);
+    return ccs;
+}
+
+static void
+vm_ccs_free(void *data)
+{
+    struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)data;
+    xfree(ccs->entries);
+}
+
+static size_t
+vm_ccs_memsize(const void *data)
+{
+    const struct rb_class_cc_entries *ccs = (const struct rb_class_cc_entries *)data;
+    return sizeof(struct rb_class_cc_entries) + sizeof(struct rb_class_cc_entries_entry) * ccs->len;
+}
+
+static void
+vm_ccs_mark(void *data)
+{
+    struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)data;
+    rb_gc_mark_movable((VALUE)ccs->cme);
+    for (int i = 0; i < ccs->len; i++) {
+        rb_gc_mark_movable((VALUE)ccs->entries[i].cc);
+    }
+}
+
+static const rb_data_type_t vm_ccs_type = {
+    .wrap_struct_name = "VM/ccs",
+    .function = {
+        .dmark = vm_ccs_mark,
+        .dfree = vm_ccs_free,
+        .dsize = vm_ccs_memsize,
+    },
+    .flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
+};
+
+static VALUE
+vm_ccs_create_obj(const rb_callable_method_entry_t *cme, int len)
+{
+    struct rb_class_cc_entries *ccs;
+    VALUE obj = TypedData_Make_Struct(0, struct rb_class_cc_entries, &vm_ccs_type, ccs);
+    
 #if VM_CHECK_MODE > 0
     ccs->debug_sig = ~(VALUE)ccs;
 #endif
-    ccs->capa = 0;
-    ccs->len = 0;
     ccs->cme = cme;
-    METHOD_ENTRY_CACHED_SET((rb_callable_method_entry_t *)cme);
-    ccs->entries = NULL;
-
-    rb_id_table_insert(cc_tbl, mid, (VALUE)ccs);
-    RB_OBJ_WRITTEN(klass, Qundef, cme);
-    return ccs;
+    ccs->len = len;
+    ccs->capa = len;  // Always equal now
+    ccs->entries = len > 0 ? ALLOC_N(struct rb_class_cc_entries_entry, len) : NULL;
+    
+    return obj;
 }
 
 static void
@@ -1996,22 +2046,33 @@ vm_ccs_push(VALUE klass, struct rb_class_cc_entries *ccs, const struct rb_callin
         return;
     }
 
-    if (UNLIKELY(ccs->len == ccs->capa)) {
-        if (ccs->capa == 0) {
-            ccs->capa = 1;
-            ccs->entries = ALLOC_N(struct rb_class_cc_entries_entry, ccs->capa);
-        }
-        else {
-            ccs->capa *= 2;
-            REALLOC_N(ccs->entries, struct rb_class_cc_entries_entry, ccs->capa);
+    struct rb_concurrent_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
+    const ID mid = vm_ci_mid(ci);
+    
+retry:
+    // Create completely fresh CCS with new entry
+    VALUE new_ccs_obj = vm_ccs_create_obj(ccs->cme, ccs->len + 1);
+    struct rb_class_cc_entries *new_ccs = RTYPEDDATA_GET_DATA(new_ccs_obj);
+    
+    // Copy existing entries
+    for (int i = 0; i < ccs->len; i++) {
+        new_ccs->entries[i] = ccs->entries[i];
+    }
+    
+    // Add new entry
+    new_ccs->entries[ccs->len].argc = vm_ci_argc(ci);
+    new_ccs->entries[ccs->len].flag = vm_ci_flag(ci);
+    RB_OBJ_WRITE(new_ccs_obj, &new_ccs->entries[ccs->len].cc, cc);
+    
+    // Try to atomically replace
+    if (!rb_concurrent_id_table_compare_and_swap(cc_tbl, mid, (VALUE)ccs, (VALUE)new_ccs)) {
+        // CAS failed - start over with fresh lookup
+        VALUE current_ccs_data;
+        if (rb_concurrent_id_table_lookup(cc_tbl, mid, &current_ccs_data)) {
+            ccs = (struct rb_class_cc_entries *)current_ccs_data;
+            goto retry;
         }
     }
-    VM_ASSERT(ccs->len < ccs->capa);
-
-    const int pos = ccs->len++;
-    ccs->entries[pos].argc = vm_ci_argc(ci);
-    ccs->entries[pos].flag = vm_ci_flag(ci);
-    RB_OBJ_WRITE(klass, &ccs->entries[pos].cc, cc);
 
     if (RB_DEBUG_COUNTER_SETMAX(ccs_maxlen, ccs->len)) {
         // for tuning
@@ -2057,20 +2118,19 @@ static const struct rb_callcache *
 vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
 {
     const ID mid = vm_ci_mid(ci);
-    struct rb_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
+    struct rb_concurrent_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
     struct rb_class_cc_entries *ccs = NULL;
     VALUE ccs_data;
 
-    if (cc_tbl) {
-        // CCS data is keyed on method id, so we don't need the method id
-        // for doing comparisons in the `for` loop below.
-        if (rb_id_table_lookup(cc_tbl, mid, &ccs_data)) {
+    // CCS data is keyed on method id, so we don't need the method id
+    // for doing comparisons in the `for` loop below.
+    if (rb_concurrent_id_table_lookup(cc_tbl, mid, &ccs_data)) {
             ccs = (struct rb_class_cc_entries *)ccs_data;
             const int ccs_len = ccs->len;
 
             if (UNLIKELY(METHOD_ENTRY_INVALIDATED(ccs->cme))) {
-                rb_vm_ccs_free(ccs);
-                rb_id_table_delete(cc_tbl, mid);
+                // TODO: Memory leak - can't safely free CCS while other threads may be reading
+                // Need mechanism to defer CCS cleanup until safe (e.g., epoch-based reclamation)
                 ccs = NULL;
             }
             else {
@@ -2102,10 +2162,6 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
             }
         }
     }
-    else {
-        cc_tbl = rb_id_table_create(2);
-        RCLASS_WRITE_CC_TBL(klass, cc_tbl);
-    }
 
     RB_DEBUG_COUNTER_INC(cc_not_found_in_ccs);
 
@@ -2134,9 +2190,7 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
     METHOD_ENTRY_CACHED_SET((struct rb_callable_method_entry_struct *)cme);
 
     if (ccs == NULL) {
-        VM_ASSERT(cc_tbl != NULL);
-
-        if (LIKELY(rb_id_table_lookup(cc_tbl, mid, &ccs_data))) {
+        if (LIKELY(rb_concurrent_id_table_lookup(cc_tbl, mid, &ccs_data))) {
             // rb_callable_method_entry() prepares ccs.
             ccs = (struct rb_class_cc_entries *)ccs_data;
         }
@@ -2165,16 +2219,14 @@ rb_vm_search_method_slowpath(const struct rb_callinfo *ci, VALUE klass)
 
     VM_ASSERT_TYPE2(klass, T_CLASS, T_ICLASS);
 
-    RB_VM_LOCKING() {
-        cc = vm_search_cc(klass, ci);
+    cc = vm_search_cc(klass, ci);
 
-        VM_ASSERT(cc);
-        VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-        VM_ASSERT(cc == vm_cc_empty() || cc->klass == klass);
-        VM_ASSERT(cc == vm_cc_empty() || callable_method_entry_p(vm_cc_cme(cc)));
-        VM_ASSERT(cc == vm_cc_empty() || !METHOD_ENTRY_INVALIDATED(vm_cc_cme(cc)));
-        VM_ASSERT(cc == vm_cc_empty() || vm_cc_cme(cc)->called_id == vm_ci_mid(ci));
-    }
+    VM_ASSERT(cc);
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
+    VM_ASSERT(cc == vm_cc_empty() || cc->klass == klass);
+    VM_ASSERT(cc == vm_cc_empty() || callable_method_entry_p(vm_cc_cme(cc)));
+    VM_ASSERT(cc == vm_cc_empty() || !METHOD_ENTRY_INVALIDATED(vm_cc_cme(cc)));
+    VM_ASSERT(cc == vm_cc_empty() || vm_cc_cme(cc)->called_id == vm_ci_mid(ci));
 
     return cc;
 }

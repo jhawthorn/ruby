@@ -167,15 +167,16 @@ static const rb_callable_method_entry_t *complemented_callable_method_entry(VALU
 static const rb_callable_method_entry_t *lookup_overloaded_cme(const rb_callable_method_entry_t *cme);
 
 static void
-invalidate_method_cache_in_cc_table(struct rb_id_table *tbl, ID mid)
+invalidate_method_cache_in_cc_table(struct rb_concurrent_id_table *tbl, ID mid)
 {
     VALUE ccs_data;
-    if (tbl && rb_id_table_lookup(tbl, mid, &ccs_data)) {
+    if (RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table) != 0 && 
+        rb_concurrent_id_table_lookup(tbl, mid, &ccs_data)) {
         struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_data;
         rb_yjit_cme_invalidate((rb_callable_method_entry_t *)ccs->cme);
         if (NIL_P(ccs->cme->owner)) invalidate_negative_cache(mid);
-        rb_vm_ccs_free(ccs);
-        rb_id_table_delete(tbl, mid);
+        // TODO: Memory leak - can't safely free or delete with concurrent access
+        // Need epoch-based reclamation or similar mechanism
         RB_DEBUG_COUNTER_INC(cc_invalidate_leaf_ccs);
     }
 }
@@ -250,7 +251,7 @@ clear_method_cache_by_id_in_class(VALUE klass, ID mid)
             // check only current class
 
             // invalidate CCs
-            struct rb_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
+            struct rb_concurrent_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
             invalidate_method_cache_in_cc_table(cc_tbl, mid);
             if (RCLASS_CC_TBL_NOT_PRIME_P(klass, cc_tbl)) {
                 invalidate_method_cache_in_cc_table(RCLASS_PRIME_CC_TBL(klass), mid);
