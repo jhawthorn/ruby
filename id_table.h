@@ -49,7 +49,6 @@ struct rb_concurrent_id_table {
 
 struct rb_concurrent_id_table *rb_concurrent_id_table_init(struct rb_concurrent_id_table *tbl, size_t capa);
 void rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl);
-size_t rb_concurrent_id_table_size(const struct rb_concurrent_id_table *tbl);
 int rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp);
 int rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val);
 int rb_concurrent_id_table_compare_and_swap(struct rb_concurrent_id_table *tbl, ID id, VALUE expected, VALUE desired);

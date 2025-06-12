@@ -457,14 +457,10 @@ rb_concurrent_id_table_init(struct rb_concurrent_id_table *tbl, size_t capa)
 void
 rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl)
 {
+    tbl->managed_table = Qfalse;
     // The managed table will be GC'd automatically
 }
 
-size_t
-rb_concurrent_id_table_size(const struct rb_concurrent_id_table *tbl)
-{
-    return rb_managed_id_table_size(tbl->managed_table);
-}
 
 int
 rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp)
