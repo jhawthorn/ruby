@@ -427,3 +427,41 @@ rb_managed_id_table_foreach(VALUE table, rb_id_table_foreach_func_t *func, void 
 
     rb_id_table_foreach(RTYPEDDATA_GET_DATA(table), func, data);
 }
+
+struct rb_concurrent_id_table *
+rb_concurrent_id_table_init(struct rb_concurrent_id_table *tbl, size_t capa)
+{
+    tbl->managed_table = rb_managed_id_table_new(capa);
+    return tbl;
+}
+
+void
+rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl)
+{
+    // The managed table will be GC'd automatically
+}
+
+size_t
+rb_concurrent_id_table_size(const struct rb_concurrent_id_table *tbl)
+{
+    return rb_managed_id_table_size(tbl->managed_table);
+}
+
+int
+rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp)
+{
+    return rb_managed_id_table_lookup(tbl->managed_table, id, valp);
+}
+
+int
+rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val)
+{
+    return rb_managed_id_table_insert(tbl->managed_table, id, val);
+}
+
+int
+rb_concurrent_id_table_compare_and_swap(struct rb_concurrent_id_table *tbl, ID id, VALUE expected, VALUE desired)
+{
+    rb_notimpl();
+    return FALSE;
+}

@@ -42,6 +42,18 @@ int rb_managed_id_table_lookup(VALUE table, ID id, VALUE *valp);
 size_t rb_managed_id_table_size(VALUE table);
 void rb_managed_id_table_foreach(VALUE table, rb_id_table_foreach_func_t *func, void *data);
 
+/* concurrent id table operations - all atomic */
+struct rb_concurrent_id_table {
+    VALUE managed_table;
+}
+
+struct rb_concurrent_id_table *rb_concurrent_id_table_init(struct rb_concurrent_id_table *tbl, size_t capa);
+void rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl);
+size_t rb_concurrent_id_table_size(const struct rb_concurrent_id_table *tbl);
+int rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp);
+int rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val);
+int rb_concurrent_id_table_compare_and_swap(struct rb_concurrent_id_table *tbl, ID id, VALUE expected, VALUE desired);
+
 RUBY_SYMBOL_EXPORT_BEGIN
 size_t rb_id_table_size(const struct rb_id_table *tbl);
 RUBY_SYMBOL_EXPORT_END
