@@ -170,8 +170,7 @@ static void
 invalidate_method_cache_in_cc_table(struct rb_concurrent_id_table *tbl, ID mid)
 {
     VALUE ccs_data;
-    if (RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table) != 0 && 
-        rb_concurrent_id_table_lookup(tbl, mid, &ccs_data)) {
+    if (rb_concurrent_id_table_lookup(tbl, mid, &ccs_data)) {
         struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_data;
         rb_yjit_cme_invalidate((rb_callable_method_entry_t *)ccs->cme);
         if (NIL_P(ccs->cme->owner)) invalidate_negative_cache(mid);
@@ -1556,12 +1555,10 @@ complemented_callable_method_entry(VALUE klass, ID id)
 static const rb_callable_method_entry_t *
 cached_callable_method_entry(VALUE klass, ID mid)
 {
-    ASSERT_vm_locking();
-
-    struct rb_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
+    struct rb_concurrent_id_table *cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
     VALUE ccs_data;
 
-    if (cc_tbl && rb_id_table_lookup(cc_tbl, mid, &ccs_data)) {
+    if (rb_concurrent_id_table_lookup(cc_tbl, mid, &ccs_data)) {
         struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_data;
         VM_ASSERT(vm_ccs_p(ccs));
 
@@ -1571,8 +1568,8 @@ cached_callable_method_entry(VALUE klass, ID mid)
             return ccs->cme;
         }
         else {
-            rb_vm_ccs_free(ccs);
-            rb_id_table_delete(cc_tbl, mid);
+            // Atomically remove the invalidated CCS from the table
+            rb_concurrent_id_table_compare_and_swap(cc_tbl, mid, ccs_data, Qfalse);
         }
     }
 

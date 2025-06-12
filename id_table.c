@@ -466,7 +466,9 @@ int
 rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *valp)
 {
     VALUE current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
-    RUBY_ASSERT(current_table != 0); // Table must be initialized
+    if (current_table == 0) {
+        return FALSE; // Table not initialized yet
+    }
     return rb_managed_id_table_lookup(current_table, id, valp);
 }
 
@@ -477,6 +479,20 @@ rb_concurrent_id_table_insert_if_absent(struct rb_concurrent_id_table *tbl, ID i
 
 retry:
     current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+
+    // Initialize table if needed
+    if (current_table == 0) {
+        new_table = rb_managed_id_table_new(2);
+        rb_managed_id_table_insert(new_table, id, val);
+
+        if (0 != RUBY_ATOMIC_VALUE_CAS(tbl->managed_table, 0, new_table)) {
+            // Another thread initialized, retry
+            goto retry;
+        }
+
+        if (existing_val) *existing_val = val;
+        return TRUE;
+    }
 
     // Check if key already exists
     VALUE found_val;
@@ -504,6 +520,10 @@ rb_concurrent_id_table_compare_and_swap(struct rb_concurrent_id_table *tbl, ID i
 
 retry:
     current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+
+    if (current_table == 0) {
+        return FALSE; // Table not initialized, CAS fails
+    }
 
     VALUE actual_val;
     if (!rb_managed_id_table_lookup(current_table, id, &actual_val)) {
