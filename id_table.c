@@ -470,12 +470,21 @@ rb_concurrent_id_table_lookup(struct rb_concurrent_id_table *tbl, ID id, VALUE *
 }
 
 int
-rb_concurrent_id_table_insert(struct rb_concurrent_id_table *tbl, ID id, VALUE val)
+rb_concurrent_id_table_insert_if_absent(struct rb_concurrent_id_table *tbl, ID id, VALUE val, VALUE *existing_val)
 {
     VALUE current_table, new_table;
 
 retry:
     current_table = RUBY_ATOMIC_VALUE_LOAD(tbl->managed_table);
+
+    // Check if key already exists
+    VALUE found_val;
+    if (rb_managed_id_table_lookup(current_table, id, &found_val)) {
+        if (existing_val) *existing_val = found_val;
+        return FALSE; // Key already exists
+    }
+
+    // Key doesn't exist, insert it
     new_table = rb_managed_id_table_dup(current_table);
     rb_managed_id_table_insert(new_table, id, val);
 
@@ -483,7 +492,8 @@ retry:
         goto retry;
     }
 
-    return TRUE;
+    if (existing_val) *existing_val = val;
+    return TRUE; // Successfully inserted
 }
 
 int
