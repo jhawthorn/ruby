@@ -175,8 +175,10 @@ invalidate_method_cache_in_cc_table(struct rb_concurrent_id_table *tbl, ID mid)
         struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_data;
         rb_yjit_cme_invalidate((rb_callable_method_entry_t *)ccs->cme);
         if (NIL_P(ccs->cme->owner)) invalidate_negative_cache(mid);
-        // TODO: Memory leak - can't safely free or delete with concurrent access
-        // Need epoch-based reclamation or similar mechanism
+
+        // Atomically remove the invalidated CCS from the table
+        rb_concurrent_id_table_compare_and_swap(tbl, mid, ccs_data, Qfalse);
+
         RB_DEBUG_COUNTER_INC(cc_invalidate_leaf_ccs);
     }
 }

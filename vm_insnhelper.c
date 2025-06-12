@@ -2129,8 +2129,8 @@ vm_search_cc(const VALUE klass, const struct rb_callinfo * const ci)
             const int ccs_len = ccs->len;
 
             if (UNLIKELY(METHOD_ENTRY_INVALIDATED(ccs->cme))) {
-                // TODO: Memory leak - can't safely free CCS while other threads may be reading
-                // Need mechanism to defer CCS cleanup until safe (e.g., epoch-based reclamation)
+                // Atomically remove the invalidated CCS from the table
+                rb_concurrent_id_table_compare_and_swap(cc_tbl, mid, ccs_data, Qfalse);
                 ccs = NULL;
             }
             else {
