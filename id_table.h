@@ -45,7 +45,7 @@ void rb_managed_id_table_foreach(VALUE table, rb_id_table_foreach_func_t *func, 
 /* concurrent id table operations - all atomic */
 struct rb_concurrent_id_table {
     VALUE managed_table;
-}
+};
 
 struct rb_concurrent_id_table *rb_concurrent_id_table_init(struct rb_concurrent_id_table *tbl, size_t capa);
 void rb_concurrent_id_table_free(struct rb_concurrent_id_table *tbl);
