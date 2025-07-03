@@ -398,7 +398,6 @@ native_thread_check_and_create_shared(rb_vm_t *vm)
     rb_native_mutex_lock(&vm->ractor.sched.lock);
     {
         unsigned int snt_cnt = vm->ractor.sched.snt_cnt;
-        if (!vm->ractor.main_ractor->threads.sched.enable_mn_threads) snt_cnt++; // do not need snt for main ractor
 
         if (((int)snt_cnt < MINIMUM_SNT) ||
             (vm->ractor.sched.grq_cnt > 0 &&
