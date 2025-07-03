@@ -401,20 +401,19 @@ native_thread_check_and_create_shared(rb_vm_t *vm)
         if (!vm->ractor.main_ractor->threads.sched.enable_mn_threads) snt_cnt++; // do not need snt for main ractor
 
         if (((int)snt_cnt < MINIMUM_SNT) ||
-            (snt_cnt < vm->ractor.cnt  &&
+            (vm->ractor.sched.grq_cnt > 0 &&
              snt_cnt < vm->ractor.sched.max_cpu)) {
 
-            RUBY_DEBUG_LOG("added snt:%u dnt:%u ractor_cnt:%u grq_cnt:%u",
+            RUBY_DEBUG_LOG("added snt:%u dnt:%u grq_cnt:%u",
                            vm->ractor.sched.snt_cnt,
                            vm->ractor.sched.dnt_cnt,
-                           vm->ractor.cnt,
                            vm->ractor.sched.grq_cnt);
 
             vm->ractor.sched.snt_cnt++;
             need_to_make = true;
         }
         else {
-            RUBY_DEBUG_LOG("snt:%d ractor_cnt:%d", (int)vm->ractor.sched.snt_cnt, (int)vm->ractor.cnt);
+            RUBY_DEBUG_LOG("snt:%d grq_cnt:%u", (int)vm->ractor.sched.snt_cnt, vm->ractor.sched.grq_cnt);
         }
     }
     rb_native_mutex_unlock(&vm->ractor.sched.lock);
