@@ -701,6 +701,7 @@ typedef struct rb_vm_struct {
             rb_nativethread_cond_t cond; // GRQ
             unsigned int snt_cnt; // count of shared NTs
             unsigned int dnt_cnt; // count of dedicated NTs
+            unsigned int idle_snt_cnt; // count of idle shared NTs
 
             unsigned int running_cnt;
 

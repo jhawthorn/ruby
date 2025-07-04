@@ -1318,10 +1318,14 @@ ractor_sched_deq(rb_vm_t *vm, rb_ractor_t *cr)
         if (r) {
             VM_ASSERT(vm->ractor.sched.grq_cnt > 0);
             vm->ractor.sched.grq_cnt--;
+            VM_ASSERT(vm->ractor.sched.idle_snt_cnt > 0);
+            vm->ractor.sched.idle_snt_cnt--; // SNT picked up work, no longer idle
             RUBY_DEBUG_LOG("r:%d grq_cnt:%u", (int)rb_ractor_id(r), vm->ractor.sched.grq_cnt);
         }
         else {
             VM_ASSERT(SNT_KEEP_SECONDS > 0);
+            VM_ASSERT(vm->ractor.sched.idle_snt_cnt > 0);
+            vm->ractor.sched.idle_snt_cnt--; // SNT timed out and exiting, no longer idle
             // timeout
         }
     }
@@ -1585,6 +1589,7 @@ thread_sched_atfork(struct rb_thread_sched *sched)
         vm->ractor.sched.snt_cnt = 1;
     }
     vm->ractor.sched.running_cnt = 0;
+    vm->ractor.sched.idle_snt_cnt = 0;
 
     rb_native_mutex_initialize(&vm->ractor.sched.lock);
 #if VM_CHECK_MODE > 0
@@ -2299,6 +2304,11 @@ nt_start(void *ptr)
                     }
                     else {
                         RUBY_DEBUG_LOG("no schedulable threads -- next_th:%p", next_th);
+                    }
+
+                    if (!nt->dedicated) {
+                        vm->ractor.sched.idle_snt_cnt++;
+                        VM_ASSERT(vm->ractor.sched.idle_snt_cnt <= vm->ractor.sched.snt_cnt);
                     }
                 }
                 thread_sched_unlock(sched, NULL);

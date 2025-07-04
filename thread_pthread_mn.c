@@ -398,21 +398,24 @@ native_thread_check_and_create_shared(rb_vm_t *vm)
     rb_native_mutex_lock(&vm->ractor.sched.lock);
     {
         unsigned int snt_cnt = vm->ractor.sched.snt_cnt;
+        VM_ASSERT(vm->ractor.sched.idle_snt_cnt <= vm->ractor.sched.snt_cnt);
 
         if (((int)snt_cnt < MINIMUM_SNT) ||
-            (vm->ractor.sched.grq_cnt > 0 &&
+            (vm->ractor.sched.idle_snt_cnt < vm->ractor.sched.grq_cnt &&
              snt_cnt < vm->ractor.sched.max_cpu)) {
 
-            RUBY_DEBUG_LOG("added snt:%u dnt:%u grq_cnt:%u",
+            RUBY_DEBUG_LOG("added snt:%u dnt:%u grq_cnt:%u idle_snt_cnt:%u",
                            vm->ractor.sched.snt_cnt,
                            vm->ractor.sched.dnt_cnt,
-                           vm->ractor.sched.grq_cnt);
+                           vm->ractor.sched.grq_cnt,
+                           vm->ractor.sched.idle_snt_cnt);
 
             vm->ractor.sched.snt_cnt++;
+            vm->ractor.sched.idle_snt_cnt++;
             need_to_make = true;
         }
         else {
-            RUBY_DEBUG_LOG("snt:%d grq_cnt:%u", (int)vm->ractor.sched.snt_cnt, vm->ractor.sched.grq_cnt);
+            RUBY_DEBUG_LOG("snt:%d grq_cnt:%u idle_snt_cnt:%u (no spawn needed)", (int)vm->ractor.sched.snt_cnt, vm->ractor.sched.grq_cnt, vm->ractor.sched.idle_snt_cnt);
         }
     }
     rb_native_mutex_unlock(&vm->ractor.sched.lock);
