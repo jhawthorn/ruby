@@ -4479,15 +4479,15 @@ rb_gc_impl_mark_weak(void *objspace_ptr, VALUE *ptr)
         rb_bug("try to mark T_NONE object");
     }
 
-    /* If we are in a minor GC and the other object is old, then obj should
-     * already be marked and cannot be reclaimed in this GC cycle so we don't
-     * need to add it to the weak references list. */
-    if (!is_full_marking(objspace) && RVALUE_OLD_P(objspace, obj)) {
-        GC_ASSERT(RVALUE_MARKED(objspace, obj));
-        GC_ASSERT(!objspace->flags.during_compacting);
-
+    /* If the object is already marked then it cannot be reclaimed in this GC
+     * cycle so we don't cannot be reclaimed in this GC cycle so we don't need
+     * to add it to the weak references list. */
+    if (RVALUE_MARKED(objspace, obj)) {
         return;
     }
+
+    /* old objects should already be marked on minors */
+    RUBY_ASSERT_ALWAYS(is_full_marking(objspace) || !RVALUE_OLD_P(objspace, obj));
 
     rgengc_check_relation(objspace, obj);
 
