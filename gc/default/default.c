@@ -179,6 +179,19 @@
 # define HEAP_COUNT 5
 #endif
 
+/* Write barrier buffer entry */
+typedef struct {
+    VALUE old_obj;
+    VALUE young_obj;
+} wb_buffer_entry_t;
+
+/* Write barrier buffer (per execution context) */
+#define WB_BUFFER_SIZE 256
+typedef struct {
+    wb_buffer_entry_t entries[WB_BUFFER_SIZE];
+    size_t count;
+} wb_buffer_t;
+
 typedef struct ractor_newobj_heap_cache {
     struct free_slot *freelist;
     struct heap_page *using_page;
@@ -188,6 +201,7 @@ typedef struct ractor_newobj_heap_cache {
 typedef struct ractor_newobj_cache {
     size_t incremental_mark_step_allocated_slots;
     rb_ractor_newobj_heap_cache_t heap_caches[HEAP_COUNT];
+    wb_buffer_t wb_buffer;  /* Write barrier buffer for this ractor */
 } rb_ractor_newobj_cache_t;
 
 typedef struct {
@@ -1011,6 +1025,7 @@ static int garbage_collect(rb_objspace_t *, unsigned int reason);
 
 static int  gc_start(rb_objspace_t *objspace, unsigned int reason);
 static void gc_rest(rb_objspace_t *objspace);
+static void wb_buffer_process(rb_objspace_t *objspace, wb_buffer_t *buffer);
 
 enum gc_enter_event {
     gc_enter_event_start,
@@ -3690,6 +3705,9 @@ gc_ractor_newobj_cache_clear(void *c, void *data)
 
     newobj_cache->incremental_mark_step_allocated_slots = 0;
 
+    /* Flush any pending write barriers before clearing the cache */
+    wb_buffer_process(objspace, &newobj_cache->wb_buffer);
+
     for (size_t heap_idx = 0; heap_idx < HEAP_COUNT; heap_idx++) {
 
         rb_ractor_newobj_heap_cache_t *cache = &newobj_cache->heap_caches[heap_idx];
@@ -6002,6 +6020,51 @@ gc_writebarrier_incremental(VALUE a, VALUE b, rb_objspace_t *objspace)
     }
 }
 
+/* Process buffered write barriers */
+static void
+wb_buffer_process(rb_objspace_t *objspace, wb_buffer_t *buffer)
+{
+    if (buffer->count == 0) return;
+
+    int lev = RB_GC_VM_LOCK_NO_BARRIER();
+
+    /* Process all entries in FIFO order */
+    for (size_t i = 0; i < buffer->count; i++) {
+        VALUE old_obj = buffer->entries[i].old_obj;
+        VALUE young_obj = buffer->entries[i].young_obj;
+
+        if (!is_incremental_marking(objspace)) {
+            if (RVALUE_OLD_P(objspace, old_obj) && !RVALUE_OLD_P(objspace, young_obj)) {
+                gc_writebarrier_generational(old_obj, young_obj, objspace);
+            }
+        }
+        else {
+            gc_writebarrier_incremental(old_obj, young_obj, objspace);
+        }
+    }
+
+    RB_GC_VM_UNLOCK_NO_BARRIER(lev);
+
+    /* Reset buffer */
+    buffer->count = 0;
+}
+
+/* Callback to flush a single ractor's write barrier buffer */
+static void
+wb_buffer_flush_ractor(void *cache, void *data)
+{
+    rb_objspace_t *objspace = (rb_objspace_t *)data;
+    rb_ractor_newobj_cache_t *ractor_cache = (rb_ractor_newobj_cache_t *)cache;
+    wb_buffer_process(objspace, &ractor_cache->wb_buffer);
+}
+
+/* Flush write barrier buffers for all ractors */
+static void
+wb_buffer_flush_all(rb_objspace_t *objspace)
+{
+    rb_gc_ractor_newobj_cache_foreach(wb_buffer_flush_ractor, objspace);
+}
+
 void
 rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 {
@@ -6020,32 +6083,34 @@ rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
     GC_ASSERT(RB_BUILTIN_TYPE(b) != T_MOVED);
     GC_ASSERT(RB_BUILTIN_TYPE(b) != T_ZOMBIE);
 
-  retry:
+    /* Fast path: check if we need a barrier at all */
     if (!is_incremental_marking(objspace)) {
         if (!RVALUE_OLD_P(objspace, a) || RVALUE_OLD_P(objspace, b)) {
-            // do nothing
-        }
-        else {
-            gc_writebarrier_generational(a, b, objspace);
+            return;  /* No barrier needed */
         }
     }
-    else {
-        bool retry = false;
-        /* slow path */
-        int lev = RB_GC_VM_LOCK_NO_BARRIER();
-        {
-            if (is_incremental_marking(objspace)) {
-                gc_writebarrier_incremental(a, b, objspace);
-            }
-            else {
-                retry = true;
-            }
-        }
-        RB_GC_VM_UNLOCK_NO_BARRIER(lev);
 
-        if (retry) goto retry;
+    /* Get write barrier buffer from current ractor cache */
+    rb_ractor_newobj_cache_t *cache = (rb_ractor_newobj_cache_t *)rb_gc_get_ractor_newobj_cache();
+    GC_ASSERT(cache != NULL);
+
+    wb_buffer_t *buffer = &cache->wb_buffer;
+
+    /* Add to buffer */
+    if (buffer->count < WB_BUFFER_SIZE) {
+        buffer->entries[buffer->count].old_obj = a;
+        buffer->entries[buffer->count].young_obj = b;
+        buffer->count++;
+        return;
     }
-    return;
+
+    /* Buffer full - process it */
+    wb_buffer_process(objspace, buffer);
+
+    /* Add current entry to newly empty buffer */
+    buffer->entries[0].old_obj = a;
+    buffer->entries[0].young_obj = b;
+    buffer->count = 1;
 }
 
 void
@@ -6607,6 +6672,9 @@ gc_enter(rb_objspace_t *objspace, enum gc_enter_event event, unsigned int *lock_
       default:
         break;
     }
+
+    /* Flush all write barrier buffers before starting GC */
+    wb_buffer_flush_all(objspace);
 
     gc_enter_count(event);
     if (RB_UNLIKELY(during_gc != 0)) rb_bug("during_gc != 0");
@@ -7953,6 +8021,7 @@ objspace_malloc_increase_report(rb_objspace_t *objspace, void *mem, size_t new_s
 static bool
 objspace_malloc_increase_body(rb_objspace_t *objspace, void *mem, size_t new_size, size_t old_size, enum memop_type type)
 {
+    return true;
     if (new_size > old_size) {
         RUBY_ATOMIC_SIZE_ADD(malloc_increase, new_size - old_size);
 #if RGENGC_ESTIMATE_OLDMALLOC
