@@ -5837,7 +5837,7 @@ vm_check_if_class(ID id, rb_num_t flags, VALUE super, VALUE klass)
         return 0;
     }
     else if (VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
-        VALUE tmp = rb_class_real(RCLASS_SUPER(klass));
+        VALUE tmp = rb_class_superclass(klass);
 
         if (tmp != super) {
             rb_raise(rb_eTypeError,

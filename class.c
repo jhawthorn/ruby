@@ -1491,7 +1491,7 @@ rb_define_class(const char *name, VALUE super)
             rb_raise(rb_eTypeError, "%s is not a class (%"PRIsVALUE")",
                      name, rb_obj_class(klass));
         }
-        if (rb_class_real(RCLASS_SUPER(klass)) != super) {
+        if (rb_class_superclass(klass) != super) {
             rb_raise(rb_eTypeError, "superclass mismatch for class %s", name);
         }
 
@@ -1528,7 +1528,7 @@ rb_define_class_id_under_no_pin(VALUE outer, ID id, VALUE super)
                      " (%"PRIsVALUE")",
                      outer, rb_id2str(id), rb_obj_class(klass));
         }
-        if (rb_class_real(RCLASS_SUPER(klass)) != super) {
+        if (rb_class_superclass(klass) != super) {
             rb_raise(rb_eTypeError, "superclass mismatch for class "
                      "%"PRIsVALUE"::%"PRIsVALUE""
                      " (%"PRIsVALUE" is given but was %"PRIsVALUE")",
