@@ -282,19 +282,30 @@ static inline VALUE
 fake_class_p(VALUE klass)
 {
     RUBY_ASSERT(klass);
-    RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_MODULE) || RB_TYPE_P(klass, T_ICLASS));
-    STATIC_ASSERT(t_iclass_overlap_t_class, !(T_CLASS & T_ICLASS));
-    STATIC_ASSERT(t_iclass_overlap_t_module, !(T_MODULE & T_ICLASS));
+    RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_MODULE));
+    RUBY_ASSERT(!RB_TYPE_P(klass, T_MODULE) || !FL_TEST_RAW(klass, FL_SINGLETON));
 
-    return FL_TEST_RAW(klass, T_ICLASS | FL_SINGLETON);
+    return FL_TEST_RAW(klass, FL_SINGLETON);
 }
 
 static inline VALUE
 class_real(VALUE cl)
 {
     RUBY_ASSERT(cl);
-    while (RB_UNLIKELY(fake_class_p(cl))) {
-        cl = RCLASS_SUPER(cl);
+    RUBY_ASSERT(!RB_TYPE_P(cl, T_ICLASS));
+    if (RB_UNLIKELY(fake_class_p(cl))) {
+        VALUE *superclasses = RCLASS_SUPERCLASSES(cl);
+        size_t superclasses_depth = RCLASS_SUPERCLASS_DEPTH(cl);
+
+        /* Because this is a singleton it will have a depth (it isn't rb_cBasicObject) */
+        RUBY_ASSERT(superclasses_depth > 0);
+
+        do {
+            cl = superclasses[--superclasses_depth];
+        } while(FL_TEST_RAW(cl, FL_SINGLETON));
+
+        RUBY_ASSERT(RB_TYPE_P(cl, T_CLASS));
+        RUBY_ASSERT(!FL_TEST_RAW(cl, FL_SINGLETON));
     }
     return cl;
 }
