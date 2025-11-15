@@ -783,9 +783,7 @@ rb_id_serial_to_id(rb_id_serial_t num)
 static ID
 register_static_symid(ID id, const char *name, long len, rb_encoding *enc)
 {
-    VALUE str = rb_enc_str_new(name, len, enc);
-    OBJ_FREEZE(str);
-    str = rb_fstring(str);
+    VALUE str = rb_fstring_enc_new(name, len, enc);
 
     RUBY_DTRACE_CREATE_HOOK(SYMBOL, RSTRING_PTR(str));
 
