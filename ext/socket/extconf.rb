@@ -345,8 +345,6 @@ end
 
 have_type("struct sockaddr_dl", headers) # AF_LINK address.  4.4BSD since Net2
 
-have_type("struct sockaddr_storage", headers)
-
 have_type("struct addrinfo", headers)
 
 def check_socklen(headers)
