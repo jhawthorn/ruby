@@ -1272,6 +1272,7 @@ typedef struct {
     int pfamily;
     int socktype;
     int protocol;
+    bool initialized;
     socklen_t sockaddr_len;
     union_sockaddr addr;
 } rb_addrinfo_t;
@@ -1286,22 +1287,33 @@ addrinfo_mark(void *ptr)
 
 #define addrinfo_free RUBY_TYPED_DEFAULT_FREE
 
-static size_t
-addrinfo_memsize(const void *ptr)
-{
-    return sizeof(rb_addrinfo_t);
-}
-
 static const rb_data_type_t addrinfo_type = {
     "socket/addrinfo",
-    {addrinfo_mark, addrinfo_free, addrinfo_memsize,},
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED,
+    {
+        addrinfo_mark,
+        addrinfo_free,
+        NULL, // memsize of embedded data is already accounted for
+    },
+    0, 0,
+    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
 };
+
+static VALUE
+addrinfo_alloc(VALUE klass, rb_addrinfo_t **raip)
+{
+    rb_addrinfo_t *rai;
+    VALUE obj = TypedData_Make_Struct(klass, rb_addrinfo_t, &addrinfo_type, rai);
+    rai->inspectname = Qnil;
+    rai->canonname = Qnil;
+    *raip = rai;
+    return obj;
+}
 
 static VALUE
 addrinfo_s_allocate(VALUE klass)
 {
-    return TypedData_Wrap_Struct(klass, &addrinfo_type, 0);
+    rb_addrinfo_t *rai;
+    return addrinfo_alloc(klass, &rai);
 }
 
 #define IS_ADDRINFO(obj) rb_typeddata_is_kind_of((obj), &addrinfo_type)
@@ -1316,19 +1328,9 @@ get_addrinfo(VALUE self)
 {
     rb_addrinfo_t *rai = check_addrinfo(self);
 
-    if (!rai) {
+    if (!rai->initialized) {
         rb_raise(rb_eTypeError, "uninitialized socket address");
     }
-    return rai;
-}
-
-
-static rb_addrinfo_t *
-alloc_addrinfo(void)
-{
-    rb_addrinfo_t *rai = ZALLOC(rb_addrinfo_t);
-    rai->inspectname = Qnil;
-    rai->canonname = Qnil;
     return rai;
 }
 
@@ -1347,6 +1349,7 @@ init_addrinfo(VALUE self, rb_addrinfo_t *rai, struct sockaddr *sa, socklen_t len
     rai->protocol = protocol;
     RB_OBJ_WRITE(self, &rai->canonname, canonname);
     RB_OBJ_WRITE(self, &rai->inspectname, inspectname);
+    rai->initialized = true;
 }
 
 VALUE
@@ -1357,8 +1360,7 @@ rsock_addrinfo_new(struct sockaddr *addr, socklen_t len,
     VALUE a;
     rb_addrinfo_t *rai;
 
-    a = addrinfo_s_allocate(rb_cAddrinfo);
-    DATA_PTR(a) = rai = alloc_addrinfo();
+    a = addrinfo_alloc(rb_cAddrinfo, &rai);
     init_addrinfo(a, rai, addr, len, family, socktype, protocol, canonname, inspectname);
     return a;
 }
@@ -1603,9 +1605,9 @@ addrinfo_initialize(int argc, VALUE *argv, VALUE self)
     socklen_t sockaddr_len;
     VALUE canonname = Qnil, inspectname = Qnil;
 
-    if (check_addrinfo(self))
+    rai = check_addrinfo(self);
+    if (rai->initialized)
         rb_raise(rb_eTypeError, "already initialized socket address");
-    DATA_PTR(self) = rai = alloc_addrinfo();
 
     rb_scan_args(argc, argv, "13", &sockaddr_arg, &pfamily, &socktype, &protocol);
 
@@ -2160,7 +2162,8 @@ addrinfo_mload(VALUE self, VALUE ary)
     socklen_t len;
     rb_addrinfo_t *rai;
 
-    if (check_addrinfo(self))
+    rai = check_addrinfo(self);
+    if (rai->initialized)
         rb_raise(rb_eTypeError, "already initialized socket address");
 
     ary = rb_convert_type(ary, T_ARRAY, "Array", "to_ary");
@@ -2253,7 +2256,6 @@ addrinfo_mload(VALUE self, VALUE ary)
       }
     }
 
-    DATA_PTR(self) = rai = alloc_addrinfo();
     init_addrinfo(self, rai, &ss.addr, len,
                   pfamily, socktype, protocol,
                   canonname, inspectname);
@@ -3020,9 +3022,8 @@ addrinfo_s_unix(int argc, VALUE *argv, VALUE self)
     else
         socktype = rsock_socktype_arg(vsocktype);
 
-    addr = addrinfo_s_allocate(rb_cAddrinfo);
-    DATA_PTR(addr) = rai = alloc_addrinfo();
-    init_unix_addrinfo(self, rai, path, socktype);
+    addr = addrinfo_alloc(rb_cAddrinfo, &rai);
+    init_unix_addrinfo(addr, rai, path, socktype);
     return addr;
 }
 
