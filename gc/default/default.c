@@ -3505,7 +3505,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                 rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
 
-                rb_gc_obj_free_vm_weak_references(vp);
                 if (rb_gc_obj_free(objspace, vp)) {
                     // always add free slots back to the swept pages freelist,
                     // so that if we're compacting, we can re-use the slots
@@ -5362,6 +5361,8 @@ gc_update_weak_references(rb_objspace_t *objspace)
     }
 }
 
+static void gc_cleanup_vm_weak_tables(rb_objspace_t *objspace);
+
 static void
 gc_marks_finish(rb_objspace_t *objspace)
 {
@@ -5389,6 +5390,7 @@ gc_marks_finish(rb_objspace_t *objspace)
     }
 
     gc_update_weak_references(objspace);
+    gc_cleanup_vm_weak_tables(objspace);
 
 #if RGENGC_CHECK_MODE >= 2
     gc_verify_internal_consistency(objspace);
@@ -7115,6 +7117,32 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t *objspace, 
     }
 
     return 0;
+}
+
+static int
+gc_cleanup_vm_weak_table_i(VALUE obj, void *data)
+{
+    rb_objspace_t *objspace = data;
+
+    if (!RVALUE_MARKED(objspace, obj)) {
+        return ST_DELETE;
+    }
+
+    return ST_CONTINUE;
+}
+
+static void
+gc_cleanup_vm_weak_tables(rb_objspace_t *objspace)
+{
+    for (int table = 0; table < RB_GC_VM_WEAK_TABLE_COUNT; table++) {
+        rb_gc_vm_weak_table_foreach(
+            gc_cleanup_vm_weak_table_i,
+            NULL,
+            objspace,
+            true,
+            table
+        );
+    }
 }
 
 static int
