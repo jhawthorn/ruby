@@ -3896,7 +3896,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     struct heap_page *sweep_page = heap->sweeping_page;
     int swept_slots = 0;
-    int pooled_slots = 0;
 
     if (sweep_page == NULL) return FALSE;
 
@@ -3942,16 +3941,10 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             heap->freed_slots += ctx.freed_slots;
             heap->empty_slots += ctx.empty_slots;
 
-            if (pooled_slots < GC_INCREMENTAL_SWEEP_POOL_SLOT_COUNT) {
-                heap_add_poolpage(objspace, heap, sweep_page);
-                pooled_slots += free_slots;
-            }
-            else {
-                heap_add_freepage(heap, sweep_page);
-                swept_slots += free_slots;
-                if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
-                    break;
-                }
+            heap_add_freepage(heap, sweep_page);
+            swept_slots += free_slots;
+            if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
+                break;
             }
         }
         else {
