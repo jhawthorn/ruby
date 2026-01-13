@@ -1602,6 +1602,7 @@ rb_gc_impl_garbage_object_p(void *objspace_ptr, VALUE ptr)
 static void free_stack_chunks(mark_stack_t *);
 static void mark_stack_free_cache(mark_stack_t *);
 static void heap_page_free(rb_objspace_t *objspace, struct heap_page *page);
+static void heap_unlink_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page);
 
 static void
 gc_verify_page_freelist(struct heap_page *page, const char *location)
@@ -1738,6 +1739,42 @@ heap_add_freepage(rb_heap_t *heap, struct heap_page *page)
     RUBY_DEBUG_LOG("page:%p freelist:%p", (void *)page, (void *)page->freelist);
 
     asan_lock_freelist(page);
+}
+
+/* Move a swept page to empty_pages or free_pages. */
+static inline int
+gc_sweep_handle_swept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page)
+{
+    int free_slots = sweep_page->free_slots;
+
+    if (free_slots == sweep_page->total_slots) {
+        /* There are no living objects, so move this page to the global empty pages. */
+        heap_unlink_page(objspace, heap, sweep_page);
+
+        sweep_page->start = 0;
+        sweep_page->total_slots = 0;
+        sweep_page->slot_size = 0;
+        sweep_page->heap = NULL;
+        sweep_page->free_slots = 0;
+
+        asan_unlock_freelist(sweep_page);
+        sweep_page->freelist = NULL;
+        asan_lock_freelist(sweep_page);
+
+        asan_poison_memory_region(sweep_page->body, HEAP_PAGE_SIZE);
+
+        objspace->empty_pages_count++;
+        sweep_page->free_next = objspace->empty_pages;
+        objspace->empty_pages = sweep_page;
+    }
+    else if (free_slots > 0) {
+        heap_add_freepage(heap, sweep_page);
+    }
+    else {
+        sweep_page->free_next = NULL;
+    }
+
+    return free_slots;
 }
 
 static inline void
@@ -3982,38 +4019,16 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
         heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);
 
-        if (free_slots == sweep_page->total_slots) {
-            /* There are no living objects, so move this page to the global empty pages. */
-            heap_unlink_page(objspace, heap, sweep_page);
-
-            sweep_page->start = 0;
-            sweep_page->total_slots = 0;
-            sweep_page->slot_size = 0;
-            sweep_page->heap = NULL;
-            sweep_page->free_slots = 0;
-
-            asan_unlock_freelist(sweep_page);
-            sweep_page->freelist = NULL;
-            asan_lock_freelist(sweep_page);
-
-            asan_poison_memory_region(sweep_page->body, HEAP_PAGE_SIZE);
-
-            objspace->empty_pages_count++;
-            sweep_page->free_next = objspace->empty_pages;
-            objspace->empty_pages = sweep_page;
-        }
-        else if (free_slots > 0) {
+        /* Only count slots for pages that remain in this heap (not fully empty) */
+        if (free_slots > 0 && free_slots < sweep_page->total_slots) {
             heap->freed_slots += ctx.freed_slots;
             heap->empty_slots += ctx.empty_slots;
-
-            heap_add_freepage(heap, sweep_page);
             swept_slots += free_slots;
-            if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
-                break;
-            }
         }
-        else {
-            sweep_page->free_next = NULL;
+        gc_sweep_handle_swept_page(objspace, heap, sweep_page);
+
+        if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
+            break;
         }
     } while ((sweep_page = heap->sweeping_page));
 
