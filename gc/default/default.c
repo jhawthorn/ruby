@@ -1604,52 +1604,6 @@ static void heap_page_free(rb_objspace_t *objspace, struct heap_page *page);
 static void heap_unlink_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page);
 static bool has_swept_pages(rb_objspace_t *objspace);
 
-static void
-gc_verify_page_freelist(struct heap_page *page, const char *location)
-{
-    bool was_locked = __asan_region_is_poisoned(&page->freelist, sizeof(page->freelist)) != NULL;
-    if (was_locked) {
-        asan_unlock_freelist(page);
-    }
-
-    uintptr_t page_start = page->start;
-    uintptr_t page_end = page_start + (page->total_slots * page->slot_size);
-
-    struct free_slot *slot = page->freelist;
-    int count = 0;
-    while (slot) {
-        uintptr_t slot_addr = (uintptr_t)slot;
-        if (slot_addr < page_start || slot_addr >= page_end) {
-            rb_bug("gc_verify_page_freelist: %s: slot %p is outside page range [%p, %p) (page=%p, count=%d)",
-                   location, slot, (void *)page_start, (void *)page_end, page, count);
-        }
-        if ((slot_addr - page_start) % page->slot_size != 0) {
-            rb_bug("gc_verify_page_freelist: %s: slot %p is not aligned to slot_size %d (page=%p, count=%d)",
-                   location, slot, page->slot_size, page, count);
-        }
-#ifdef RUBY_ASAN_ENABLED
-        void *poisoned = __asan_region_is_poisoned(slot, sizeof(struct free_slot));
-        if (!poisoned) {
-            rb_bug("gc_verify_page_freelist: %s: slot %p is not poisoned (type=%d, page=%p, count=%d)",
-                   location, slot, BUILTIN_TYPE((VALUE)slot), page, count);
-        }
-#endif
-        rb_asan_unpoison_object((VALUE)slot, false);
-        if (BUILTIN_TYPE((VALUE)slot) != T_NONE) {
-            rb_bug("gc_verify_page_freelist: %s: slot %p is not T_NONE (type=%d, page=%p, count=%d)",
-                   location, slot, BUILTIN_TYPE((VALUE)slot), page, count);
-        }
-        struct free_slot *next = slot->next;
-        rb_asan_poison_object((VALUE)slot);
-        slot = next;
-        count++;
-    }
-
-    if (was_locked) {
-        asan_lock_freelist(page);
-    }
-}
-
 static inline void
 heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
@@ -1730,8 +1684,6 @@ heap_add_freepage(rb_heap_t *heap, struct heap_page *page)
     asan_unlock_freelist(page);
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
-
-    gc_verify_page_freelist(page, "heap_add_freepage");
 
     page->free_next = heap->free_pages;
     heap->free_pages = page;
@@ -2439,8 +2391,6 @@ ractor_cache_set_page(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, 
     GC_ASSERT(heap_cache->freelist == NULL);
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
-
-    gc_verify_page_freelist(page, "ractor_cache_set_page");
 
     heap_cache->using_page = page;
     heap_cache->freelist = page->freelist;
@@ -3586,7 +3536,6 @@ struct gc_sweep_context {
     int final_slots;
     int freed_slots;
     int empty_slots;
-    bool in_worker;
 };
 
 static inline void
@@ -3604,14 +3553,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
             switch (BUILTIN_TYPE(vp)) {
-              case T_CLASS:
-              case T_MODULE:
-              case T_ICLASS:
-                if (ctx->in_worker) {
-                    /* not safe to free in parallel; leave for next GC */
-                    break;
-                }
-                /* fall through */
               default: /* majority case */
                 gc_report(2, objspace, "page_sweep: free %p\n", (void *)p);
 #if RGENGC_CHECK_MODE
@@ -3667,7 +3608,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 break;
               case T_NONE:
                 ctx->empty_slots++; /* already freed */
-                rb_asan_poison_object(vp);
                 break;
             }
         }
@@ -3681,8 +3621,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
 {
     struct heap_page *sweep_page = ctx->page;
     GC_ASSERT(sweep_page->heap == heap);
-
-    gc_verify_page_freelist(sweep_page, "gc_sweep_page start");
 
     uintptr_t p;
     bits_t *bits, bitset;
