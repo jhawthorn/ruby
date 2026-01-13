@@ -3569,6 +3569,11 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
             switch (BUILTIN_TYPE(vp)) {
+              case T_CLASS:
+              case T_MODULE:
+              case T_ICLASS:
+                // FIXME: temporary hack to avoid parallel sweep race
+                break;
               case T_MOVED:
                 if (objspace->flags.during_compacting) {
                     /* The sweep cursor shouldn't have made it to any
