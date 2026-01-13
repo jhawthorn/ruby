@@ -770,6 +770,9 @@ struct heap_page {
     unsigned short free_slots;
     unsigned short final_slots;
     unsigned short pinned_slots;
+    /* Set by gc_sweep_page, used by gc_sweep_handle_swept_page */
+    unsigned short swept_freed_slots;
+    unsigned short swept_empty_slots;
     struct {
         unsigned int before_sweep : 1;
         unsigned int has_remembered_objects : 1;
@@ -1741,14 +1744,17 @@ heap_add_freepage(rb_heap_t *heap, struct heap_page *page)
     asan_lock_freelist(page);
 }
 
-/* Move a swept page to empty_pages or free_pages. */
+/* Move a swept page to empty_pages or free_pages.
+ * Updates heap->freed_slots/empty_slots and returns the number of slots
+ * now available in this heap (0 for empty pages that leave the heap). */
 static inline int
 gc_sweep_handle_swept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page)
 {
     int free_slots = sweep_page->free_slots;
 
     if (free_slots == sweep_page->total_slots) {
-        /* There are no living objects, so move this page to the global empty pages. */
+        /* There are no living objects, so move this page to the global empty pages.
+         * Don't count these slots - the page is leaving this heap. */
         heap_unlink_page(objspace, heap, sweep_page);
 
         sweep_page->start = 0;
@@ -1766,15 +1772,21 @@ gc_sweep_handle_swept_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap
         objspace->empty_pages_count++;
         sweep_page->free_next = objspace->empty_pages;
         objspace->empty_pages = sweep_page;
+
+        return 0;
     }
     else if (free_slots > 0) {
+        heap->freed_slots += sweep_page->swept_freed_slots;
+        heap->empty_slots += sweep_page->swept_empty_slots;
         heap_add_freepage(heap, sweep_page);
+
+        return free_slots;
     }
     else {
         sweep_page->free_next = NULL;
-    }
 
-    return free_slots;
+        return 0;
+    }
 }
 
 static inline void
@@ -3754,6 +3766,8 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
                    ctx->freed_slots, ctx->empty_slots, ctx->final_slots);
 
     sweep_page->free_slots += ctx->freed_slots + ctx->empty_slots;
+    sweep_page->swept_freed_slots = ctx->freed_slots;
+    sweep_page->swept_empty_slots = ctx->empty_slots;
     sweep_page->heap->total_freed_objects += ctx->freed_slots;
 
     if (heap_pages_deferred_final && !finalizing) {
@@ -4015,17 +4029,10 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
             .empty_slots = 0,
         };
         gc_sweep_page(objspace, heap, &ctx);
-        int free_slots = ctx.freed_slots + ctx.empty_slots;
 
         heap->sweeping_page = ccan_list_next(&heap->pages, sweep_page, page_node);
 
-        /* Only count slots for pages that remain in this heap (not fully empty) */
-        if (free_slots > 0 && free_slots < sweep_page->total_slots) {
-            heap->freed_slots += ctx.freed_slots;
-            heap->empty_slots += ctx.empty_slots;
-            swept_slots += free_slots;
-        }
-        gc_sweep_handle_swept_page(objspace, heap, sweep_page);
+        swept_slots += gc_sweep_handle_swept_page(objspace, heap, sweep_page);
 
         if (swept_slots > GC_INCREMENTAL_SWEEP_SLOT_COUNT) {
             break;
