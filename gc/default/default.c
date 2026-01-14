@@ -3863,6 +3863,8 @@ gc_ractor_newobj_cache_clear(void *c, void *data)
 static void
 gc_sweep_start(rb_objspace_t *objspace)
 {
+    RUBY_ASSERT(!objspace->sweep_thread_sweeping);
+
     gc_mode_transition(objspace, gc_mode_sweeping);
     objspace->flags.during_lazy_sweeping = TRUE;
     objspace->rincgc.pooled_slots = 0;
@@ -4062,7 +4064,13 @@ gc_sweep_rest(rb_objspace_t *objspace)
     for (int i = 0; i < HEAP_COUNT; i++) {
         rb_heap_t *heap = &heaps[i];
 
-        while (heap->sweeping_page) {
+        while (true) {
+            rb_native_mutex_lock(&objspace->sweep_lock);
+            bool has_work = heap->sweeping_page || heap->swept_pages || heap->sweep_thread_working;
+            rb_native_mutex_unlock(&objspace->sweep_lock);
+
+            if (!has_work) break;
+
             gc_sweep_step(objspace, heap);
         }
     }
