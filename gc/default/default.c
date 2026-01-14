@@ -2693,7 +2693,7 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
     zombie->flags = T_ZOMBIE | (zombie->flags & ZOMBIE_OBJ_KEPT_FLAGS);
     zombie->dfree = dfree;
     zombie->data = data;
-    VALUE prev, next = heap_pages_deferred_final;
+    VALUE prev, next = (VALUE)RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final);
     do {
         zombie->next = prev = next;
         next = RUBY_ATOMIC_VALUE_CAS(heap_pages_deferred_final, prev, obj);
@@ -3732,7 +3732,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     sweep_page->swept_freed_slots = ctx->freed_slots;
     sweep_page->swept_empty_slots = ctx->empty_slots;
 
-    if (heap_pages_deferred_final && !finalizing) {
+    if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
         gc_finalize_deferred_register(objspace);
     }
 
