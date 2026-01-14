@@ -9669,6 +9669,13 @@ rb_gc_impl_before_fork(void *objspace_ptr)
 
     objspace->fork_vm_lock_lev = RB_GC_VM_LOCK();
     rb_gc_vm_barrier();
+
+    /* Stop the sweep thread before fork */
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    objspace->sweep_thread_running = false;
+    rb_native_cond_broadcast(&objspace->sweep_cond);
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+    pthread_join(objspace->sweep_thread, NULL);
 }
 
 void
@@ -9682,6 +9689,12 @@ rb_gc_impl_after_fork(void *objspace_ptr, rb_pid_t pid)
     if (pid == 0) { /* child process */
         rb_gc_ractor_newobj_cache_foreach(gc_ractor_newobj_cache_clear, NULL);
     }
+
+    /* Restart the sweep thread (stopped in before_fork) */
+    objspace->sweep_thread_running = true;
+    objspace->sweep_thread_sweeping = false;
+    objspace->sweep_thread_sweep_requested = false;
+    pthread_create(&objspace->sweep_thread, NULL, gc_sweep_thread_func, objspace);
 }
 
 VALUE rb_ident_hash_new_with_size(st_index_t size);
