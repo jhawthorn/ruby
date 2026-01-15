@@ -6529,12 +6529,15 @@ vm_track_constant_cache(ID id, void *ic)
 static void
 vm_ic_track_const_chain(rb_control_frame_t *cfp, IC ic, const ID *segments)
 {
+    rb_vm_t *vm = GET_VM();
     RB_VM_LOCKING() {
+        rb_native_mutex_lock(&vm->constant_cache_lock);
         for (int i = 0; segments[i]; i++) {
             ID id = segments[i];
             if (id == idNULL) continue;
             vm_track_constant_cache(id, ic);
         }
+        rb_native_mutex_unlock(&vm->constant_cache_lock);
     }
 }
 

@@ -140,6 +140,9 @@ iseq_clear_ic_references(const rb_iseq_t *iseq)
         return;
     }
 
+    rb_vm_t *vm = GET_VM();
+    rb_native_mutex_lock(&vm->constant_cache_lock);
+
     for (unsigned int ic_idx = 0; ic_idx < ISEQ_BODY(iseq)->ic_size; ic_idx++) {
         IC ic = &ISEQ_IS_IC_ENTRY(ISEQ_BODY(iseq), ic_idx);
 
@@ -161,6 +164,8 @@ iseq_clear_ic_references(const rb_iseq_t *iseq)
 
         SIZED_FREE_N(segments, i + 1);
     }
+
+    rb_native_mutex_unlock(&vm->constant_cache_lock);
 }
 
 

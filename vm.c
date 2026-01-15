@@ -3393,6 +3393,7 @@ ruby_vm_destruct(rb_vm_t *vm)
             st_free_table(vm->static_ext_inits);
 
             rb_id_table_free(vm->constant_cache);
+            rb_native_mutex_destroy(&vm->constant_cache_lock);
             set_free_table(vm->unused_block_warning_table);
 
             rb_thread_free_native_thread(th);
@@ -4590,6 +4591,7 @@ Init_BareVM(void)
     vm->negative_cme_table = rb_id_table_create(16);
     vm->overloaded_cme_table = st_init_numtable();
     vm->constant_cache = rb_id_table_create(0);
+    rb_native_mutex_initialize(&vm->constant_cache_lock);
     vm->unused_block_warning_table = set_init_numtable();
     vm->global_hooks.type = hook_list_type_global;
 
