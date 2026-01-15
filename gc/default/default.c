@@ -2985,18 +2985,20 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         unsigned int lev = RB_GC_VM_LOCK();
 
         lev = run_final(objspace, zombie, lev);
-        {
-            GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
-            GC_ASSERT(page->heap->final_slots_count > 0);
-            GC_ASSERT(page->final_slots > 0);
-
-            RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
-            page->final_slots--;
-            page->free_slots++;
-            RVALUE_AGE_SET_BITMAP(zombie, 0);
-            heap_page_add_freeobj(objspace, page, zombie);
-            page->heap->total_freed_objects++;
-        }
+        // TODO: mark the object so the next sweep frees it and adds to freelist
+        // Can't modify page - sweep thread may be accessing it concurrently
+        // {
+        //     GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
+        //     GC_ASSERT(page->heap->final_slots_count > 0);
+        //     GC_ASSERT(page->final_slots > 0);
+        //
+        //     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
+        //     page->final_slots--;
+        //     page->free_slots++;
+        //     RVALUE_AGE_SET_BITMAP(zombie, 0);
+        //     heap_page_add_freeobj(objspace, page, zombie);
+        //     page->heap->total_freed_objects++;
+        // }
         RB_GC_VM_UNLOCK(lev);
 
         zombie = next_zombie;
@@ -3732,7 +3734,7 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
     sweep_page->swept_freed_slots = ctx->freed_slots;
     sweep_page->swept_empty_slots = ctx->empty_slots;
 
-    if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !finalizing) {
+    if (RUBY_ATOMIC_PTR_LOAD(heap_pages_deferred_final) && !RUBY_ATOMIC_LOAD(finalizing)) {
         gc_finalize_deferred_register(objspace);
     }
 
