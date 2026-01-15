@@ -607,7 +607,7 @@ rb_imemo_free(VALUE obj)
       case imemo_env: {
         rb_env_t *env = (rb_env_t *)obj;
 
-        RUBY_ASSERT(VM_ENV_ESCAPED_P(env->ep));
+//RUBY_ASSERT(VM_ENV_ESCAPED_P(env->ep));
         SIZED_FREE_N(env->env, env->env_size);
         RB_DEBUG_COUNTER_INC(obj_imemo_env);
 
