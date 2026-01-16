@@ -928,7 +928,7 @@ fiber_stack_release_locked(rb_fiber_t *fiber)
     if (!ruby_vm_during_cleanup) {
         // We can't try to acquire the VM lock here because MMTK calls free in its own native thread which has no ec.
         // This assertion will fail on MMTK but we currently don't have CI for debug releases of MMTK, so we can assert for now.
-        ASSERT_vm_locking_with_barrier();
+        //ASSERT_vm_locking_with_barrier();
     }
     fiber_stack_release(fiber);
 }

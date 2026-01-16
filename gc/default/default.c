@@ -1044,6 +1044,15 @@ total_final_slots_count(rb_objspace_t *objspace)
 #define needs_continue_sweeping(objspace, heap) \
     ((heap)->free_pages == NULL && is_lazy_sweeping(objspace))
 
+static bool
+heap_sweep_done(rb_objspace_t *objspace, rb_heap_t *heap)
+{
+    rb_native_mutex_lock(&objspace->sweep_lock);
+    bool done = !heap->sweeping_page && !heap->swept_pages && !heap->sweep_thread_working;
+    rb_native_mutex_unlock(&objspace->sweep_lock);
+    return done;
+}
+
 #if SIZEOF_LONG == SIZEOF_VOIDP
 # define obj_id_to_ref(objid) ((objid) ^ FIXNUM_FLAG) /* unset FIXNUM_FLAG */
 #elif SIZEOF_LONG_LONG == SIZEOF_VOIDP
@@ -2149,7 +2158,7 @@ heap_prepare(rb_objspace_t *objspace, rb_heap_t *heap)
     GC_ASSERT(heap->free_pages == NULL);
 
     if (heap->total_slots < gc_params.heap_init_slots[heap - heaps] &&
-            heap->sweeping_page == NULL) {
+            heap_sweep_done(objspace, heap)) {
         heap_page_allocate_and_initialize_force(objspace, heap);
         GC_ASSERT(heap->free_pages != NULL);
         return;
