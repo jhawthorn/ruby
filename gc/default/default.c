@@ -2691,7 +2691,11 @@ rb_gc_impl_pointer_to_heap_p(void *objspace_ptr, const void *ptr)
     return is_pointer_to_heap(objspace_ptr, ptr);
 }
 
-#define ZOMBIE_OBJ_KEPT_FLAGS (FL_FINALIZE)
+// Flag to indicate a zombie's finalizer has been run. Uses RUBY_FL_USERPRIV0
+// which is documented as type-dependent and not used by T_ZOMBIE.
+#define FL_ZOMBIE_FINALIZED RUBY_FL_USERPRIV0
+
+#define ZOMBIE_OBJ_KEPT_FLAGS (FL_FINALIZE | FL_ZOMBIE_FINALIZED)
 
 void
 rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), void *data)
@@ -2994,20 +2998,12 @@ finalize_list(rb_objspace_t *objspace, VALUE zombie)
         unsigned int lev = RB_GC_VM_LOCK();
 
         lev = run_final(objspace, zombie, lev);
-        // TODO: mark the object so the next sweep frees it and adds to freelist
-        // Can't modify page - sweep thread may be accessing it concurrently
-        // {
-        //     GC_ASSERT(BUILTIN_TYPE(zombie) == T_ZOMBIE);
-        //     GC_ASSERT(page->heap->final_slots_count > 0);
-        //     GC_ASSERT(page->final_slots > 0);
-        //
-        //     RUBY_ATOMIC_SIZE_DEC(page->heap->final_slots_count);
-        //     page->final_slots--;
-        //     page->free_slots++;
-        //     RVALUE_AGE_SET_BITMAP(zombie, 0);
-        //     heap_page_add_freeobj(objspace, page, zombie);
-        //     page->heap->total_freed_objects++;
-        // }
+
+        // Mark the zombie as finalized so sweep can add it to the freelist.
+        // Can't directly add to freelist here since sweep thread may be
+        // accessing the page concurrently.
+        FL_SET(zombie, FL_ZOMBIE_FINALIZED);
+
         RB_GC_VM_UNLOCK(lev);
 
         zombie = next_zombie;
@@ -3599,7 +3595,20 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 heap_page_add_freeobj(objspace, sweep_page, vp);
                 break;
               case T_ZOMBIE:
-                /* already counted */
+                if (FL_TEST(vp, FL_ZOMBIE_FINALIZED)) {
+                    // Finalizer has been run, we can add this to the freelist
+                    GC_ASSERT(sweep_page->final_slots > 0);
+                    sweep_page->final_slots--;
+                    RUBY_ATOMIC_SIZE_DEC(heap->final_slots_count);
+
+                    RBASIC(vp)->flags = 0;
+                    (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
+                    heap_page_add_freeobj(objspace, sweep_page, vp);
+                    gc_report(3, objspace, "page_sweep: %s (finalized zombie) added to freelist\n", rb_obj_info(vp));
+                    ctx->freed_slots++;
+                    heap->total_freed_objects++;
+                }
+                // else: zombie not yet finalized, leave it alone
                 break;
               case T_NONE:
                 ctx->empty_slots++; /* already freed */
@@ -3637,7 +3646,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                     rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
 
-                    rb_gc_obj_free_vm_weak_references(vp);
+                    //rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
                         heap_page_add_freeobj(objspace, sweep_page, vp);
