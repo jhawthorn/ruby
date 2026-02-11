@@ -1277,25 +1277,21 @@ typedef struct {
     union_sockaddr addr;
 } rb_addrinfo_t;
 
-static void
-addrinfo_mark(void *ptr)
-{
-    rb_addrinfo_t *rai = ptr;
-    rb_gc_mark(rai->inspectname);
-    rb_gc_mark(rai->canonname);
-}
-
-#define addrinfo_free RUBY_TYPED_DEFAULT_FREE
+RUBY_REFERENCES(addrinfo_refs) = {
+    RUBY_REF_EDGE(rb_addrinfo_t, inspectname),
+    RUBY_REF_EDGE(rb_addrinfo_t, canonname),
+    RUBY_REF_END
+};
 
 static const rb_data_type_t addrinfo_type = {
     "socket/addrinfo",
     {
-        addrinfo_mark,
-        addrinfo_free,
+        RUBY_REFS_LIST_PTR(addrinfo_refs),
+        RUBY_TYPED_DEFAULT_FREE,
         NULL, // memsize of embedded data is already accounted for
     },
     0, 0,
-    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE,
+    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE | RUBY_TYPED_DECL_MARKING,
 };
 
 static VALUE
