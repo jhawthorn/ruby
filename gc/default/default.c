@@ -687,7 +687,11 @@ size_t rb_gc_impl_obj_slot_size(VALUE obj);
 # endif
 #endif
 
+#if SIZEOF_VALUE >= 8
 #define BASE_SLOT_SIZE_LOG2 6
+#else
+#define BASE_SLOT_SIZE_LOG2 5
+#endif
 #define BASE_SLOT_SIZE (1 << BASE_SLOT_SIZE_LOG2)
 
 #ifndef MAX
