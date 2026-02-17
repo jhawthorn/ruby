@@ -1543,7 +1543,12 @@ Init_default_shapes(void)
     capacities[heaps_count] = 0;
     size_t index;
     for (index = 0; index < heaps_count; index++) {
-        capacities[index] = (heap_sizes[index] - sizeof(struct RBasic)) / sizeof(VALUE);
+        if (heap_sizes[index] > sizeof(struct RBasic)) {
+            capacities[index] = (heap_sizes[index] - sizeof(struct RBasic)) / sizeof(VALUE);
+        }
+        else {
+            capacities[index] = 1;
+        }
     }
     rb_shape_tree.capacities = capacities;
 
