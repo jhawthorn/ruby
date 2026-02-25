@@ -275,6 +275,15 @@ typedef VALUE (*vm_call_handler)(
 
 // imemo_callcache
 
+union rb_callcache_aux {
+    struct {
+        uint64_t value; // Shape ID in former half, index in latter half
+    } attr;
+    const enum method_missing_reason method_missing_reason; /* used by method_missing */
+    VALUE v;
+    const struct rb_builtin_function *bf;
+};
+
 struct rb_callcache {
     const VALUE flags;
 
@@ -285,14 +294,8 @@ struct rb_callcache {
     const struct rb_callable_method_entry_struct * const cme_;
     const vm_call_handler call_;
 
-    union {
-        struct {
-            uint64_t value; // Shape ID in former half, index in latter half
-        } attr;
-        const enum method_missing_reason method_missing_reason; /* used by method_missing */
-        VALUE v;
-        const struct rb_builtin_function *bf;
-    } aux_;
+    // aux_ is stored after the struct for 40-byte CCs only.
+    // Access via vm_cc_aux().
 };
 
 /* VM_CALLCACHE_IVAR used for IVAR/ATTRSET/STRUCT_AREF/STRUCT_ASET methods */
@@ -303,6 +306,16 @@ struct rb_callcache {
 #define VM_CALLCACHE_UNMARKABLE IMEMO_FL_USER4
 #define VM_CALLCACHE_ON_STACK   IMEMO_FL_USER5
 #define VM_CALLCACHE_INVALID_SUPER IMEMO_FL_USER6
+#define VM_CALLCACHE_HAS_AUX      IMEMO_FL_USER7
+
+static inline union rb_callcache_aux *
+vm_cc_aux(const struct rb_callcache *cc)
+{
+    VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache) ||
+              (cc->flags & VM_CALLCACHE_ON_STACK));
+    VM_ASSERT(cc->flags & VM_CALLCACHE_HAS_AUX);
+    return (union rb_callcache_aux *)(cc + 1);
+}
 
 enum vm_cc_type {
     cc_type_normal, // chained from ccs
@@ -334,18 +347,54 @@ VALUE rb_vm_cc_table_create(size_t capa);
 VALUE rb_vm_cc_table_dup(VALUE old_table);
 void rb_vm_cc_table_delete(VALUE table, ID mid);
 
+static inline bool
+vm_cc_needs_aux(const struct rb_callable_method_entry_struct *cme,
+                const struct rb_callinfo *ci)
+{
+    if (!cme) return true; // invalid super uses vm_call_method_missing
+    switch (cme->def->type) {
+      case VM_METHOD_TYPE_IVAR:
+      case VM_METHOD_TYPE_ATTRSET:
+      case VM_METHOD_TYPE_MISSING:
+        return true;
+      case VM_METHOD_TYPE_ISEQ:
+        if (ISEQ_BODY(cme->def->body.iseq.iseqptr)->builtin_attrs &
+            BUILTIN_ATTR_SINGLE_NOARG_LEAF) {
+            return true;
+        }
+        break;
+      default:
+        break;
+    }
+    if (ci && METHOD_ENTRY_VISI(cme) != METHOD_VISI_PUBLIC &&
+        !(vm_ci_flag(ci) & VM_CALL_FCALL)) {
+        return true;
+    }
+    return false;
+}
+
 static inline const struct rb_callcache *
 vm_cc_new(VALUE klass,
           const struct rb_callable_method_entry_struct *cme,
           vm_call_handler call,
+          const struct rb_callinfo *ci,
           enum vm_cc_type type)
 {
     cc_check_class(klass);
-    struct rb_callcache *cc = SHAREABLE_IMEMO_NEW(struct rb_callcache, imemo_callcache, klass);
+
+    bool needs_aux = vm_cc_needs_aux(cme, ci);
+    size_t size = needs_aux
+        ? sizeof(struct rb_callcache) + sizeof(union rb_callcache_aux)
+        : sizeof(struct rb_callcache);
+    struct rb_callcache *cc = (struct rb_callcache *)rb_imemo_new(imemo_callcache, klass, size, true);
     rb_gc_declare_weak_references((VALUE)cc);
 
     *((struct rb_callable_method_entry_struct **)&cc->cme_) = (struct rb_callable_method_entry_struct *)cme;
     *((vm_call_handler *)&cc->call_) = call;
+
+    if (needs_aux) {
+        *(VALUE *)&cc->flags |= VM_CALLCACHE_HAS_AUX;
+    }
 
     switch (type) {
       case cc_type_normal:
@@ -384,17 +433,23 @@ vm_cc_refinement_p(const struct rb_callcache *cc)
     return (cc->flags & VM_CALLCACHE_REFINEMENT) != 0;
 }
 
-#define VM_CC_ON_STACK(clazz, call, aux, cme) \
-    (struct rb_callcache) {                   \
-        .flags = T_IMEMO |                    \
-            (imemo_callcache << FL_USHIFT) |  \
-            VM_CALLCACHE_UNMARKABLE |         \
-            VM_CALLCACHE_ON_STACK,            \
-        .klass = cc_check_class(clazz),       \
-        .cme_  = cme,                         \
-        .call_ = call,                        \
-        .aux_  = aux,                         \
-    }
+#define VM_CC_ON_STACK(clazz, call, cme)                      \
+    ((const struct {                                          \
+        struct rb_callcache cc;                               \
+        union rb_callcache_aux aux;                           \
+    }) {                                                      \
+        .cc = {                                               \
+            .flags = T_IMEMO |                                \
+                (imemo_callcache << FL_USHIFT) |              \
+                VM_CALLCACHE_UNMARKABLE |                     \
+                VM_CALLCACHE_ON_STACK |                       \
+                VM_CALLCACHE_HAS_AUX,                         \
+            .klass = cc_check_class(clazz),                   \
+            .cme_  = cme,                                     \
+            .call_ = call,                                    \
+        },                                                    \
+        .aux = { .v = Qfalse },                               \
+    }).cc
 
 static inline bool
 vm_cc_class_check(const struct rb_callcache *cc, VALUE klass)
@@ -465,7 +520,7 @@ vm_unpack_shape_and_index(const uint64_t cache_value, shape_id_t *shape_id, attr
 static inline void
 vm_cc_atomic_shape_and_index(const struct rb_callcache *cc, shape_id_t *shape_id, attr_index_t *index)
 {
-    vm_unpack_shape_and_index(ATOMIC_U64_LOAD_RELAXED(cc->aux_.attr.value), shape_id, index);
+    vm_unpack_shape_and_index(ATOMIC_U64_LOAD_RELAXED(vm_cc_aux(cc)->attr.value), shape_id, index);
 }
 
 static inline void
@@ -478,7 +533,7 @@ static inline unsigned int
 vm_cc_cmethod_missing_reason(const struct rb_callcache *cc)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
-    return cc->aux_.method_missing_reason;
+    return vm_cc_aux(cc)->method_missing_reason;
 }
 
 static inline bool
@@ -523,7 +578,8 @@ vm_pack_shape_and_index(shape_id_t shape_id, attr_index_t index)
 static inline void
 vm_cc_attr_index_set(const struct rb_callcache *cc, attr_index_t index, shape_id_t dest_shape_id)
 {
-    uint64_t *attr_value = (uint64_t *)&cc->aux_.attr.value;
+    union rb_callcache_aux *aux = vm_cc_aux(cc);
+    uint64_t *attr_value = (uint64_t *)&aux->attr.value;
     if (!vm_cc_markable(cc)) {
         *attr_value = vm_pack_shape_and_index(INVALID_SHAPE_ID, ATTR_INDEX_NOT_SET);
         return;
@@ -557,7 +613,7 @@ vm_cc_method_missing_reason_set(const struct rb_callcache *cc, enum method_missi
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *(enum method_missing_reason *)&cc->aux_.method_missing_reason = reason;
+    *(enum method_missing_reason *)&vm_cc_aux(cc)->method_missing_reason = reason;
 }
 
 static inline void
@@ -565,7 +621,7 @@ vm_cc_bf_set(const struct rb_callcache *cc, const struct rb_builtin_function *bf
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *(const struct rb_builtin_function **)&cc->aux_.bf = bf;
+    *(const struct rb_builtin_function **)&vm_cc_aux(cc)->bf = bf;
     *(VALUE *)&cc->flags |= VM_CALLCACHE_BF;
 }
 

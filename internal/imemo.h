@@ -26,6 +26,7 @@
 #define IMEMO_FL_USER4 FL_USER8
 #define IMEMO_FL_USER5 FL_USER9
 #define IMEMO_FL_USER6 FL_USER10
+#define IMEMO_FL_USER7 FL_USER11
 
 enum imemo_type {
     imemo_env            =  0,

@@ -732,9 +732,6 @@ static const struct rb_callcache vm_empty_cc = {
     .klass = Qundef,
     .cme_  = NULL,
     .call_ = vm_call_general,
-    .aux_  = {
-        .v = Qfalse,
-    }
 };
 
 static const struct rb_callcache vm_empty_cc_for_super = {
@@ -742,9 +739,6 @@ static const struct rb_callcache vm_empty_cc_for_super = {
     .klass = Qundef,
     .cme_  = NULL,
     .call_ = vm_call_super_method,
-    .aux_  = {
-        .v = Qfalse,
-    }
 };
 
 static void thread_free(void *ptr);
