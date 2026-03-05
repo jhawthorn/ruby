@@ -1245,6 +1245,22 @@ rb_gc_handle_weak_references(VALUE obj)
 
         break;
       }
+
+      case T_CLASS:
+      case T_MODULE:
+      case T_ICLASS: {
+        rb_subclass_array_t *subs = RCLASS_SUBCLASSES(obj);
+        if (subs) {
+            for (long i = 0; i < subs->len; i++) {
+                VALUE entry = subs->entries[i];
+                if (entry && !rb_gc_handle_weak_references_alive_p(entry)) {
+                    subs->entries[i] = 0;
+                }
+            }
+        }
+        break;
+      }
+
       default:
         rb_bug("rb_gc_handle_weak_references: type not supported\n");
     }
@@ -3941,14 +3957,12 @@ update_const_tbl(void *objspace, struct rb_id_table *tbl)
 static void
 update_subclasses(void *objspace, rb_classext_t *ext)
 {
-    rb_subclass_entry_t *entry;
-    rb_subclass_anchor_t *anchor = RCLASSEXT_SUBCLASSES(ext);
-    if (!anchor) return;
-    entry = anchor->head;
-    while (entry) {
-        if (entry->klass)
-            UPDATE_IF_MOVED(objspace, entry->klass);
-        entry = entry->next;
+    rb_subclass_array_t *subs = RCLASSEXT_SUBCLASSES(ext);
+    if (!subs) return;
+    for (long i = 0; i < subs->len; i++) {
+        if (subs->entries[i]) {
+            UPDATE_IF_MOVED(objspace, subs->entries[i]);
+        }
     }
 }
 

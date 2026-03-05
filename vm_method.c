@@ -439,7 +439,7 @@ clear_method_cache_by_id_in_class(VALUE klass, ID mid)
     RB_VM_LOCKING() {
         rb_vm_barrier();
 
-        if (LIKELY(RCLASS_SUBCLASSES_FIRST(klass) == NULL)) {
+        if (LIKELY(RCLASS_SUBCLASSES(klass) == NULL && !RB_TYPE_P(klass, T_ICLASS))) {
             // no subclasses
             // check only current class
 
@@ -1337,6 +1337,14 @@ check_override_opt_method_i(VALUE klass, VALUE arg)
 {
     ID mid = (ID)arg;
     const rb_method_entry_t *me, *newme;
+
+    if (RB_TYPE_P(klass, T_ICLASS)) {
+        VALUE includer = RCLASS_INCLUDER(klass);
+        if (includer) {
+            check_override_opt_method_i(includer, arg);
+        }
+        return;
+    }
 
     if (vm_redefinition_check_flag(klass)) {
         me = lookup_method_table(RCLASS_ORIGIN(klass), mid);

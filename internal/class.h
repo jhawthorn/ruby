@@ -27,47 +27,11 @@
 # undef RCLASS_SUPER
 #endif
 
-struct rb_box_subclasses {
-    long refcount;
-    struct st_table *tbl;
-};
-typedef struct rb_box_subclasses rb_box_subclasses_t;
-
-static inline long
-rb_box_subclasses_ref_count(rb_box_subclasses_t *box_sub)
-{
-    return box_sub->refcount;
-}
-
-static inline rb_box_subclasses_t *
-rb_box_subclasses_ref_inc(rb_box_subclasses_t *box_sub)
-{
-    box_sub->refcount++;
-    return box_sub;
-}
-
-static inline void
-rb_box_subclasses_ref_dec(rb_box_subclasses_t *box_sub)
-{
-    box_sub->refcount--;
-    if (box_sub->refcount == 0) {
-        st_free_table(box_sub->tbl);
-        xfree(box_sub);
-    }
-}
-
-struct rb_subclass_anchor {
-    rb_box_subclasses_t *box_subclasses;
-    struct rb_subclass_entry *head;
-};
-typedef struct rb_subclass_anchor rb_subclass_anchor_t;
-
-struct rb_subclass_entry {
-    VALUE klass;
-    struct rb_subclass_entry *next;
-    struct rb_subclass_entry *prev;
-};
-typedef struct rb_subclass_entry rb_subclass_entry_t;
+typedef struct rb_subclass_array {
+    long len;
+    long capa;
+    VALUE *entries;  // flat array of VALUE, weak references (nulled by GC)
+} rb_subclass_array_t;
 
 struct rb_cvar_class_tbl_entry {
     uint32_t index;
@@ -86,25 +50,7 @@ struct rb_classext_struct {
     VALUE cc_tbl; /* { ID => { cme, [cc1, cc2, ...] }, ... } */
     struct rb_id_table *cvc_tbl;
     VALUE *superclasses;
-    /**
-     * The head of subclasses is a blank (w/o klass) entry to be referred from anchor (and be never deleted).
-     * (anchor -> head -> 1st-entry)
-     */
-    struct rb_subclass_anchor *subclasses;
-    /**
-     * The `box_super_subclasses` points the `box_subclasses` struct to retreive the subclasses
-     * of the super class in a specific box.
-     * In compaction GCs, collecting a classext should trigger the deletion of a rb_subclass_entry
-     * from the super's subclasses. But it may be prevented by the read barrier.
-     * Fetching the super's subclasses for a ns is to avoid the read barrier in that process.
-     */
-    rb_box_subclasses_t *box_super_subclasses;
-    /**
-     * In the case that this is an `ICLASS`, `box_module_subclasses` points to the link
-     * in the module's `subclasses` list that indicates that the klass has been
-     * included. Hopefully that makes sense.
-     */
-    rb_box_subclasses_t *box_module_subclasses;
+    rb_subclass_array_t *subclasses;
 
     const VALUE origin_;
     const VALUE refined_class;
@@ -188,8 +134,6 @@ static inline rb_classext_t * RCLASS_EXT_WRITABLE(VALUE obj);
 #define RCLASSEXT_SUPERCLASS_DEPTH(ext) (ext->superclass_depth)
 #define RCLASSEXT_SUPERCLASSES(ext) (ext->superclasses)
 #define RCLASSEXT_SUBCLASSES(ext) (ext->subclasses)
-#define RCLASSEXT_BOX_SUPER_SUBCLASSES(ext) (ext->box_super_subclasses)
-#define RCLASSEXT_BOX_MODULE_SUBCLASSES(ext) (ext->box_module_subclasses)
 #define RCLASSEXT_ORIGIN(ext) (ext->origin_)
 #define RCLASSEXT_REFINED_CLASS(ext) (ext->refined_class)
 // class.allocator/singleton_class.attached_object are not accessed directly via RCLASSEXT_*
@@ -227,8 +171,7 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
  * so always those should be writable.
  */
 #define RCLASS_CVC_TBL(c) (RCLASS_EXT_READABLE(c)->cvc_tbl)
-#define RCLASS_SUBCLASSES_X(c) (RCLASS_EXT_READABLE(c)->subclasses)
-#define RCLASS_SUBCLASSES_FIRST(c) (RCLASS_EXT_READABLE(c)->subclasses->head->next)
+#define RCLASS_SUBCLASSES(c) (RCLASS_EXT_PRIME(c)->subclasses)
 #define RCLASS_ORIGIN(c) (RCLASS_EXT_READABLE(c)->origin_)
 #define RICLASS_IS_ORIGIN_P(c) (RCLASS_EXT_READABLE(c)->iclass_is_origin)
 #define RCLASS_PERMANENT_CLASSPATH_P(c) (RCLASS_EXT_READABLE(c)->permanent_classpath)
@@ -255,7 +198,6 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 #define RCLASS_WRITABLE_CALLABLE_M_TBL(c) (RCLASS_EXT_WRITABLE(c)->callable_m_tbl)
 #define RCLASS_WRITABLE_CC_TBL(c) (RCLASS_EXT_WRITABLE(c)->cc_tbl)
 #define RCLASS_WRITABLE_CVC_TBL(c) (RCLASS_EXT_WRITABLE(c)->cvc_tbl)
-#define RCLASS_WRITABLE_SUBCLASSES(c) (RCLASS_EXT_WRITABLE(c)->subclasses)
 
 static inline void RCLASS_SET_SUPER(VALUE klass, VALUE super);
 static inline void RCLASS_WRITE_SUPER(VALUE klass, VALUE super);
@@ -267,9 +209,6 @@ static inline void RCLASS_SET_CVC_TBL(VALUE klass, struct rb_id_table *table);
 static inline void RCLASS_WRITE_CVC_TBL(VALUE klass, struct rb_id_table *table);
 
 static inline void RCLASS_WRITE_SUPERCLASSES(VALUE klass, size_t depth, VALUE *superclasses, bool with_self);
-static inline void RCLASS_SET_SUBCLASSES(VALUE klass, rb_subclass_anchor_t *anchor);
-static inline void RCLASS_WRITE_BOX_SUPER_SUBCLASSES(VALUE klass, rb_box_subclasses_t *box_subclasses);
-static inline void RCLASS_WRITE_BOX_MODULE_SUBCLASSES(VALUE klass, rb_box_subclasses_t *box_subclasses);
 
 static inline void RCLASS_SET_ORIGIN(VALUE klass, VALUE origin);
 static inline void RCLASS_WRITE_ORIGIN(VALUE klass, VALUE origin);
@@ -488,7 +427,7 @@ RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE includer)
 typedef void rb_class_classext_foreach_callback_func(rb_classext_t *classext, bool is_prime, VALUE box_value, void *arg);
 void rb_class_classext_foreach(VALUE klass, rb_class_classext_foreach_callback_func *func, void *arg);
 void rb_class_subclass_add(VALUE super, VALUE klass);
-void rb_class_classext_free_subclasses(rb_classext_t *, VALUE, bool);
+void rb_class_classext_free_subclasses(rb_classext_t *);
 void rb_class_foreach_subclass(VALUE klass, void (*f)(VALUE, VALUE), VALUE);
 void rb_class_update_superclasses(VALUE);
 int rb_singleton_class_internal_p(VALUE sklass);
@@ -726,30 +665,6 @@ RCLASS_WRITE_SUPERCLASSES(VALUE klass, size_t depth, VALUE *superclasses, bool w
     RCLASSEXT_SUPERCLASSES_WITH_SELF(ext) = with_self;
 }
 
-static inline void
-RCLASS_SET_SUBCLASSES(VALUE klass, struct rb_subclass_anchor *anchor)
-{
-    rb_classext_t *ext = RCLASS_EXT_PRIME(klass);
-    RCLASSEXT_SUBCLASSES(ext) = anchor;
-}
-
-static inline void
-RCLASS_WRITE_BOX_SUPER_SUBCLASSES(VALUE klass, rb_box_subclasses_t *box_subclasses)
-{
-    rb_classext_t *ext = RCLASS_EXT_WRITABLE(klass);
-    if (RCLASSEXT_BOX_SUPER_SUBCLASSES(ext))
-        rb_box_subclasses_ref_dec(RCLASSEXT_BOX_SUPER_SUBCLASSES(ext));
-    RCLASSEXT_BOX_SUPER_SUBCLASSES(ext) = rb_box_subclasses_ref_inc(box_subclasses);
-}
-
-static inline void
-RCLASS_WRITE_BOX_MODULE_SUBCLASSES(VALUE klass, rb_box_subclasses_t *box_subclasses)
-{
-    rb_classext_t *ext = RCLASS_EXT_WRITABLE(klass);
-    if (RCLASSEXT_BOX_MODULE_SUBCLASSES(ext))
-        rb_box_subclasses_ref_dec(RCLASSEXT_BOX_MODULE_SUBCLASSES(ext));
-    RCLASSEXT_BOX_MODULE_SUBCLASSES(ext) = rb_box_subclasses_ref_inc(box_subclasses);
-}
 
 static inline void
 RCLASS_SET_CLASSPATH(VALUE klass, VALUE classpath, bool permanent)
