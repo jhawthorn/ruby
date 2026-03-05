@@ -535,11 +535,13 @@ void
 rb_class_subclass_add(VALUE super, VALUE klass)
 {
     if (super && !UNDEF_P(super)) {
+        RUBY_ASSERT(RB_TYPE_P(super, T_CLASS));
+        RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS));
         RB_VM_LOCKING() {
             rb_subclass_array_t *subs = subclass_array_ensure(super);
             subclass_array_push(subs, klass);
         }
-        rb_gc_declare_weak_references(super);
+        RB_OBJ_WRITTEN(super, Qundef, klass);
     }
 }
 
@@ -547,11 +549,13 @@ static void
 rb_module_add_to_subclasses_list(VALUE module, VALUE iclass)
 {
     if (module && !UNDEF_P(module)) {
+        RUBY_ASSERT(RB_TYPE_P(module, T_MODULE));
+        RUBY_ASSERT(RB_TYPE_P(iclass, T_ICLASS));
         RB_VM_LOCKING() {
             rb_subclass_array_t *subs = subclass_array_ensure(module);
             subclass_array_push(subs, iclass);
         }
-        rb_gc_declare_weak_references(module);
+        RB_OBJ_WRITTEN(module, Qundef, iclass);
     }
 }
 
@@ -577,6 +581,7 @@ rb_class_foreach_subclass(VALUE klass, void (*f)(VALUE, VALUE), VALUE arg)
     for (long i = 0; i < subs->len; i++) {
         VALUE curklass = subs->entries[i];
         if (curklass) {
+            RUBY_ASSERT(!rb_objspace_garbage_object_p(curklass));
             f(curklass, arg);
         }
     }
@@ -608,7 +613,7 @@ class_alloc0(enum ruby_value_type type, VALUE klass, bool boxable)
 
     RUBY_ASSERT(type == T_CLASS || type == T_ICLASS || type == T_MODULE);
 
-    VALUE flags = type | FL_SHAREABLE;
+    VALUE flags = type | FL_SHAREABLE | RUBY_FL_WEAK_REFERENCE;
     if (RGENGC_WB_PROTECTED_CLASS) flags |= FL_WB_PROTECTED;
     if (boxable) flags |= RCLASS_BOXABLE;
 
@@ -652,9 +657,10 @@ static VALUE
 class_associate_super(VALUE klass, VALUE super, bool init)
 {
     if (super && !UNDEF_P(super)) {
-        // Add to superclass's subclass list for T_CLASS only.
+        // Add to superclass's subclass list for T_CLASS only, and only
+        // on first super assignment (old super == 0).
         // ICLASSes are added to the module's subclass list separately.
-        if (RB_TYPE_P(klass, T_CLASS)) {
+        if (RB_TYPE_P(klass, T_CLASS) && !RCLASS_SUPER(klass)) {
             // Walk past ICLASSes to find the true T_CLASS super
             VALUE real_super = super;
             while (real_super && RB_TYPE_P(real_super, T_ICLASS)) {
