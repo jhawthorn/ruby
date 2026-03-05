@@ -1436,6 +1436,7 @@ rb_using_refinement(rb_cref_t *cref, VALUE klass, VALUE module)
 
     RCLASS_WRITE_M_TBL(c, RCLASS_M_TBL(module));
 
+    rb_module_add_to_subclasses_list(module, iclass);
     rb_hash_aset(CREF_REFINEMENTS(cref), klass, iclass);
 }
 

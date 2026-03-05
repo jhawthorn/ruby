@@ -545,7 +545,7 @@ rb_class_subclass_add(VALUE super, VALUE klass)
     }
 }
 
-static void
+void
 rb_module_add_to_subclasses_list(VALUE module, VALUE iclass)
 {
     if (module && !UNDEF_P(module)) {
