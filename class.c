@@ -314,12 +314,6 @@ duplicate_classext_const_tbl(struct rb_id_table *src, VALUE klass)
     return dst;
 }
 
-static void
-duplicate_classext_subclasses(rb_classext_t *orig, rb_classext_t *copy)
-{
-    // Subclass list lives on prime classext only. Non-prime classexts don't get a copy.
-    RCLASSEXT_SUBCLASSES(copy) = NULL;
-}
 
 static void
 class_duplicate_iclass_classext(VALUE iclass, rb_classext_t *mod_ext, const rb_box_t *box)
@@ -657,10 +651,9 @@ static VALUE
 class_associate_super(VALUE klass, VALUE super, bool init)
 {
     if (super && !UNDEF_P(super)) {
-        // Add to superclass's subclass list for T_CLASS only, and only
-        // on first super assignment (old super == 0).
+        // Add to superclass's subclass list for T_CLASS only.
         // ICLASSes are added to the module's subclass list separately.
-        if (RB_TYPE_P(klass, T_CLASS) && !RCLASS_SUPER(klass)) {
+        if (RB_TYPE_P(klass, T_CLASS) && (!RCLASS_SUPER(klass) || UNDEF_P(RCLASS_SUPER(klass)))) {
             // Walk past ICLASSes to find the true T_CLASS super
             VALUE real_super = super;
             while (real_super && RB_TYPE_P(real_super, T_ICLASS)) {
