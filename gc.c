@@ -1017,7 +1017,7 @@ newobj_of(rb_ractor_t *cr, VALUE klass, VALUE flags, shape_id_t shape_id, bool w
 
     gc_validate_pc(obj);
 
-    if (UNLIKELY(rb_gc_event_hook_required_p(RUBY_INTERNAL_EVENT_NEWOBJ))) {
+    if (0 && UNLIKELY(rb_gc_event_hook_required_p(RUBY_INTERNAL_EVENT_NEWOBJ))) {
         int lev = RB_GC_VM_LOCK_NO_BARRIER();
         {
             size_t slot_size = rb_gc_obj_slot_size(obj);
