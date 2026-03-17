@@ -1268,8 +1268,6 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
 {
     VALUE flags = RBASIC(obj)->flags;
 
-    if (flags & FL_FINALIZE) return true;
-
     switch (flags & RUBY_T_MASK) {
       case T_IMEMO:
         switch (imemo_type(obj)) {

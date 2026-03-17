@@ -3502,28 +3502,10 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
-            switch (BUILTIN_TYPE(vp)) {
-              case T_MOVED:
-                if (objspace->flags.during_compacting) {
-                    /* The sweep cursor shouldn't have made it to any
-                     * T_MOVED slots while the compact flag is enabled.
-                     * The sweep cursor and compact cursor move in
-                     * opposite directions, and when they meet references will
-                     * get updated and "during_compacting" should get disabled */
-                    rb_bug("T_MOVED shouldn't be seen until compaction is finished");
-                }
-                gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
-                ctx->empty_slots++;
-                heap_page_add_freeobj(objspace, sweep_page, vp);
-                break;
-              case T_ZOMBIE:
-                /* already counted */
-                break;
-              case T_NONE:
+            if (BUILTIN_TYPE(vp) == T_NONE) {
                 ctx->empty_slots++; /* already freed */
-                break;
-
-              default:
+            }
+            else {
 #if RGENGC_CHECK_MODE
                 if (!is_full_marking(objspace)) {
                     if (RVALUE_OLD_P(objspace, vp)) rb_bug("page_sweep: %p - old while minor GC.", (void *)p);
@@ -3560,7 +3542,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                         ctx->final_slots++;
                     }
                 }
-                break;
             }
         }
         p += slot_size;
