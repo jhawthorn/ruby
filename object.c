@@ -114,20 +114,32 @@ rb_obj_reveal(VALUE obj, VALUE klass)
     return obj;
 }
 
-VALUE
-rb_class_allocate_instance(VALUE klass)
+static shape_id_t
+rb_class_compute_instance_root_shape(attr_index_t max_iv_count)
 {
-    uint32_t index_tbl_num_entries = RCLASS_MAX_IV_COUNT(klass);
-
-    size_t size = rb_obj_embedded_size(index_tbl_num_entries);
+    size_t size = rb_obj_embedded_size(max_iv_count);
     if (!rb_gc_size_allocatable_p(size)) {
         size = sizeof(struct RObject);
     }
+    return rb_shape_root(rb_gc_heap_id_for_size(size));
+}
+
+void
+rb_class_update_instance_root_shape(VALUE klass)
+{
+    attr_index_t max_iv_count = RCLASS_MAX_IV_COUNT(klass);
+    RCLASS_INSTANCE_ROOT_SHAPE_ID(klass) = rb_class_compute_instance_root_shape(max_iv_count);
+}
+
+VALUE
+rb_class_allocate_instance(VALUE klass)
+{
+    shape_id_t root_shape_id = RCLASS_INSTANCE_ROOT_SHAPE_ID(klass);
 
     // There might be a NEWOBJ tracepoint callback, and it may set fields.
     // So the shape must be passed to `NEWOBJ_OF`.
     VALUE flags = T_OBJECT | (RGENGC_WB_PROTECTED_OBJECT ? FL_WB_PROTECTED : 0);
-    NEWOBJ_OF_WITH_SHAPE(o, struct RObject, klass, flags, rb_shape_root(rb_gc_heap_id_for_size(size)), size, 0);
+    NEWOBJ_OF_WITH_SHAPE(o, struct RObject, klass, flags, root_shape_id, rb_obj_embedded_size(RSHAPE_EMBEDDED_CAPACITY(root_shape_id)), 0);
     VALUE obj = (VALUE)o;
 
 #if RUBY_DEBUG

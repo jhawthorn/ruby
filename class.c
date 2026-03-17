@@ -797,6 +797,7 @@ class_alloc0(enum ruby_value_type type, VALUE klass, bool boxable)
     obj->object_id = 0;
 
     memset(RCLASS_EXT_PRIME(obj), 0, sizeof(rb_classext_t));
+    RCLASS_EXT_PRIME(obj)->instance_root_shape_id = rb_shape_root(rb_gc_heap_id_for_size(sizeof(struct RObject)));
 
     /* ZALLOC
       RCLASS_CONST_TBL(obj) = 0;
@@ -981,6 +982,7 @@ rb_class_new(VALUE super)
 
     if (super != rb_cObject && super != rb_cBasicObject) {
         RCLASS_SET_MAX_IV_COUNT(klass, RCLASS_MAX_IV_COUNT(super));
+        rb_class_update_instance_root_shape(klass);
     }
 
     RUBY_ASSERT(getenv("RUBY_BOX") || RCLASS_PRIME_CLASSEXT_WRITABLE_P(klass));

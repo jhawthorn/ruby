@@ -824,6 +824,7 @@ shape_get_next(rb_shape_t *shape, enum shape_type shape_type, VALUE klass, ID id
     // Check if we should update max_iv_count on the object's class
     if (new_shape->next_field_index > RCLASS_MAX_IV_COUNT(klass)) {
         RCLASS_SET_MAX_IV_COUNT(klass, new_shape->next_field_index);
+        rb_class_update_instance_root_shape(klass);
     }
 
     if (variation_created) {

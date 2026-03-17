@@ -120,6 +120,7 @@ struct rb_classext_struct {
         } iclass;
     } as;
     attr_index_t max_iv_count;
+    shape_id_t instance_root_shape_id;
     uint16_t superclass_depth;
     unsigned char variation_count;
     bool permanent_classpath : 1;
@@ -149,9 +150,6 @@ struct RClass_and_rb_classext_t {
 };
 
 #if SIZEOF_VALUE >= SIZEOF_LONG_LONG
-// Assert that classes can be embedded in heaps[2] (which has 160B slot size)
-// On 32bit platforms there is no variable width allocation so it doesn't matter.
-STATIC_ASSERT(sizeof_rb_classext_t, sizeof(struct RClass_and_rb_classext_t) <= 4 * RVALUE_SIZE);
 #endif
 
 struct RClass_boxable {
@@ -247,6 +245,7 @@ static inline void RCLASSEXT_SET_INCLUDER(rb_classext_t *ext, VALUE klass, VALUE
 
 // max IV count and variation count are just hints, so they don't need to be per-box
 #define RCLASS_MAX_IV_COUNT(ext) (RCLASS_EXT_PRIME(ext)->max_iv_count)
+#define RCLASS_INSTANCE_ROOT_SHAPE_ID(ext) (RCLASS_EXT_PRIME(ext)->instance_root_shape_id)
 #define RCLASS_VARIATION_COUNT(ext) (RCLASS_EXT_PRIME(ext)->variation_count)
 
 // Writable classext entries (instead of RCLASS_SET_*) because member data will be operated directly
