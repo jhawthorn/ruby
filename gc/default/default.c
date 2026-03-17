@@ -3519,6 +3519,8 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
     struct heap_page *sweep_page = ctx->page;
     short slot_size = sweep_page->slot_size;
     struct free_slot *freelist = freelist_append_start(sweep_page);
+    int freed_slots = 0;
+    int empty_slots = 0;
 
     do {
         VALUE vp = (VALUE)p;
@@ -3527,7 +3529,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         rb_asan_unpoison_object(vp, false);
         if (bitset & 1) {
             if (BUILTIN_TYPE(vp) == T_NONE) {
-                ctx->empty_slots++; /* already freed */
+                empty_slots++; /* already freed */
             }
             else {
 #if RGENGC_CHECK_MODE
@@ -3550,7 +3552,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
                     freelist = freelist_append(freelist, sweep_page, vp);
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
-                    ctx->freed_slots++;
+                    freed_slots++;
                 }
                 else {
                     gc_report(2, objspace, "page_sweep: free %p\n", (void *)p);
@@ -3560,7 +3562,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
                         freelist = freelist_append(freelist, sweep_page, vp);
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
-                        ctx->freed_slots++;
+                        freed_slots++;
                     }
                     else {
                         ctx->final_slots++;
@@ -3573,6 +3575,8 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
     } while (bitset);
 
     freelist_append_finish(freelist, sweep_page);
+    ctx->freed_slots += freed_slots;
+    ctx->empty_slots += empty_slots;
 }
 
 static inline void
