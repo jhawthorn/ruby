@@ -1311,15 +1311,6 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
         return false;
 
       case T_DATA:
-        if (flags & RUBY_TYPED_FL_IS_TYPED_DATA) {
-            uintptr_t type = (uintptr_t)RTYPEDDATA(obj)->type;
-            if (type & TYPED_DATA_EMBEDDED) {
-                RUBY_DATA_FUNC dfree = ((const rb_data_type_t *)(type & TYPED_DATA_PTR_MASK))->function.dfree;
-                if (dfree == RUBY_NEVER_FREE || dfree == RUBY_TYPED_DEFAULT_FREE) {
-                    return false;
-                }
-            }
-        }
         return true;
 
       case T_STRING:
