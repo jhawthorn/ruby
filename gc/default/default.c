@@ -2286,8 +2286,8 @@ ractor_cache_flush_count(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cach
         rb_ractor_newobj_heap_cache_t *heap_cache = &cache->heap_caches[heap_idx];
 
         rb_heap_t *heap = &heaps[heap_idx];
-        RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
-        heap_cache->allocated_objects_count = 0;
+        //RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
+        //heap_cache->allocated_objects_count = 0;
     }
 }
 
@@ -2314,12 +2314,12 @@ ractor_cache_allocate_slot(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *ca
         rb_asan_unpoison_object(obj, true);
         heap_cache->freelist = p->next;
 
-        heap_cache->allocated_objects_count++;
+        //heap_cache->allocated_objects_count++;
         rb_heap_t *heap = &heaps[heap_idx];
-        if (heap_cache->allocated_objects_count >= ALLOCATED_COUNT_STEP) {
-            RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
-            heap_cache->allocated_objects_count = 0;
-        }
+        //if (heap_cache->allocated_objects_count >= ALLOCATED_COUNT_STEP) {
+        //    RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
+        //    heap_cache->allocated_objects_count = 0;
+        //}
 
 #if RGENGC_CHECK_MODE
         GC_ASSERT(rb_gc_impl_obj_slot_size(obj) == heap_slot_size(heap_idx));
@@ -3760,8 +3760,8 @@ gc_ractor_newobj_cache_clear(void *c, void *data)
         rb_ractor_newobj_heap_cache_t *cache = &newobj_cache->heap_caches[heap_idx];
 
         rb_heap_t *heap = &heaps[heap_idx];
-        RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, cache->allocated_objects_count);
-        cache->allocated_objects_count = 0;
+        //RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, cache->allocated_objects_count);
+        //cache->allocated_objects_count = 0;
 
         struct heap_page *page = cache->using_page;
         struct free_slot *freelist = cache->freelist;
