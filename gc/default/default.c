@@ -1626,18 +1626,19 @@ static void free_stack_chunks(mark_stack_t *);
 static void mark_stack_free_cache(mark_stack_t *);
 static void heap_page_free(rb_objspace_t *objspace, struct heap_page *page);
 
-static inline void
-heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
+static inline struct free_slot *
+freelist_append_start(struct heap_page *page)
+{
+    asan_unlock_freelist(page);
+    struct free_slot *freelist = page->freelist;
+    asan_lock_freelist(page);
+    return freelist;
+}
+
+static inline struct free_slot *
+freelist_append(struct free_slot *freelist, struct heap_page *page, VALUE obj)
 {
     rb_asan_unpoison_object(obj, false);
-
-    asan_unlock_freelist(page);
-
-    struct free_slot *slot = (struct free_slot *)obj;
-    slot->flags = 0;
-    slot->next = page->freelist;
-    page->freelist = slot;
-    asan_lock_freelist(page);
 
     // Should have already been reset
     GC_ASSERT(RVALUE_AGE_GET(obj) == 0);
@@ -1647,10 +1648,32 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
         !(page->start <= (uintptr_t)obj &&
           (uintptr_t)obj   <  ((uintptr_t)page->start + (page->total_slots * page->slot_size)) &&
           obj % pool_slot_sizes[0] == 0)) {
-        rb_bug("heap_page_add_freeobj: %p is not rvalue.", (void *)obj);
+        rb_bug("freelist_append: %p is not rvalue.", (void *)obj);
     }
 
+    struct free_slot *slot = (struct free_slot *)obj;
+    slot->flags = 0;
+    slot->next = freelist;
+
     rb_asan_poison_object(obj);
+
+    return slot;
+}
+
+static inline void
+freelist_append_finish(struct free_slot *freelist, struct heap_page *page)
+{
+    asan_unlock_freelist(page);
+    page->freelist = freelist;
+    asan_lock_freelist(page);
+}
+
+static inline void
+heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
+{
+    struct free_slot *freelist = freelist_append_start(page);
+    freelist = freelist_append(freelist, page, obj);
+    freelist_append_finish(freelist, page);
     gc_report(3, objspace, "heap_page_add_freeobj: add %p to freelist\n", (void *)obj);
 }
 
@@ -3495,6 +3518,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 {
     struct heap_page *sweep_page = ctx->page;
     short slot_size = sweep_page->slot_size;
+    struct free_slot *freelist = freelist_append_start(sweep_page);
 
     do {
         VALUE vp = (VALUE)p;
@@ -3524,7 +3548,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
-                    heap_page_add_freeobj(objspace, sweep_page, vp);
+                    freelist = freelist_append(freelist, sweep_page, vp);
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
                     ctx->freed_slots++;
                 }
@@ -3534,7 +3558,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
                         (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
-                        heap_page_add_freeobj(objspace, sweep_page, vp);
+                        freelist = freelist_append(freelist, sweep_page, vp);
                         gc_report(3, objspace, "page_sweep: %s is added to freelist\n", rb_obj_info(vp));
                         ctx->freed_slots++;
                     }
@@ -3547,6 +3571,8 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         p += slot_size;
         bitset >>= 1;
     } while (bitset);
+
+    freelist_append_finish(freelist, sweep_page);
 }
 
 static inline void
