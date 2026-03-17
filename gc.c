@@ -1090,7 +1090,7 @@ rb_data_object_wrap(VALUE klass, void *datap, RUBY_DATA_FUNC dmark, RUBY_DATA_FU
 {
     RUBY_ASSERT_ALWAYS(dfree != (RUBY_DATA_FUNC)1);
     if (klass) rb_data_object_check(klass);
-    VALUE obj = newobj_of(GET_RACTOR(), klass, T_DATA, ROOT_SHAPE_ID, !dmark, sizeof(struct RTypedData));
+    VALUE obj = newobj_of(GET_RACTOR(), klass, T_DATA | RUBY_FL_NEEDS_CLEANUP, ROOT_SHAPE_ID, !dmark, sizeof(struct RTypedData));
 
     rb_gc_register_pinning_obj(obj);
 
@@ -1120,7 +1120,7 @@ typed_data_alloc(VALUE klass, VALUE typed_flag, void *datap, const rb_data_type_
     RBIMPL_NONNULL_ARG(type);
     if (klass) rb_data_object_check(klass);
     bool wb_protected = (type->flags & RUBY_FL_WB_PROTECTED) || !type->function.dmark;
-    VALUE obj = newobj_of(GET_RACTOR(), klass, T_DATA | RUBY_TYPED_FL_IS_TYPED_DATA, ROOT_SHAPE_ID, wb_protected, size);
+    VALUE obj = newobj_of(GET_RACTOR(), klass, T_DATA | RUBY_TYPED_FL_IS_TYPED_DATA | RUBY_FL_NEEDS_CLEANUP, ROOT_SHAPE_ID, wb_protected, size);
 
     rb_gc_register_pinning_obj(obj);
 
@@ -1263,8 +1263,8 @@ rb_gc_handle_weak_references(VALUE obj)
  * This is used by the GC sweep fast path to avoid function call overhead
  * for the majority of simple objects.
  */
-bool
-rb_gc_obj_needs_cleanup_p(VALUE obj)
+static bool
+rb_gc_obj_needs_cleanup_p_slow(VALUE obj)
 {
     VALUE flags = RBASIC(obj)->flags;
 
@@ -1341,6 +1341,14 @@ rb_gc_obj_needs_cleanup_p(VALUE obj)
       default:
         UNREACHABLE_RETURN(true);
     }
+}
+
+bool
+rb_gc_obj_needs_cleanup_p(VALUE obj)
+{
+    bool result = RBASIC(obj)->flags & RUBY_FL_NEEDS_CLEANUP;
+    GC_ASSERT(result == rb_gc_obj_needs_cleanup_p_slow(obj));
+    return result;
 }
 
 static void

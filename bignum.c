@@ -3031,6 +3031,7 @@ rb_big_realloc(VALUE big, size_t len)
             RBIGNUM(big)->as.heap.len = BIGNUM_LEN(big);
             RBIGNUM(big)->as.heap.digits = ds;
             FL_UNSET_RAW(big, BIGNUM_EMBED_FLAG);
+            FL_SET_RAW(big, RUBY_FL_NEEDS_CLEANUP);
         }
     }
     else {

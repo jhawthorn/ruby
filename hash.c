@@ -534,7 +534,7 @@ RHASH_TABLE_EMPTY_P(VALUE hash)
     return RHASH_SIZE(hash) == 0;
 }
 
-#define RHASH_SET_ST_FLAG(h)          FL_SET_RAW(h, RHASH_ST_TABLE_FLAG)
+#define RHASH_SET_ST_FLAG(h)          FL_SET_RAW(h, RHASH_ST_TABLE_FLAG | RUBY_FL_NEEDS_CLEANUP)
 #define RHASH_UNSET_ST_FLAG(h)        FL_UNSET_RAW(h, RHASH_ST_TABLE_FLAG)
 
 static void

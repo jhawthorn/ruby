@@ -788,7 +788,7 @@ class_alloc0(enum ruby_value_type type, VALUE klass, bool boxable)
 
     RUBY_ASSERT(type == T_CLASS || type == T_ICLASS || type == T_MODULE);
 
-    VALUE flags = type | FL_SHAREABLE;
+    VALUE flags = type | FL_SHAREABLE | RUBY_FL_NEEDS_CLEANUP;
     if (RGENGC_WB_PROTECTED_CLASS) flags |= FL_WB_PROTECTED;
     if (boxable) flags |= RCLASS_BOXABLE;
 

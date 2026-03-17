@@ -260,11 +260,12 @@ ruby_fl_type {
     RUBY_FL_WEAK_REFERENCE = (1<<9),
 
    /**
-    * This flag is no longer in use
-    *
-    * @internal
+    * The object requires cleanup on free (e.g. has heap-allocated memory,
+    * is registered in a global table, or otherwise needs more than simple
+    * slot reclamation). Used by the GC sweep fast path to avoid calling
+    * rb_gc_obj_free on objects that can be directly added to the freelist.
     */
-    RUBY_FL_UNUSED10 = (1<<10),
+    RUBY_FL_NEEDS_CLEANUP = (1<<10),
 
     /**
      * This flag has something to do with data immutability.  When this flag is

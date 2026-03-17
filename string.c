@@ -137,7 +137,7 @@ VALUE rb_cSymbol;
 #define STR_FAKESTR FL_USER19
 
 #define STR_SET_NOEMBED(str) do {\
-    FL_SET((str), STR_NOEMBED);\
+    FL_SET((str), STR_NOEMBED | RUBY_FL_NEEDS_CLEANUP);\
     FL_UNSET((str), STR_SHARED | STR_SHARED_ROOT | STR_BORROWED);\
 } while (0)
 #define STR_SET_EMBED(str) FL_UNSET((str), STR_NOEMBED | STR_SHARED | STR_NOFREE)
@@ -524,7 +524,7 @@ fstring_concurrent_set_create(VALUE str, void *data)
     }
 
     ENC_CODERANGE_SET(str, coderange);
-    RBASIC(str)->flags |= RSTRING_FSTR;
+    RBASIC(str)->flags |= RSTRING_FSTR | RUBY_FL_NEEDS_CLEANUP;
     if (!RB_OBJ_SHAREABLE_P(str)) {
         RB_OBJ_SET_SHAREABLE(str);
     }
@@ -1014,7 +1014,7 @@ static inline VALUE
 str_alloc_heap(VALUE klass)
 {
     NEWOBJ_OF(str, struct RString, klass,
-            T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), 0);
+            T_STRING | STR_NOEMBED | RUBY_FL_NEEDS_CLEANUP | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), 0);
 
     str->len = 0;
     str->as.heap.aux.capa = 0;
@@ -1467,7 +1467,7 @@ str_replace_shared_without_enc(VALUE str2, VALUE str)
                 SIZED_FREE_N(ptr2, STR_HEAP_SIZE(str2));
             }
         }
-        FL_SET(str2, STR_NOEMBED);
+        FL_SET(str2, STR_NOEMBED | RUBY_FL_NEEDS_CLEANUP);
         RSTRING(str2)->as.heap.ptr = ptr;
         STR_SET_SHARED(str2, root);
     }
@@ -1890,7 +1890,7 @@ static inline VALUE
 ec_str_alloc_heap(struct rb_execution_context_struct *ec, VALUE klass)
 {
     NEWOBJ_OF(str, struct RString, klass,
-            T_STRING | STR_NOEMBED | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), ec);
+            T_STRING | STR_NOEMBED | RUBY_FL_NEEDS_CLEANUP | (RGENGC_WB_PROTECTED_STRING ? FL_WB_PROTECTED : 0), sizeof(struct RString), ec);
 
     str->as.heap.aux.capa = 0;
     str->as.heap.ptr = NULL;
@@ -1942,9 +1942,9 @@ str_duplicate_setup_heap(VALUE klass, VALUE str, VALUE dup)
     RUBY_ASSERT(RB_OBJ_FROZEN_RAW(root));
 
     RSTRING(dup)->as.heap.ptr = RSTRING_PTR(str);
-    FL_SET_RAW(dup, RSTRING_NOEMBED);
+    FL_SET_RAW(dup, RSTRING_NOEMBED | RUBY_FL_NEEDS_CLEANUP);
     STR_SET_SHARED(dup, root);
-    flags |= RSTRING_NOEMBED | STR_SHARED;
+    flags |= RSTRING_NOEMBED | RUBY_FL_NEEDS_CLEANUP | STR_SHARED;
 
     STR_SET_LEN(dup, RSTRING_LEN(str));
     return str_duplicate_setup_encoding(str, dup, flags);
@@ -2104,7 +2104,7 @@ rb_str_init(int argc, VALUE *argv, VALUE str)
                 memcpy(RSTRING(str)->as.heap.ptr, RSTRING_PTR(orig), len);
                 rb_enc_cr_str_exact_copy(str, orig);
             }
-            FL_SET(str, STR_NOEMBED);
+            FL_SET(str, STR_NOEMBED | RUBY_FL_NEEDS_CLEANUP);
             RSTRING(str)->as.heap.aux.capa = capa;
         }
         else if (n == 1) {

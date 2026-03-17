@@ -101,7 +101,10 @@ should_be_T_ARRAY(VALUE ary)
     ary_verify(a); \
 } while (0)
 
-#define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
+#define FL_UNSET_EMBED(ary) do { \
+    FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK); \
+    FL_SET((ary), RUBY_FL_NEEDS_CLEANUP); \
+} while (0)
 #define FL_SET_SHARED(ary) do { \
     RUBY_ASSERT(!ARY_EMBED_P(ary)); \
     FL_SET((ary), RARRAY_SHARED_FLAG); \
