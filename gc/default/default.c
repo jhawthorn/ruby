@@ -2028,13 +2028,12 @@ heap_add_page(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
     memset(&page->wb_unprotected_bits[0], 0, HEAP_PAGE_BITMAP_SIZE);
     memset(&page->age_bits[0], 0, sizeof(page->age_bits));
 
-    asan_unlock_freelist(page);
-    page->freelist = NULL;
     asan_unpoison_memory_region(page->body, HEAP_PAGE_SIZE, false);
+    struct free_slot *freelist = NULL;
     for (VALUE p = (VALUE)start; p < start + (slot_count * heap->slot_size); p += heap->slot_size) {
-        heap_page_add_freeobj(objspace, page, p);
+        freelist = freelist_append(freelist, page, p);
     }
-    asan_lock_freelist(page);
+    page->freelist = freelist;
 
     page->free_slots = slot_count;
 
