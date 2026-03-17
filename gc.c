@@ -2831,7 +2831,9 @@ each_location(register const VALUE *x, register long n, void (*cb)(VALUE, void *
     VALUE v;
     while (n--) {
         v = *x;
-        cb(v, data);
+        if (!RB_SPECIAL_CONST_P(v)) {
+            cb(v, data);
+        }
         x++;
     }
 }
