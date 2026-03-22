@@ -193,7 +193,7 @@ static RB_THREAD_LOCAL_SPECIFIER int malloc_increase_local;
 typedef struct ractor_newobj_heap_cache {
     struct free_slot *freelist;
     struct heap_page *using_page;
-    size_t allocated_objects_count;
+    int slots_acquired;
 } rb_ractor_newobj_heap_cache_t;
 
 typedef struct ractor_newobj_cache {
@@ -2256,16 +2256,33 @@ rb_gc_impl_size_allocatable_p(size_t size)
     return size + RVALUE_OVERHEAD <= pool_slot_sizes[HEAP_COUNT - 1];
 }
 
-static const size_t ALLOCATED_COUNT_STEP = 1024;
+static int
+ractor_cache_freelist_length(struct free_slot *freelist)
+{
+    int count = 0;
+    while (freelist) {
+        rb_asan_unpoison_object((VALUE)freelist, false);
+        struct free_slot *next = freelist->next;
+        rb_asan_poison_object((VALUE)freelist);
+        freelist = next;
+        count++;
+    }
+    return count;
+}
+
 static void
 ractor_cache_flush_count(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache)
 {
     for (int heap_idx = 0; heap_idx < HEAP_COUNT; heap_idx++) {
         rb_ractor_newobj_heap_cache_t *heap_cache = &cache->heap_caches[heap_idx];
 
-        rb_heap_t *heap = &heaps[heap_idx];
-        RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
-        heap_cache->allocated_objects_count = 0;
+        int remaining = ractor_cache_freelist_length(heap_cache->freelist);
+        int allocated = heap_cache->slots_acquired - remaining;
+        if (allocated > 0) {
+            rb_heap_t *heap = &heaps[heap_idx];
+            RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, allocated);
+            heap_cache->slots_acquired = remaining;
+        }
     }
 }
 
@@ -2291,13 +2308,6 @@ ractor_cache_allocate_slot(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *ca
         VALUE obj = (VALUE)p;
         rb_asan_unpoison_object(obj, true);
         heap_cache->freelist = p->next;
-
-        heap_cache->allocated_objects_count++;
-        rb_heap_t *heap = &heaps[heap_idx];
-        if (heap_cache->allocated_objects_count >= ALLOCATED_COUNT_STEP) {
-            RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
-            heap_cache->allocated_objects_count = 0;
-        }
 
 #if RGENGC_CHECK_MODE
         GC_ASSERT(rb_gc_impl_obj_slot_size(obj) == heap_slot_size(heap_idx));
@@ -2342,8 +2352,13 @@ ractor_cache_set_page(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, 
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
 
+    // Freelist is empty, so all previously acquired slots were allocated
+    rb_heap_t *heap = &heaps[heap_idx];
+    RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->slots_acquired);
+
     heap_cache->using_page = page;
     heap_cache->freelist = page->freelist;
+    heap_cache->slots_acquired = page->free_slots;
     page->free_slots = 0;
     page->freelist = NULL;
 
@@ -3784,8 +3799,12 @@ gc_ractor_newobj_cache_clear(void *c, void *data)
         rb_ractor_newobj_heap_cache_t *cache = &newobj_cache->heap_caches[heap_idx];
 
         rb_heap_t *heap = &heaps[heap_idx];
-        RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, cache->allocated_objects_count);
-        cache->allocated_objects_count = 0;
+        int remaining = ractor_cache_freelist_length(cache->freelist);
+        int allocated = cache->slots_acquired - remaining;
+        if (allocated > 0) {
+            RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, allocated);
+        }
+        cache->slots_acquired = 0;
 
         struct heap_page *page = cache->using_page;
         struct free_slot *freelist = cache->freelist;
