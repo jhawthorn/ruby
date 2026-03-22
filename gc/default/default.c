@@ -197,7 +197,7 @@ typedef struct ractor_newobj_heap_cache {
 } rb_ractor_newobj_heap_cache_t;
 
 typedef struct ractor_newobj_cache {
-    size_t incremental_mark_step_allocated_slots;
+    size_t incremental_mark_debt;
     rb_ractor_newobj_heap_cache_t heap_caches[HEAP_COUNT];
 } rb_ractor_newobj_cache_t;
 
@@ -2293,17 +2293,6 @@ ractor_cache_allocate_slot(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *ca
     rb_ractor_newobj_heap_cache_t *heap_cache = &cache->heap_caches[heap_idx];
     struct free_slot *p = heap_cache->freelist;
 
-    if (RB_UNLIKELY(is_incremental_marking(objspace))) {
-        // Not allowed to allocate without running an incremental marking step
-        if (cache->incremental_mark_step_allocated_slots >= INCREMENTAL_MARK_STEP_ALLOCATIONS) {
-            return Qfalse;
-        }
-
-        if (p) {
-            cache->incremental_mark_step_allocated_slots++;
-        }
-    }
-
     if (RB_LIKELY(p)) {
         VALUE obj = (VALUE)p;
         rb_asan_unpoison_object(obj, true);
@@ -2359,6 +2348,7 @@ ractor_cache_set_page(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, 
     heap_cache->using_page = page;
     heap_cache->freelist = page->freelist;
     heap_cache->slots_acquired = page->free_slots;
+    cache->incremental_mark_debt += page->free_slots;
     page->free_slots = 0;
     page->freelist = NULL;
 
@@ -2431,22 +2421,17 @@ newobj_cache_miss(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size
     }
 
     {
-        if (is_incremental_marking(objspace)) {
+        while (is_incremental_marking(objspace) && cache->incremental_mark_debt >= INCREMENTAL_MARK_STEP_ALLOCATIONS) {
             gc_continue(objspace, heap);
-            cache->incremental_mark_step_allocated_slots = 0;
-
-            // Retry allocation after resetting incremental_mark_step_allocated_slots
-            obj = ractor_cache_allocate_slot(objspace, cache, heap_idx);
+            cache->incremental_mark_debt -= INCREMENTAL_MARK_STEP_ALLOCATIONS;
         }
+        GC_ASSERT(cache->heap_caches[heap_idx].freelist == NULL);
 
-        if (obj == Qfalse) {
-            // Get next free page (possibly running GC)
-            struct heap_page *page = heap_next_free_page(objspace, heap);
-            ractor_cache_set_page(objspace, cache, heap_idx, page);
+        // Get next free page (possibly running GC)
+        struct heap_page *page = heap_next_free_page(objspace, heap);
+        ractor_cache_set_page(objspace, cache, heap_idx, page);
 
-            // Retry allocation after moving to new page
-            obj = ractor_cache_allocate_slot(objspace, cache, heap_idx);
-        }
+        obj = ractor_cache_allocate_slot(objspace, cache, heap_idx);
     }
 
     if (unlock_vm) {
@@ -3792,7 +3777,7 @@ gc_ractor_newobj_cache_clear(void *c, void *data)
     rb_objspace_t *objspace = rb_gc_get_objspace();
     rb_ractor_newobj_cache_t *newobj_cache = c;
 
-    newobj_cache->incremental_mark_step_allocated_slots = 0;
+    newobj_cache->incremental_mark_debt = 0;
 
     for (size_t heap_idx = 0; heap_idx < HEAP_COUNT; heap_idx++) {
 
