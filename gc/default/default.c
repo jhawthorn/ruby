@@ -3541,10 +3541,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 #endif
 
                 if (!rb_gc_obj_needs_cleanup_p(vp)) {
-                    if (RB_UNLIKELY(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
-                        rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
-                    }
-
                     (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, slot_size);
                     heap_page_add_freeobj(objspace, sweep_page, vp);
                     gc_report(3, objspace, "page_sweep: %s (fast path) added to freelist\n", rb_obj_info(vp));
@@ -3552,8 +3548,6 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                 }
                 else {
                     gc_report(2, objspace, "page_sweep: free %p\n", (void *)p);
-
-                    rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
 
                     rb_gc_obj_free_vm_weak_references(vp);
                     if (rb_gc_obj_free(objspace, vp)) {
@@ -3572,6 +3566,36 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
         p += slot_size;
         bitset >>= 1;
     } while (bitset);
+}
+
+static void
+gc_sweep_page_freeobj_hook(rb_objspace_t *objspace, struct heap_page *sweep_page)
+{
+    uintptr_t p = (uintptr_t)sweep_page->start;
+    short slot_size = sweep_page->slot_size;
+    bits_t *bits = sweep_page->mark_bits;
+    int bitmap_plane_count = CEILDIV(sweep_page->total_slots, BITS_BITLENGTH);
+
+    for (int i = 0; i < bitmap_plane_count; i++) {
+        bits_t bitset = ~bits[i];
+        if (bitset) {
+            uintptr_t bp = p;
+            do {
+                if (bitset & 1) {
+                    VALUE vp = (VALUE)bp;
+                    void *poisoned = asan_unpoison_object_temporary(vp);
+                    enum ruby_value_type type = BUILTIN_TYPE(vp);
+                    if (type != T_MOVED && type != T_ZOMBIE && type != T_NONE) {
+                        rb_gc_event_hook(vp, RUBY_INTERNAL_EVENT_FREEOBJ);
+                    }
+                    asan_poison_object_restore(vp, poisoned);
+                }
+                bp += slot_size;
+                bitset >>= 1;
+            } while (bitset);
+        }
+        p += BITS_BITLENGTH * slot_size;
+    }
 }
 
 static inline void
@@ -3614,6 +3638,10 @@ gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context 
             age_bits[i * 2] &= ~unmarked;
             age_bits[i * 2 + 1] &= ~unmarked;
         }
+    }
+
+    if (RB_UNLIKELY(objspace->hook_events & RUBY_INTERNAL_EVENT_FREEOBJ)) {
+        gc_sweep_page_freeobj_hook(objspace, sweep_page);
     }
 
     for (int i = 0; i < bitmap_plane_count; i++) {
