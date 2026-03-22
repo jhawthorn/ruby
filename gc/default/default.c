@@ -2456,10 +2456,10 @@ newobj_alloc(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t he
     return obj;
 }
 
-ALWAYS_INLINE(static VALUE newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, int wb_protected, size_t heap_idx));
+NOINLINE(static VALUE newobj_slowpath(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t heap_idx));
 
-static inline VALUE
-newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, int wb_protected, size_t heap_idx)
+static VALUE
+newobj_slowpath(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t heap_idx)
 {
     VALUE obj;
     unsigned int lev;
@@ -2484,28 +2484,10 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_new
         }
 
         obj = newobj_alloc(objspace, cache, heap_idx, true);
-        newobj_init(klass, flags, wb_protected, objspace, obj);
     }
     RB_GC_CR_UNLOCK(lev);
 
     return obj;
-}
-
-NOINLINE(static VALUE newobj_slowpath_wb_protected(VALUE klass, VALUE flags,
-                                                   rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t heap_idx));
-NOINLINE(static VALUE newobj_slowpath_wb_unprotected(VALUE klass, VALUE flags,
-                                                     rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t heap_idx));
-
-static VALUE
-newobj_slowpath_wb_protected(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t heap_idx)
-{
-    return newobj_slowpath(klass, flags, objspace, cache, TRUE, heap_idx);
-}
-
-static VALUE
-newobj_slowpath_wb_unprotected(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_newobj_cache_t *cache, size_t heap_idx)
-{
-    return newobj_slowpath(klass, flags, objspace, cache, FALSE, heap_idx);
 }
 
 VALUE
@@ -2530,15 +2512,14 @@ rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags
     if (!RB_UNLIKELY(during_gc || ruby_gc_stressful) &&
             wb_protected) {
         obj = newobj_alloc(objspace, cache, heap_idx, false);
-        newobj_init(klass, flags, wb_protected, objspace, obj);
     }
     else {
         RB_DEBUG_COUNTER_INC(obj_newobj_slowpath);
 
-        obj = wb_protected ?
-          newobj_slowpath_wb_protected(klass, flags, objspace, cache, heap_idx) :
-          newobj_slowpath_wb_unprotected(klass, flags, objspace, cache, heap_idx);
+        obj = newobj_slowpath(objspace, cache, heap_idx);
     }
+
+    newobj_init(klass, flags, wb_protected, objspace, obj);
 
     return obj;
 }
