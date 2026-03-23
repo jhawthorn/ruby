@@ -2288,6 +2288,7 @@ fiber_prepare_stack(rb_fiber_t *fiber)
     sec->local_storage = NULL;
     sec->local_storage_recursive_hash = Qnil;
     sec->local_storage_recursive_hash_for_trace = Qnil;
+    sec->newobj_cache = GET_EC()->newobj_cache;
 }
 
 static struct fiber_pool *

@@ -1092,6 +1092,8 @@ struct rb_execution_context_struct {
     } gen_fields_cache;
 
     /* for GC */
+    void *newobj_cache;
+
     struct {
         VALUE *stack_start;
         VALUE *stack_end;

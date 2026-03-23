@@ -3948,6 +3948,7 @@ th_init(rb_thread_t *th, VALUE self, rb_vm_t *vm)
 
     th->ec->storage = Qnil;
     th->ec->ractor_id = rb_ractor_id(th->ractor);
+    th->ec->newobj_cache = th->ractor->newobj_cache;
 
 #if OPT_CALL_THREADED_CODE
     th->retval = Qundef;
