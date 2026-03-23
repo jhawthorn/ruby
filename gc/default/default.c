@@ -2376,7 +2376,8 @@ heap_idx_for_size(size_t size)
     size_t compressed = (size + 7) >> 3;
     if (compressed < sizeof(size_to_heap_idx)) {
         size_t heap_idx = size_to_heap_idx[compressed];
-        if (RB_LIKELY(heap_idx < HEAP_COUNT)) return heap_idx;
+        GC_ASSERT(heap_idx < HEAP_COUNT);
+        return heap_idx;
     }
 
     rb_bug("heap_idx_for_size: allocation size too large "
