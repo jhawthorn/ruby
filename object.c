@@ -2317,8 +2317,8 @@ class_get_alloc_func(VALUE klass)
     if (RCLASS_SINGLETON_P(klass)) {
         rb_raise(rb_eTypeError, "can't create instance of singleton class");
     }
-    allocator = rb_get_alloc_func(klass);
-    if (!allocator) {
+    allocator = RCLASS_ALLOCATOR(klass);
+    if (allocator == (rb_alloc_func_t)-1) {
         rb_undefined_alloc(klass);
     }
     return allocator;
