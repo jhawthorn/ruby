@@ -2350,11 +2350,27 @@ class_call_alloc_func(rb_alloc_func_t allocator, VALUE klass)
     return obj;
 }
 
-VALUE
-rb_obj_alloc(VALUE klass)
+NOINLINE(static VALUE rb_obj_alloc_slow(VALUE klass));
+static VALUE
+rb_obj_alloc_slow(VALUE klass)
 {
     Check_Type(klass, T_CLASS);
     return rb_class_alloc(klass);
+}
+
+VALUE
+rb_obj_alloc(VALUE klass)
+{
+    if (RB_UNLIKELY(!RCLASS_INITIALIZED_P(klass) || RCLASS_SINGLETON_P(klass))) {
+        return rb_obj_alloc_slow(klass);
+    }
+
+    rb_alloc_func_t allocator = RCLASS_ALLOCATOR(klass);
+    if (RB_UNLIKELY(allocator == (rb_alloc_func_t)-1)) {
+        rb_undefined_alloc(klass);
+    }
+
+    return (*allocator)(klass);
 }
 
 /*
@@ -2373,7 +2389,7 @@ rb_class_new_instance_pass_kw(int argc, const VALUE *argv, VALUE klass)
 {
     VALUE obj;
 
-    obj = rb_class_alloc(klass);
+    obj = rb_obj_alloc(klass);
     rb_obj_call_init_kw(obj, argc, argv, RB_PASS_CALLED_KEYWORDS);
 
     return obj;
