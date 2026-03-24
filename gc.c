@@ -1040,9 +1040,9 @@ newobj_of(void *newobj_cache, VALUE klass, VALUE flags, shape_id_t shape_id, boo
 
     gc_validate_pc(obj);
 
-    if (UNLIKELY(rb_gc_event_hook_required_p(RUBY_INTERNAL_EVENT_NEWOBJ))) {
-        gc_newobj_hook(obj);
-    }
+    //if (UNLIKELY(rb_gc_event_hook_required_p(RUBY_INTERNAL_EVENT_NEWOBJ))) {
+    //    gc_newobj_hook(obj);
+    //}
 
 #if RGENGC_CHECK_MODE
 # ifndef GC_DEBUG_SLOT_FILL_SPECIAL_VALUE
