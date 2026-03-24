@@ -490,7 +490,8 @@ RUBY_SYMBOL_EXPORT_END
 static inline bool
 RCLASS_SINGLETON_P(VALUE klass)
 {
-    return RB_TYPE_P(klass, T_CLASS) && FL_TEST_RAW(klass, FL_SINGLETON);
+    RUBY_ASSERT(klass, T_CLASS);
+    return FL_TEST_RAW(klass, FL_SINGLETON);
 }
 
 static inline void
