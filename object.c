@@ -299,10 +299,15 @@ static inline VALUE
 class_real(VALUE cl)
 {
     RUBY_ASSERT(cl);
-    while (RB_UNLIKELY(fake_class_p(cl))) {
-        cl = RCLASS_SUPER(cl);
+    if (RB_LIKELY(!fake_class_p(cl))) {
+        return cl;
     }
-    return cl;
+
+    size_t depth = RCLASS_SUPERCLASS_DEPTH(cl);
+    RUBY_ASSERT(depth > 0);
+    VALUE *superclasses = RCLASS_SUPERCLASSES(cl);
+    RUBY_ASSERT(superclasses);
+    return superclasses[depth - 1];
 }
 
 VALUE
