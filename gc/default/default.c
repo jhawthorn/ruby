@@ -2510,13 +2510,13 @@ rb_gc_impl_new_obj(void *objspace_ptr, void *cache_ptr, VALUE klass, VALUE flags
 
     rb_ractor_newobj_cache_t *cache = (rb_ractor_newobj_cache_t *)cache_ptr;
 
-    if (!RB_UNLIKELY(during_gc || ruby_gc_stressful) &&
-            wb_protected) {
+    GC_ASSERT(!during_gc);
+    // TODO: ruby_gc_stressful
+
+    if (RB_LIKELY(wb_protected)) {
         obj = newobj_alloc(objspace, cache, heap_idx, false);
     }
     else {
-        RB_DEBUG_COUNTER_INC(obj_newobj_slowpath);
-
         obj = newobj_slowpath(objspace, cache, heap_idx);
     }
 
