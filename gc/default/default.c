@@ -2304,7 +2304,7 @@ ractor_cache_allocate_slot(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *ca
     rb_ractor_newobj_heap_cache_t *heap_cache = &cache->heap_caches[heap_idx];
     struct free_slot *p = heap_cache->freelist;
 
-    if (RB_UNLIKELY(is_incremental_marking(objspace))) {
+    if (0 && RB_UNLIKELY(is_incremental_marking(objspace))) {
         // Not allowed to allocate without running an incremental marking step
         if (cache->incremental_mark_step_allocated_slots >= INCREMENTAL_MARK_STEP_ALLOCATIONS) {
             return Qfalse;
@@ -2320,12 +2320,12 @@ ractor_cache_allocate_slot(rb_objspace_t *objspace, rb_ractor_newobj_cache_t *ca
         rb_asan_unpoison_object(obj, true);
         heap_cache->freelist = p->next;
 
-        heap_cache->allocated_objects_count++;
+        //heap_cache->allocated_objects_count++;
         rb_heap_t *heap = &heaps[heap_idx];
-        if (heap_cache->allocated_objects_count >= ALLOCATED_COUNT_STEP) {
-            RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
-            heap_cache->allocated_objects_count = 0;
-        }
+        //if (heap_cache->allocated_objects_count >= ALLOCATED_COUNT_STEP) {
+        //    RUBY_ATOMIC_SIZE_ADD(heap->total_allocated_objects, heap_cache->allocated_objects_count);
+        //    heap_cache->allocated_objects_count = 0;
+        //}
 
 #if RGENGC_CHECK_MODE
         GC_ASSERT(rb_gc_impl_obj_slot_size(obj) == heap_slot_size(heap_idx));
