@@ -247,6 +247,7 @@ pub fn init() -> Annotations {
     annotate!(rb_cBasicObject, "!", inline_basic_object_not, types::BoolExact, no_gc, leaf, elidable);
     annotate!(rb_cBasicObject, "!=", inline_basic_object_neq, types::BoolExact);
     annotate!(rb_cBasicObject, "initialize", inline_basic_object_initialize);
+    annotate!(rb_cClass, "allocate", inline_class_allocate);
     annotate!(rb_cInteger, "succ", inline_integer_succ);
     annotate!(rb_cInteger, "^", inline_integer_xor);
     annotate!(rb_cInteger, "==", inline_integer_eq);
@@ -847,6 +848,25 @@ fn inline_basic_object_neq(fun: &mut hir::Function, block: hir::BlockId, recv: h
     }
     let c_result = fun.push_insn(block, hir::Insn::IsBitNotEqual { left: recv, right: other });
     let result = fun.push_insn(block, hir::Insn::BoxBool { val: c_result });
+    Some(result)
+}
+
+fn inline_class_allocate(fun: &mut hir::Function, block: hir::BlockId, recv: hir::InsnId, args: &[hir::InsnId], state: hir::InsnId) -> Option<hir::InsnId> {
+    if !args.is_empty() { return None; }
+
+    let recv_type = fun.type_of(recv);
+    if let Some(class) = recv_type.ruby_object() {
+        if recv_type.is_subtype(types::Class)
+            && unsafe { rb_zjit_class_initialized_p(class) }
+            && !unsafe { rb_zjit_singleton_class_p(class) }
+            && class_has_leaf_allocator(class)
+        {
+            let result = fun.push_insn(block, hir::Insn::ObjectAllocClass { class, state });
+            return Some(result);
+        }
+    }
+
+    let result = fun.push_insn(block, hir::Insn::ObjectAlloc { val: recv, state });
     Some(result)
 }
 
