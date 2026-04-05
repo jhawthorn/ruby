@@ -6705,6 +6705,44 @@ fn jit_rb_class_superclass(
     true
 }
 
+// Codegen for Class#allocate
+fn jit_rb_class_allocate(
+    jit: &mut JITState,
+    asm: &mut Assembler,
+    _ci: *const rb_callinfo,
+    cme: *const rb_callable_method_entry_t,
+    _block: Option<BlockHandler>,
+    _argc: i32,
+    _known_recv_class: Option<VALUE>,
+) -> bool {
+    let comptime_recv = jit.peek_at_stack(&asm.ctx, 0);
+
+    // Only handle non-singleton, initialized classes with an alloc func
+    if unsafe { FL_TEST(comptime_recv, VALUE(RUBY_FL_SINGLETON as usize)) } != VALUE(0) {
+        return false;
+    }
+
+    let allocator = unsafe { rb_get_alloc_func(comptime_recv) };
+    let Some(allocator) = allocator else {
+        return false;
+    };
+
+    // The allocator may trigger GC, so we need a frame
+    if !jit_prepare_lazy_frame_call(jit, asm, cme, StackOpnd(0)) {
+        return false;
+    }
+
+    asm_comment!(asm, "Class#allocate");
+    let recv_opnd = asm.stack_opnd(0);
+    let ret = asm.ccall(allocator as *const u8, vec![recv_opnd]);
+
+    asm.stack_pop(1);
+    let ret_opnd = asm.stack_push(Type::UnknownHeap);
+    asm.mov(ret_opnd, ret);
+
+    true
+}
+
 fn jit_rb_case_equal(
     jit: &mut JITState,
     asm: &mut Assembler,
@@ -10977,6 +11015,7 @@ pub fn yjit_reg_method_codegen_fns() {
         reg_method_codegen(rb_mKernel, "dup", jit_rb_obj_dup);
 
         reg_method_codegen(rb_cClass, "superclass", jit_rb_class_superclass);
+        reg_method_codegen(rb_cClass, "allocate", jit_rb_class_allocate);
 
         reg_method_codegen(rb_singleton_class(rb_cThread), "current", jit_thread_s_current);
     }
