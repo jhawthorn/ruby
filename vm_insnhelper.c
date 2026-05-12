@@ -4190,8 +4190,9 @@ aliased_callable_method_entry(const rb_callable_method_entry_t *me)
         VM_ASSERT_TYPE(orig_me->owner, T_MODULE);
         cme = rb_method_entry_complement_defined_class(orig_me, me->called_id, defined_class);
 
-        if (me->def->reference_count == 1) {
-            RB_OBJ_WRITE(me, &me->def->body.alias.original_me, cme);
+        // TODO: verify that aliased flag is equivalent to reference_count > 1 here
+        if (!me->def->aliased) {
+            RB_OBJ_WRITE(me->def, &me->def->body.alias.original_me, cme);
         }
         else {
             rb_method_definition_t *def =

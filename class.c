@@ -1896,7 +1896,7 @@ move_refined_method(ID key, VALUE value, void *data)
 
         if (me->def->body.refined.orig_me) {
             const rb_method_entry_t *orig_me = me->def->body.refined.orig_me, *new_me;
-            RB_OBJ_WRITE(me, &me->def->body.refined.orig_me, NULL);
+            RB_OBJ_WRITE(me->def, &me->def->body.refined.orig_me, NULL);
             new_me = rb_method_entry_clone(me);
             rb_method_table_insert(klass, tbl, key, new_me);
             rb_method_entry_copy(me, orig_me);

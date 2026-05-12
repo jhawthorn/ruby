@@ -1318,6 +1318,7 @@ rb_gc_imemo_needs_cleanup_p(VALUE obj)
       case imemo_cref:
       case imemo_ifunc:
       case imemo_memo:
+      case imemo_mdef:
       case imemo_svar:
       case imemo_callcache:
       case imemo_throw_data:

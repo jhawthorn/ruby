@@ -42,6 +42,7 @@ enum imemo_type {
     imemo_callcache      = 11,
     imemo_constcache     = 12,
     imemo_fields         = 13,
+    imemo_mdef           = 14,
 };
 
 /* CREF (Class REFerence) is defined in method.h */

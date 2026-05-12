@@ -185,12 +185,12 @@ typedef struct rb_method_optimized {
 } rb_method_optimized_t;
 
 struct rb_method_definition_struct {
+    VALUE flags; /* IMEMO header (imemo_mdef) */
+
     BITFIELD(rb_method_type_t, type, VM_METHOD_TYPE_MINIMUM_BITS);
     unsigned int iseq_overload: 1;
     unsigned int no_redef_warning: 1;
     unsigned int aliased : 1;
-
-    rb_atomic_t reference_count;
 
     union {
         rb_method_iseq_t iseq;
@@ -212,7 +212,6 @@ struct rb_ractor_struct;
 struct rb_hook_list_struct;
 
 typedef struct rb_method_definition_struct rb_method_definition_t;
-STATIC_ASSERT(sizeof_method_def, offsetof(rb_method_definition_t, body) <= 8);
 
 #define UNDEFINED_METHOD_ENTRY_P(me) (!(me) || !(me)->def || (me)->def->type == VM_METHOD_TYPE_UNDEF)
 #define UNDEFINED_REFINED_METHOD_P(def) \
@@ -225,6 +224,7 @@ void rb_add_method_iseq(VALUE klass, ID mid, const rb_iseq_t *iseq, rb_cref_t *c
 void rb_add_method_optimized(VALUE klass, ID mid, enum method_optimized_type, unsigned int index, rb_method_visibility_t visi);
 void rb_add_refined_method_entry(VALUE refined_class, ID mid);
 
+rb_method_definition_t *rb_method_definition_create(rb_method_type_t type, ID mid);
 rb_method_entry_t *rb_method_entry_set(VALUE klass, ID mid, const rb_method_entry_t *, rb_method_visibility_t noex);
 rb_method_entry_t *rb_method_entry_create(ID called_id, VALUE klass, rb_method_visibility_t visi, rb_method_definition_t *def);
 
@@ -269,7 +269,5 @@ void rb_clear_method_cache(VALUE klass_or_module, ID mid);
 void rb_clear_all_refinement_method_cache(void);
 void rb_invalidate_method_caches(struct rb_id_table *cm_tbl, VALUE cc_tbl);
 struct rb_hook_list_struct *rb_method_def_local_hooks(rb_method_definition_t *def, struct rb_ractor_struct *cr, bool create);
-void rb_method_definition_addref(rb_method_definition_t *def);
-void rb_method_definition_release(rb_method_definition_t *def);
 
 #endif /* RUBY_METHOD_H */

@@ -1383,7 +1383,6 @@ rb_tracepoint_enable_for_target(VALUE tpval, VALUE target, VALUE target_line)
                 rb_hook_list_t *hook_list = rb_method_def_local_hooks(def, cr, true);
                 rb_hook_list_connect_local_tracepoint(hook_list, tpval, 0);
                 rb_hash_aset(tp->local_target_set, target, Qfalse); // Qfalse means not an iseq
-                rb_method_definition_addref(def); // in case `tp` gets GC'd and didn't disable the hook, `def` needs to stay alive
                 def->body.bmethod.local_hooks_cnt++;
                 target_bmethod = true;
                 n++;
@@ -1445,7 +1444,6 @@ disable_local_tracepoint_i(VALUE target, VALUE iseq_p, VALUE tpval)
                 st_delete(rb_ractor_targeted_hooks(cr), (st_data_t*)&def, NULL);
                 rb_hook_list_free(hook_list);
             }
-            rb_method_definition_release(def);
         }
     }
     return ST_CONTINUE;
