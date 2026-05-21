@@ -182,6 +182,8 @@ typedef struct timespec stat_timestamp;
 #include "ruby/thread.h"
 #include "ruby/util.h"
 
+#define EXPAND_PATH_BUFFER() rb_usascii_str_new(0, 1)
+
 #define UIANY2NUM(x) \
     ((sizeof(x) <= sizeof(unsigned int)) ? \
      UINT2NUM((unsigned)(x)) : \
@@ -3896,6 +3898,7 @@ ntfs_tail(const char *path, const char *end, rb_encoding *enc)
 } while (0)
 
 #define BUFINIT() (\
+    RUBY_ASSERT_ALWAYS(!NIL_P(result)), \
     p = buf = RSTRING_PTR(result),\
     buflen = RSTRING_LEN(result),\
     pend = p + buflen)
@@ -4086,7 +4089,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
         mb_enc = enc_mbclen_needed(rb_str_enc_get(dname));
     }
 
-    BUFINIT();
+    //BUFINIT();
 
     if (s < fend && s[0] == '~' && abs_mode == 0) {      /* execute only if NOT absolute_path() */
         long userlen = 0;
@@ -4095,12 +4098,16 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
             b = 0;
             rb_str_set_len(result, 0);
             if (++s < fend) ++s;
-            result = rb_default_home_dir();
+            result = rb_default_home_dir(); // TODO: cache me
         }
         else {
             s = nextdirsep(b = s, fend, enc);
             b++; /* b[0] is '~' */
             userlen = s - b;
+
+            if (NIL_P(result)) result = EXPAND_PATH_BUFFER();
+            BUFINIT();
+
             BUFCHECK(bdiff + userlen >= buflen);
             memcpy(p, b, userlen);
             ENC_CODERANGE_CLEAR(result);
@@ -4122,6 +4129,8 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
         }
         BUFINIT();
         p = pend;
+
+        // ESTIMATE: home + path
     }
 #ifdef DOSISH_DRIVE_LETTER
     /* skip drive letter */
@@ -4162,13 +4171,22 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
 #endif /* DOSISH_DRIVE_LETTER */
     else if (s == fend || !rb_is_absolute_path(s)) {
         if (!NIL_P(dname)) {
+            // ESTIMATE = dname + path
+            if (NIL_P(result)) {
+                result = rb_str_buf_new(RSTRING_LEN(dname) + RSTRING_LEN(fname) + 2);
+            }
             rb_file_expand_path_internal(dname, Qnil, abs_mode, long_name, result);
             rb_enc_associate(result, fs_enc_check(result, fname));
             BUFINIT();
             p = pend;
         }
         else {
-            char *e = append_fspath(result, fname, ruby_getcwd(), &enc, fsenc);
+            // TODO: use rb_dir_getwd_ospath
+            char *cwd = ruby_getcwd();
+            if (NIL_P(result)) {
+                result = rb_str_buf_new(strlen(cwd) + RSTRING_LEN(fname) + 2);
+            }
+            char *e = append_fspath(result, fname, cwd, &enc, fsenc);
             BUFINIT();
             p = e;
         }
@@ -4183,6 +4201,10 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
             p = chompdirsep(skiproot(buf, p), p, mb_enc, enc);
     }
     else {
+        if (NIL_P(result)) {
+            result = rb_str_buf_new(RSTRING_LEN(fname) + 1);
+        }
+        BUFINIT();
         size_t len;
         b = s;
         do s++; while (s < fend && isdirsep(*s));
@@ -4426,8 +4448,6 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
     return result;
 }
 #endif /* !_WIN32 (this ifdef started above rb_default_home_dir) */
-
-#define EXPAND_PATH_BUFFER() rb_usascii_str_new(0, 1)
 
 static VALUE
 str_shrink(VALUE str)
