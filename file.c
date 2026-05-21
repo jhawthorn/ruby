@@ -3889,7 +3889,7 @@ ntfs_tail(const char *path, const char *end, rb_encoding *enc)
 #define BUFCHECK(cond) do {\
     bdiff = p - buf;\
     if (cond) {\
-        do {buflen *= 2;} while (cond);\
+        do {buflen = buflen ? buflen * 2 : 1;} while (cond);\
         rb_str_resize(result, buflen);\
         buf = RSTRING_PTR(result);\
         p = buf + bdiff;\
@@ -4096,7 +4096,6 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
         if (s + 1 == fend || isdirsep(s[1])) {
             buf = 0;
             b = 0;
-            rb_str_set_len(result, 0);
             if (++s < fend) ++s;
             result = rb_default_home_dir(); // TODO: cache me
         }
@@ -4466,20 +4465,20 @@ str_shrink(VALUE str)
 static VALUE
 file_expand_path_1(VALUE fname)
 {
-    return rb_file_expand_path_internal(fname, Qnil, 0, 0, EXPAND_PATH_BUFFER());
+    return rb_file_expand_path_internal(fname, Qnil, 0, 0, Qnil);
 }
 
 VALUE
 rb_file_expand_path(VALUE fname, VALUE dname)
 {
     check_expand_path_args(fname, dname);
-    return expand_path(fname, dname, 0, 1, EXPAND_PATH_BUFFER());
+    return expand_path(fname, dname, 0, 1, Qnil);
 }
 
 VALUE
 rb_file_expand_path_fast(VALUE fname, VALUE dname)
 {
-    return expand_path(fname, dname, 0, 0, EXPAND_PATH_BUFFER());
+    return expand_path(fname, dname, 0, 0, Qnil);
 }
 
 VALUE
