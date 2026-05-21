@@ -3902,7 +3902,7 @@ dir_s_home(int argc, VALUE *argv, VALUE obj)
             return rb_home_dir_of(user, rb_str_new(0, 0));
         }
     }
-    return rb_default_home_dir(rb_str_new(0, 0));
+    return rb_default_home_dir();
 
 }
 

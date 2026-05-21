@@ -14,7 +14,7 @@
 /* file.c */
 extern const char ruby_null_device[];
 VALUE rb_home_dir_of(VALUE user, VALUE result);
-VALUE rb_default_home_dir(VALUE result);
+VALUE rb_default_home_dir(void);
 VALUE rb_realpath_internal(VALUE basedir, VALUE path, int strict);
 VALUE rb_check_realpath(VALUE basedir, VALUE path, rb_encoding *origenc);
 void rb_file_const(const char*, VALUE);

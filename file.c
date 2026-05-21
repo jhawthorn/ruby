@@ -3922,20 +3922,13 @@ ntfs_tail(const char *path, const char *end, rb_encoding *enc)
 } while (0)
 
 static VALUE
-copy_home_path(VALUE result, const char *dir)
+build_home_path(const char *dir)
 {
-    char *buf;
-    long dirlen;
-    int encidx;
-
-    dirlen = strlen(dir);
-    rb_str_resize(result, dirlen);
-    memcpy(buf = RSTRING_PTR(result), dir, dirlen);
-    encidx = rb_filesystem_encindex();
-    rb_enc_associate_index(result, encidx);
+    VALUE result = rb_filesystem_str_new_cstr(dir);
 #if defined FILE_ALT_SEPARATOR
-    rb_encoding *enc = rb_enc_from_index(encidx);
+    rb_encoding *enc = rb_enc_from_index(rb_filesystem_encindex());
     bool mb_enc = enc_mbclen_needed(enc);
+    char *buf = RSTRING_PTR(result);
     for (char *p = buf, *bend = p + dirlen; p < bend; Inc(p, bend, mb_enc, enc)) {
         if (*p == FILE_ALT_SEPARATOR) {
             *p = '/';
@@ -3976,13 +3969,12 @@ rb_home_dir_of(VALUE user, VALUE result)
         rb_raise(rb_eArgError, "user %"PRIsVALUE" doesn't exist", user);
     }
 #endif
-    copy_home_path(result, dir);
-    return result;
+    return build_home_path(dir);
 }
 
 #ifndef _WIN32 /* this encompasses rb_file_expand_path_internal */
 VALUE
-rb_default_home_dir(VALUE result)
+rb_default_home_dir(void)
 {
     const char *dir = getenv("HOME");
 
@@ -4021,15 +4013,13 @@ rb_default_home_dir(VALUE result)
         }
 
         /* found it */
-        copy_home_path(result, RSTRING_PTR(pw_dir));
-        rb_str_resize(pw_dir, 0);
-        return result;
+        return build_home_path(RSTRING_PTR(pw_dir));
     }
 #endif /* defined HAVE_PWD_H */
     if (!dir) {
         rb_raise(rb_eArgError, "couldn't find HOME environment -- expanding '~'");
     }
-    return copy_home_path(result, dir);
+    return build_home_path(dir);
 }
 
 static VALUE
@@ -4105,7 +4095,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
             b = 0;
             rb_str_set_len(result, 0);
             if (++s < fend) ++s;
-            rb_default_home_dir(result);
+            result = rb_default_home_dir();
         }
         else {
             s = nextdirsep(b = s, fend, enc);
@@ -4116,6 +4106,7 @@ rb_file_expand_path_internal(VALUE fname, VALUE dname, int abs_mode, int long_na
             ENC_CODERANGE_CLEAR(result);
             rb_str_set_len(result, userlen);
             rb_enc_associate(result, enc);
+            // VALUE user = ; // TODO
             rb_home_dir_of(result, result);
             buf = p + 1;
             p += userlen;
