@@ -1067,18 +1067,13 @@ define print_id
       set $idslen = $ids->as.heap.len
     end
     if $idx < $idslen
-      set $t = 0
-      set $ary = (struct RArray *)$idsptr[$idx]
-      if $ary != RUBY_Qnil
-        set $flags = $ary->basic.flags
-        if ($flags & RUBY_FL_USER1)
-          set $aryptr = $ary->as.ary
-          set $arylen = (($flags & (RUBY_FL_USER3|RUBY_FL_USER4)) >> (RUBY_FL_USHIFT+3))
-        else
-          set $aryptr = $ary->as.heap.ptr
-          set $arylen = $ary->as.heap.len
-        end
-        set $result = $aryptr[($serial % ID_ENTRY_UNIT) + $t]
+      set $entry_list = $idsptr[$idx]
+      if $entry_list != RUBY_Qnil
+        # ids[idx] is a TypedData wrapping rb_darray(struct sym_id_entry { VALUE str; VALUE sym; }).
+        # darray memory: [size_t size][size_t capa][ {str,sym} ... ] -- a 2-VALUE meta header,
+        # then interleaved entries, so entry N's str is at VALUE index 2 + N*2.
+        set $darray = (VALUE *)((struct RTypedData *)$entry_list)->data
+        set $result = $darray[2 + ($serial % ID_ENTRY_UNIT) * 2]
         if $result != RUBY_Qnil
           print_string $result
         else
