@@ -15,6 +15,7 @@
 
 #include <stdbool.h>
 #include <stdarg.h>
+#include <execinfo.h>
 
 // Debug output control
 static bool wbcheck_debug_enabled = false;
@@ -193,10 +194,20 @@ wbcheck_object_list_contains(wbcheck_object_list_t *list, VALUE obj)
     return false;
 }
 
+// Number of C stack frames captured at each allocation
+#define WBCHECK_ALLOC_FRAMES 16
+
+// An interned C backtrace captured at allocation time
+typedef struct {
+    int nframes;
+    void *frames[WBCHECK_ALLOC_FRAMES];
+} wbcheck_stack_t;
+
 // Information tracked for each object
 typedef struct {
     size_t alloc_size;      // Allocated size (static)
     bool wb_protected;      // Write barrier protection status (static)
+    uint32_t alloc_stack_id; // Interned allocation backtrace (1-based; 0 = none)
     VALUE finalizers;       // Ruby Array of finalizers like [finalizer1, finalizer2, ...]
     wbcheck_object_list_t *gc_mark_snapshot; // Snapshot of references from last GC mark
     wbcheck_object_list_t *mark_maybe_snapshot; // Conservative refs reported via mark_maybe; needed for liveness, not verifiable
@@ -226,6 +237,10 @@ struct wbcheck_final_job {
 // wbcheck objspace structure to track all objects
 typedef struct {
     st_table *object_table;  // Hash table to track all allocated objects (VALUE -> rb_wbcheck_object_info_t*)
+    st_table *alloc_stack_table; // Interns allocation backtraces (wbcheck_stack_t* -> stack id)
+    wbcheck_stack_t **alloc_stacks; // id-1 -> interned stack, for symbolization at error time
+    size_t alloc_stacks_count;    // Number of interned stacks
+    size_t alloc_stacks_capacity; // Capacity of alloc_stacks array
     wbcheck_object_list_t *objects_to_capture; // Objects that need initial reference capture
     wbcheck_object_list_t *objects_to_verify; // Objects that need verification after write barriers
     wbcheck_object_list_t *current_refs; // Current list for collecting references during marking
@@ -280,6 +295,37 @@ wbcheck_get_object_info(VALUE obj)
     rb_bug("wbcheck: object not found in tracking table");
 }
 
+// Symbolize and print the interned allocation backtrace for an object, if any.
+static void
+wbcheck_print_alloc_stack(rb_wbcheck_objspace_t *objspace, uint32_t stack_id)
+{
+    if (stack_id == 0 || stack_id > objspace->alloc_stacks_count) return;
+
+    wbcheck_stack_t *stack = objspace->alloc_stacks[stack_id - 1];
+    char **symbols = backtrace_symbols(stack->frames, stack->nframes);
+    fprintf(stderr, "    allocated at:\n");
+    if (symbols) {
+        for (int i = 0; i < stack->nframes; i++) {
+            fprintf(stderr, "      %s\n", symbols[i]);
+        }
+        free(symbols);
+    }
+    else {
+        fprintf(stderr, "      (symbolization failed)\n");
+    }
+}
+
+// Look up the interned allocation stack id for a tracked object (0 if untracked).
+static uint32_t
+wbcheck_alloc_stack_id_for(rb_wbcheck_objspace_t *objspace, VALUE obj)
+{
+    st_data_t value;
+    if (st_lookup(objspace->object_table, (st_data_t)obj, &value)) {
+        return ((rb_wbcheck_object_info_t *)value)->alloc_stack_id;
+    }
+    return 0;
+}
+
 static void
 wbcheck_report_error(void *objspace_ptr, VALUE parent_obj, wbcheck_object_list_t *current_refs, wbcheck_object_list_t *gc_mark_snapshot, wbcheck_object_list_t *writebarrier_children, wbcheck_object_list_t *missed_refs)
 {
@@ -295,6 +341,7 @@ wbcheck_report_error(void *objspace_ptr, VALUE parent_obj, wbcheck_object_list_t
            (void *)parent_obj, parent_info->wb_protected ? "true" : "false");
     char buff[0x100];
     fprintf(stderr, "    %s\n", rb_raw_obj_info(buff, sizeof(buff), parent_obj));
+    wbcheck_print_alloc_stack(objspace, parent_info->alloc_stack_id);
     fprintf(stderr, "  Reference counts - snapshot: %zu, writebarrier: %zu, current: %zu, missed: %zu\n",
            snapshot_count, wb_count, current_refs->count, missed_refs->count);
 
@@ -302,6 +349,7 @@ wbcheck_report_error(void *objspace_ptr, VALUE parent_obj, wbcheck_object_list_t
         VALUE missed_ref = missed_refs->items[i];
         char buff[0x100];
         fprintf(stderr, "  Missing reference to: %p\n    %s\n", (void *)missed_ref, rb_raw_obj_info(buff, sizeof(buff), missed_ref));
+        wbcheck_print_alloc_stack(objspace, wbcheck_alloc_stack_id_for(objspace, missed_ref));
     }
 
     fprintf(stderr, "\n");
@@ -404,6 +452,62 @@ wbcheck_compare_references(void *objspace_ptr, VALUE parent_obj, wbcheck_object_
     }
 }
 
+// Compare two captured backtraces for equality (st returns 0 when equal)
+static int
+wbcheck_stack_cmp(st_data_t a, st_data_t b)
+{
+    const wbcheck_stack_t *sa = (const wbcheck_stack_t *)a;
+    const wbcheck_stack_t *sb = (const wbcheck_stack_t *)b;
+    if (sa->nframes != sb->nframes) return 1;
+    return memcmp(sa->frames, sb->frames, sa->nframes * sizeof(void *)) != 0;
+}
+
+static st_index_t
+wbcheck_stack_hash(st_data_t a)
+{
+    const wbcheck_stack_t *sa = (const wbcheck_stack_t *)a;
+    return st_hash(sa->frames, sa->nframes * sizeof(void *), 0);
+}
+
+static const struct st_hash_type wbcheck_stack_hash_type = {
+    wbcheck_stack_cmp,
+    wbcheck_stack_hash,
+};
+
+// Capture the current C backtrace and return its interned id (0 if unavailable).
+// Identical backtraces share an id, so this stays bounded by the number of
+// distinct allocation sites regardless of how many objects are allocated.
+static uint32_t
+wbcheck_intern_stack(rb_wbcheck_objspace_t *objspace)
+{
+    wbcheck_stack_t key;
+    key.nframes = backtrace(key.frames, WBCHECK_ALLOC_FRAMES);
+    if (key.nframes <= 0) return 0;
+
+    st_data_t existing;
+    if (st_lookup(objspace->alloc_stack_table, (st_data_t)&key, &existing)) {
+        return (uint32_t)existing;
+    }
+
+    // New site: copy the key onto the heap and assign a 1-based id
+    wbcheck_stack_t *stored = malloc(sizeof(wbcheck_stack_t));
+    if (!stored) rb_bug("wbcheck: failed to allocate interned stack");
+    *stored = key;
+
+    if (objspace->alloc_stacks_count >= objspace->alloc_stacks_capacity) {
+        size_t new_capacity = objspace->alloc_stacks_capacity ? objspace->alloc_stacks_capacity * 2 : 256;
+        wbcheck_stack_t **new_stacks = realloc(objspace->alloc_stacks, new_capacity * sizeof(wbcheck_stack_t *));
+        if (!new_stacks) rb_bug("wbcheck: failed to grow interned stack array");
+        objspace->alloc_stacks = new_stacks;
+        objspace->alloc_stacks_capacity = new_capacity;
+    }
+
+    uint32_t id = (uint32_t)(objspace->alloc_stacks_count + 1);
+    objspace->alloc_stacks[objspace->alloc_stacks_count++] = stored;
+    st_insert(objspace->alloc_stack_table, (st_data_t)stored, (st_data_t)id);
+    return id;
+}
+
 static void
 wbcheck_register_object(void *objspace_ptr, VALUE obj, size_t alloc_size, bool wb_protected)
 {
@@ -416,6 +520,7 @@ wbcheck_register_object(void *objspace_ptr, VALUE obj, size_t alloc_size, bool w
 
     info->alloc_size = alloc_size;
     info->wb_protected = wb_protected;
+    info->alloc_stack_id = wbcheck_intern_stack(objspace);
     info->finalizers = 0;  /* No finalizers initially */
     info->gc_mark_snapshot = NULL;  /* No snapshot initially */
     info->mark_maybe_snapshot = NULL;  /* No mark_maybe snapshot initially */
@@ -458,6 +563,11 @@ rb_gc_impl_objspace_alloc(void)
         free(objspace);
         rb_bug("wbcheck: failed to create object table");
     }
+
+    objspace->alloc_stack_table = st_init_table(&wbcheck_stack_hash_type);
+    objspace->alloc_stacks = NULL;
+    objspace->alloc_stacks_count = 0;
+    objspace->alloc_stacks_capacity = 0;
 
     objspace->objects_to_capture = wbcheck_object_list_init();  // Initialize empty list
     objspace->objects_to_verify = wbcheck_object_list_init();   // Initialize empty list
@@ -896,31 +1006,18 @@ wbcheck_sweep_callback(st_data_t key, st_data_t val, st_data_t arg, int error)
             rb_postponed_job_trigger(objspace->finalizer_postponed_job);
         }
 
-        // Call rb_gc_obj_free which handles finalizers/zombies
-        if (rb_gc_obj_free(objspace, obj)) {
-            // Object was actually freed, clean up our tracking
-            wbcheck_object_list_free(info->gc_mark_snapshot);
-            wbcheck_object_list_free(info->mark_maybe_snapshot);
-            wbcheck_object_list_free(info->writebarrier_children);
-            free(info);
+        rb_gc_obj_free(objspace, obj);
 
-            // Free the actual object memory
-            free((void *)obj);
+        // Clean up our tracking
+        wbcheck_object_list_free(info->gc_mark_snapshot);
+        wbcheck_object_list_free(info->mark_maybe_snapshot);
+        wbcheck_object_list_free(info->writebarrier_children);
+        free(info);
 
-            return ST_DELETE; // Remove from hash table
-        } else {
-            // Object became a zombie - it will be freed by postponed job
-            // Remove from tracking since we can't safely access it anymore
-            wbcheck_object_list_free(info->gc_mark_snapshot);
-            wbcheck_object_list_free(info->mark_maybe_snapshot);
-            wbcheck_object_list_free(info->writebarrier_children);
-            free(info);
+        // Free the actual object memory
+        free((void *)obj);
 
-            // Free the actual object memory
-            free((void *)obj);
-
-            return ST_DELETE; // Remove from hash table
-        }
+        return ST_DELETE; // Remove from hash table
     }
 
     return ST_CONTINUE; // Keep marked objects
