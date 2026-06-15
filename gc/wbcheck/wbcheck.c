@@ -55,6 +55,10 @@ wbcheck_debug_obj_info_dump(VALUE obj)
 static void lock_and_maybe_gc(void *objspace_ptr);
 static void force_gc(void *objspace_ptr);
 
+// Ruby's DWARF-aware backtrace symbolizer (addr2line.c). Resolves static
+// functions to name + file:line, which plain backtrace_symbols cannot.
+void rb_dump_backtrace_with_lines(int num_traces, void **traces, FILE *errout);
+
 // Configure wbcheck from environment variables
 static void
 wbcheck_configure_from_env(void)
@@ -302,17 +306,8 @@ wbcheck_print_alloc_stack(rb_wbcheck_objspace_t *objspace, uint32_t stack_id)
     if (stack_id == 0 || stack_id > objspace->alloc_stacks_count) return;
 
     wbcheck_stack_t *stack = objspace->alloc_stacks[stack_id - 1];
-    char **symbols = backtrace_symbols(stack->frames, stack->nframes);
     fprintf(stderr, "    allocated at:\n");
-    if (symbols) {
-        for (int i = 0; i < stack->nframes; i++) {
-            fprintf(stderr, "      %s\n", symbols[i]);
-        }
-        free(symbols);
-    }
-    else {
-        fprintf(stderr, "      (symbolization failed)\n");
-    }
+    rb_dump_backtrace_with_lines(stack->nframes, stack->frames, stderr);
 }
 
 // Look up the interned allocation stack id for a tracked object (0 if untracked).

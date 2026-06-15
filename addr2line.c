@@ -2614,7 +2614,7 @@ print_line(line_info_t *line, void *address, FILE *errout)
     }
 }
 
-void
+RUBY_FUNC_EXPORTED void
 rb_dump_backtrace_with_lines(int num_traces, void **traces, FILE *errout)
 {
     int i;
