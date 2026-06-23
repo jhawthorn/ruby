@@ -619,7 +619,7 @@ static const rb_data_type_t digest_type = {
     "digest",
     {0, RUBY_TYPED_DEFAULT_FREE, 0,},
     0, 0,
-    (RUBY_TYPED_FREE_IMMEDIATELY|RUBY_TYPED_WB_PROTECTED),
+    (RUBY_TYPED_THREAD_SAFE_FREE|RUBY_TYPED_WB_PROTECTED),
 };
 
 static inline void
