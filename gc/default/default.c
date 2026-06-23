@@ -4499,7 +4499,7 @@ gc_pre_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *p
                 }
                 // NOTE: this repeats int found in `rb_data_free`.
                 void (*dfree)(void *);
-                int free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_FREE_IMMEDIATELY) != 0 && (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_THREAD_SAFE_FREE) != 0;
+                int free_immediately = (RTYPEDDATA_TYPE(vp)->flags & RUBY_TYPED_THREAD_SAFE_FREE) != 0;
                 dfree = RTYPEDDATA_TYPE(vp)->function.dfree;
 
                 if (!dfree || dfree == RUBY_DEFAULT_FREE || free_immediately) {
