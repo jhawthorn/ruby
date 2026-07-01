@@ -3428,8 +3428,30 @@ rb_gc_move_obj_during_marking(VALUE from, VALUE to)
     }
 }
 
-void
-rb_gc_mark_children(void *objspace, VALUE obj)
+static void
+gc_mark_child_default(void *objspace, VALUE obj)
+{
+    if (!RB_SPECIAL_CONST_P(obj)) {
+        GC_ASSERT(rb_gc_impl_during_gc_p(objspace));
+        rb_gc_impl_mark(objspace, obj);
+    }
+}
+
+static void
+gc_mark_child_func(void *objspace, VALUE obj)
+{
+    if (!RB_SPECIAL_CONST_P(obj)) {
+        struct gc_mark_func_data_struct *mark_func_data = gc_mark_func_data_get();
+        GC_ASSERT(!rb_gc_impl_during_gc_p(objspace));
+        gc_mark_func_data_set(NULL);
+        mark_func_data->mark_func(obj, mark_func_data->data);
+        gc_mark_func_data_set(mark_func_data);
+    }
+}
+
+ALWAYS_INLINE(static void gc_mark_children_body(void *objspace, VALUE obj, void (*mark)(void *objspace, VALUE obj)));
+static void
+gc_mark_children_body(void *objspace, VALUE obj, void (*mark)(void *objspace, VALUE obj))
 {
     struct gc_mark_classext_foreach_arg foreach_args;
 
@@ -3459,13 +3481,13 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         break;
     }
 
-    gc_mark_internal(RBASIC(obj)->klass);
+    mark(objspace, RBASIC(obj)->klass);
 
     switch (BUILTIN_TYPE(obj)) {
       case T_CLASS:
         if (FL_TEST_RAW(obj, FL_SINGLETON) &&
             !rb_gc_checking_shareable()) {
-            gc_mark_internal(RCLASS_ATTACHED_OBJECT(obj));
+            mark(objspace, RCLASS_ATTACHED_OBJECT(obj));
         }
         // Continue to the shared T_CLASS/T_MODULE
       case T_MODULE:
@@ -3473,7 +3495,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         foreach_args.obj = obj;
         rb_class_classext_foreach(obj, gc_mark_classext_module, (void *)&foreach_args);
         if (BOX_USER_P(RCLASS_PRIME_BOX(obj))) {
-            gc_mark_internal(RCLASS_PRIME_BOX(obj)->box_object);
+            mark(objspace, RCLASS_PRIME_BOX(obj)->box_object);
         }
         break;
 
@@ -3482,20 +3504,20 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         foreach_args.obj = obj;
         rb_class_classext_foreach(obj, gc_mark_classext_iclass, (void *)&foreach_args);
         if (BOX_USER_P(RCLASS_PRIME_BOX(obj))) {
-            gc_mark_internal(RCLASS_PRIME_BOX(obj)->box_object);
+            mark(objspace, RCLASS_PRIME_BOX(obj)->box_object);
         }
         break;
 
       case T_ARRAY:
         if (ARY_SHARED_P(obj)) {
             VALUE root = ARY_SHARED_ROOT(obj);
-            gc_mark_internal(root);
+            mark(objspace, root);
         }
         else {
             long len = RARRAY_LEN(obj);
             const VALUE *ptr = RARRAY_CONST_PTR(obj);
             for (long i = 0; i < len; i++) {
-                gc_mark_internal(ptr[i]);
+                mark(objspace, ptr[i]);
             }
         }
         break;
@@ -3505,7 +3527,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         break;
 
       case T_SYMBOL:
-        gc_mark_internal(RSYMBOL(obj)->fstr);
+        mark(objspace, RSYMBOL(obj)->fstr);
         break;
 
       case T_STRING:
@@ -3518,7 +3540,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
                 gc_mark_and_pin_internal(RSTRING(obj)->as.heap.aux.shared);
             }
             else {
-                gc_mark_internal(RSTRING(obj)->as.heap.aux.shared);
+                mark(objspace, RSTRING(obj)->as.heap.aux.shared);
             }
         }
         break;
@@ -3526,14 +3548,14 @@ rb_gc_mark_children(void *objspace, VALUE obj)
       case T_DATA: {
         void *const ptr = RTYPEDDATA_GET_DATA(obj);
 
-        gc_mark_internal(RTYPEDDATA(obj)->fields_obj);
+        mark(objspace, RTYPEDDATA(obj)->fields_obj);
 
         if (ptr) {
             if (gc_declarative_marking_p(RTYPEDDATA_TYPE(obj))) {
                 size_t *offset_list = TYPED_DATA_REFS_OFFSET_LIST(obj);
 
                 for (size_t offset = *offset_list; offset != RUBY_REF_END; offset = *offset_list++) {
-                    gc_mark_internal(*(VALUE *)((char *)ptr + offset));
+                    mark(objspace, *(VALUE *)((char *)ptr + offset));
                 }
             }
             else {
@@ -3556,7 +3578,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
 
             len = ROBJECT_FIELDS_COUNT_NOT_COMPLEX(obj);
             for (uint32_t i = 0; i < len; i++) {
-                gc_mark_internal(ptr[i]);
+                mark(objspace, ptr[i]);
             }
         }
         break;
@@ -3564,37 +3586,37 @@ rb_gc_mark_children(void *objspace, VALUE obj)
 
       case T_FILE:
         if (RFILE(obj)->fptr) {
-            gc_mark_internal(RFILE(obj)->fptr->self);
-            gc_mark_internal(RFILE(obj)->fptr->pathv);
-            gc_mark_internal(RFILE(obj)->fptr->tied_io_for_writing);
-            gc_mark_internal(RFILE(obj)->fptr->writeconv_asciicompat);
-            gc_mark_internal(RFILE(obj)->fptr->writeconv_pre_ecopts);
-            gc_mark_internal(RFILE(obj)->fptr->encs.ecopts);
-            gc_mark_internal(RFILE(obj)->fptr->write_lock);
-            gc_mark_internal(RFILE(obj)->fptr->timeout);
-            gc_mark_internal(RFILE(obj)->fptr->wakeup_mutex);
+            mark(objspace, RFILE(obj)->fptr->self);
+            mark(objspace, RFILE(obj)->fptr->pathv);
+            mark(objspace, RFILE(obj)->fptr->tied_io_for_writing);
+            mark(objspace, RFILE(obj)->fptr->writeconv_asciicompat);
+            mark(objspace, RFILE(obj)->fptr->writeconv_pre_ecopts);
+            mark(objspace, RFILE(obj)->fptr->encs.ecopts);
+            mark(objspace, RFILE(obj)->fptr->write_lock);
+            mark(objspace, RFILE(obj)->fptr->timeout);
+            mark(objspace, RFILE(obj)->fptr->wakeup_mutex);
         }
         break;
 
       case T_REGEXP:
-        gc_mark_internal(RREGEXP(obj)->src);
+        mark(objspace, RREGEXP(obj)->src);
         break;
 
       case T_MATCH:
-        gc_mark_internal(RMATCH(obj)->regexp);
+        mark(objspace, RMATCH(obj)->regexp);
         if (RMATCH(obj)->str) {
-            gc_mark_internal(RMATCH(obj)->str);
+            mark(objspace, RMATCH(obj)->str);
         }
         break;
 
       case T_RATIONAL:
-        gc_mark_internal(RRATIONAL(obj)->num);
-        gc_mark_internal(RRATIONAL(obj)->den);
+        mark(objspace, RRATIONAL(obj)->num);
+        mark(objspace, RRATIONAL(obj)->den);
         break;
 
       case T_COMPLEX:
-        gc_mark_internal(RCOMPLEX(obj)->real);
-        gc_mark_internal(RCOMPLEX(obj)->imag);
+        mark(objspace, RCOMPLEX(obj)->real);
+        mark(objspace, RCOMPLEX(obj)->imag);
         break;
 
       case T_STRUCT: {
@@ -3602,11 +3624,11 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         const VALUE * const ptr = RSTRUCT_CONST_PTR(obj);
 
         for (long i = 0; i < len; i++) {
-            gc_mark_internal(ptr[i]);
+            mark(objspace, ptr[i]);
         }
 
         if (rb_obj_shape_has_fields(obj) && !FL_TEST_RAW(obj, RSTRUCT_GEN_FIELDS)) {
-            gc_mark_internal(RSTRUCT_FIELDS_OBJ(obj));
+            mark(objspace, RSTRUCT_FIELDS_OBJ(obj));
         }
 
         break;
@@ -3620,6 +3642,18 @@ rb_gc_mark_children(void *objspace, VALUE obj)
                BUILTIN_TYPE(obj), (void *)obj,
                rb_gc_impl_live_object_p(objspace, (void *)obj) ? "corrupted object" : "non object");
     }
+}
+
+void
+rb_gc_mark_children(void *objspace, VALUE obj)
+{
+    gc_mark_children_body(objspace, obj, gc_mark_child_default);
+}
+
+static void
+rb_gc_mark_children_func(void *objspace, VALUE obj)
+{
+    gc_mark_children_body(objspace, obj, gc_mark_child_func);
 }
 
 size_t
@@ -4818,7 +4852,7 @@ rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *
             };
 
             gc_mark_func_data_set(&mfd);
-            rb_gc_mark_children(rb_gc_get_objspace(), obj);
+            rb_gc_mark_children_func(rb_gc_get_objspace(), obj);
             gc_mark_func_data_set(prev_mfd);
         }
     }
