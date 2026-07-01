@@ -190,6 +190,9 @@ Init_native_thread(rb_thread_t *main_th)
     if ((ruby_current_ec_key = TlsAlloc()) == TLS_OUT_OF_INDEXES) {
         rb_bug("TlsAlloc() for ruby_current_ec_key fails");
     }
+    if ((ruby_gc_mark_func_data_key = TlsAlloc()) == TLS_OUT_OF_INDEXES) {
+        rb_bug("TlsAlloc() for ruby_gc_mark_func_data_key fails");
+    }
     if ((ruby_native_thread_key = TlsAlloc()) == TLS_OUT_OF_INDEXES) {
         rb_bug("TlsAlloc() for ruby_native_thread_key fails");
     }

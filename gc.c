@@ -590,6 +590,40 @@ rb_gc_guarded_ptr_val(volatile VALUE *ptr, VALUE val)
 
 static const char *obj_type_name(VALUE obj);
 static st_table *id2ref_tbl;
+
+/* Thread-local hook to intercept marking (e.g. ObjectSpace.reachable_objects_from).
+ * When set, gc_mark calls mark_func(obj, data) instead of marking obj. */
+struct gc_mark_func_data_struct {
+    void *data;
+    void (*mark_func)(VALUE v, void *data);
+};
+
+#ifdef RB_THREAD_LOCAL_SPECIFIER
+static RB_THREAD_LOCAL_SPECIFIER struct gc_mark_func_data_struct *ruby_gc_mark_func_data;
+#else
+native_tls_key_t ruby_gc_mark_func_data_key;
+#endif
+
+static inline struct gc_mark_func_data_struct *
+gc_mark_func_data_get(void)
+{
+#ifdef RB_THREAD_LOCAL_SPECIFIER
+    return ruby_gc_mark_func_data;
+#else
+    return native_tls_get(ruby_gc_mark_func_data_key);
+#endif
+}
+
+static inline void
+gc_mark_func_data_set(struct gc_mark_func_data_struct *mfd)
+{
+#ifdef RB_THREAD_LOCAL_SPECIFIER
+    ruby_gc_mark_func_data = mfd;
+#else
+    native_tls_set(ruby_gc_mark_func_data_key, mfd);
+#endif
+}
+
 #include "gc/default/default.c"
 
 #if USE_MODULAR_GC && !defined(HAVE_DLOPEN)
@@ -2879,9 +2913,9 @@ ruby_stack_check(void)
 
 #define RB_GC_MARK_OR_TRAVERSE(func, obj_or_ptr, obj, check_obj) do { \
     if (!RB_SPECIAL_CONST_P(obj)) { \
-        rb_vm_t *vm = GET_VM(); \
-        void *objspace = vm->gc.objspace; \
-        if (LIKELY(vm->gc.mark_func_data == NULL)) { \
+        void *objspace = GET_VM()->gc.objspace; \
+        struct gc_mark_func_data_struct *mark_func_data = gc_mark_func_data_get(); \
+        if (LIKELY(mark_func_data == NULL)) { \
             GC_ASSERT(rb_gc_impl_during_gc_p(objspace)); \
             (func)(objspace, (obj_or_ptr)); \
         } \
@@ -2890,10 +2924,9 @@ ruby_stack_check(void)
                     !rb_gc_impl_garbage_object_p(objspace, obj) : \
                 true) { \
             GC_ASSERT(!rb_gc_impl_during_gc_p(objspace)); \
-            struct gc_mark_func_data_struct *mark_func_data = vm->gc.mark_func_data; \
-            vm->gc.mark_func_data = NULL; \
+            gc_mark_func_data_set(NULL); \
             mark_func_data->mark_func((obj), mark_func_data->data); \
-            vm->gc.mark_func_data = mark_func_data; \
+            gc_mark_func_data_set(mark_func_data); \
         } \
     } \
 } while (0)
@@ -4778,16 +4811,15 @@ rb_objspace_reachable_objects_from(VALUE obj, void (func)(VALUE, void *), void *
         if (rb_gc_impl_during_gc_p(rb_gc_get_objspace())) rb_bug("rb_objspace_reachable_objects_from() is not supported while during GC");
 
         if (!RB_SPECIAL_CONST_P(obj)) {
-            rb_vm_t *vm = GET_VM();
-            struct gc_mark_func_data_struct *prev_mfd = vm->gc.mark_func_data;
+            struct gc_mark_func_data_struct *prev_mfd = gc_mark_func_data_get();
             struct gc_mark_func_data_struct mfd = {
                 .mark_func = func,
                 .data = data,
             };
 
-            vm->gc.mark_func_data = &mfd;
+            gc_mark_func_data_set(&mfd);
             rb_gc_mark_children(rb_gc_get_objspace(), obj);
-            vm->gc.mark_func_data = prev_mfd;
+            gc_mark_func_data_set(prev_mfd);
         }
     }
 }
@@ -4817,16 +4849,16 @@ rb_objspace_reachable_objects_from_root(void (func)(const char *category, VALUE,
         .data = passing_data,
     };
 
-    struct gc_mark_func_data_struct *prev_mfd = vm->gc.mark_func_data;
+    struct gc_mark_func_data_struct *prev_mfd = gc_mark_func_data_get();
     struct gc_mark_func_data_struct mfd = {
         .mark_func = root_objects_from,
         .data = &data,
     };
 
-    vm->gc.mark_func_data = &mfd;
+    gc_mark_func_data_set(&mfd);
     rb_gc_save_machine_context();
     rb_gc_mark_roots(vm->gc.objspace, &data.category);
-    vm->gc.mark_func_data = prev_mfd;
+    gc_mark_func_data_set(prev_mfd);
 }
 
 /*

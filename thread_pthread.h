@@ -175,6 +175,7 @@ native_tls_set(native_tls_key_t key, void *ptr)
 }
 
 RUBY_EXTERN native_tls_key_t ruby_current_ec_key;
+RUBY_EXTERN native_tls_key_t ruby_gc_mark_func_data_key;
 #endif
 
 struct rb_ractor_struct;

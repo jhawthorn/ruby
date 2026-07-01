@@ -1757,6 +1757,9 @@ Init_native_thread(rb_thread_t *main_th)
     if (pthread_key_create(&ruby_current_ec_key, 0) == EAGAIN) {
         rb_bug("pthread_key_create failed (ruby_current_ec_key)");
     }
+    if (pthread_key_create(&ruby_gc_mark_func_data_key, 0) == EAGAIN) {
+        rb_bug("pthread_key_create failed (ruby_gc_mark_func_data_key)");
+    }
 #endif
     ruby_posix_signal(SIGVTALRM, null_func);
 

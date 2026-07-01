@@ -53,6 +53,7 @@ native_tls_set(native_tls_key_t key, void *ptr)
 
 RUBY_SYMBOL_EXPORT_BEGIN
 RUBY_EXTERN native_tls_key_t ruby_current_ec_key;
+RUBY_EXTERN native_tls_key_t ruby_gc_mark_func_data_key;
 RUBY_SYMBOL_EXPORT_END
 
 #endif /* RUBY_THREAD_WIN32_H */
