@@ -1221,9 +1221,14 @@ typedef enum obj_traverse_iterator_result (*rb_obj_traverse_final_func)(VALUE ob
 
 static enum obj_traverse_iterator_result null_leave(VALUE obj);
 
+#define OBJ_TRAVERSE_REC_STACK_SIZE 8
+
 struct obj_traverse_data {
     rb_obj_traverse_enter_func enter_func;
     rb_obj_traverse_leave_func leave_func;
+
+    VALUE rec_stack[OBJ_TRAVERSE_REC_STACK_SIZE];
+    int rec_stack_len;
 
     st_table *rec;
     VALUE rec_hash;
@@ -1265,15 +1270,38 @@ obj_traverse_reachable_i(VALUE obj, void *ptr)
     }
 }
 
-static struct st_table *
-obj_traverse_rec(struct obj_traverse_data *data)
+// Returns true if obj was already recorded as visited.
+static bool
+obj_traverse_rec_insert_hash(struct obj_traverse_data *data, VALUE obj)
 {
-    if (UNLIKELY(!data->rec)) {
-        data->rec_hash = rb_ident_hash_new();
-        rb_obj_hide(data->rec_hash);
-        data->rec = RHASH_ST_TABLE(data->rec_hash);
+    if (st_insert(data->rec, obj, 1)) return true;
+    RB_OBJ_WRITTEN(data->rec_hash, Qundef, obj);
+    return false;
+}
+
+// Returns true if obj was already recorded as visited.
+static bool
+obj_traverse_rec_insert(struct obj_traverse_data *data, VALUE obj)
+{
+    if (data->rec) return obj_traverse_rec_insert_hash(data, obj);
+
+    for (int i = 0; i < data->rec_stack_len; i++) {
+        if (data->rec_stack[i] == obj) return true;
     }
-    return data->rec;
+
+    if (data->rec_stack_len < OBJ_TRAVERSE_REC_STACK_SIZE) {
+        data->rec_stack[data->rec_stack_len++] = obj;
+        return false;
+    }
+
+    data->rec_hash = rb_ident_hash_new();
+    rb_obj_hide(data->rec_hash);
+    data->rec = RHASH_ST_TABLE(data->rec_hash);
+
+    for (int i = 0; i < data->rec_stack_len; i++) {
+        obj_traverse_rec_insert_hash(data, data->rec_stack[i]);
+    }
+    return obj_traverse_rec_insert_hash(data, obj);
 }
 
 static int
@@ -1300,11 +1328,10 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
       case traverse_stop: return 1; // stop search
     }
 
-    if (UNLIKELY(st_insert(obj_traverse_rec(data), obj, 1))) {
+    if (UNLIKELY(obj_traverse_rec_insert(data, obj))) {
         // already traversed
         return 0;
     }
-    RB_OBJ_WRITTEN(data->rec_hash, Qundef, obj);
 
     struct obj_traverse_callback_data d = {
         .stop = false,
@@ -1452,10 +1479,17 @@ rb_obj_traverse(VALUE obj,
     };
 
     if (obj_traverse_i(obj, &data)) return 1;
-    if (final_func && data.rec) {
+
+    if (!final_func) return 0;
+
+    if (data.rec) {
         struct rb_obj_traverse_final_data f = {final_func, 0};
         st_foreach(data.rec, obj_traverse_final_i, (st_data_t)&f);
         return f.stopped;
+    }
+
+    for (int i = 0; i < data.rec_stack_len; i++) {
+        if (final_func(data.rec_stack[i])) return 1;
     }
     return 0;
 }
