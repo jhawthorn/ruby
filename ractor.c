@@ -1217,7 +1217,6 @@ enum obj_traverse_iterator_result {
 
 typedef enum obj_traverse_iterator_result (*rb_obj_traverse_enter_func)(VALUE obj);
 typedef enum obj_traverse_iterator_result (*rb_obj_traverse_leave_func)(VALUE obj);
-typedef enum obj_traverse_iterator_result (*rb_obj_traverse_final_func)(VALUE obj);
 
 static enum obj_traverse_iterator_result null_leave(VALUE obj);
 
@@ -1302,6 +1301,20 @@ obj_traverse_rec_insert(struct obj_traverse_data *data, VALUE obj)
         obj_traverse_rec_insert_hash(data, data->rec_stack[i]);
     }
     return obj_traverse_rec_insert_hash(data, obj);
+}
+
+// obj is always the most recently inserted, not-yet-removed entry: enter/leave
+// nest strictly, so this is a LIFO stack even after promotion to a hash.
+static void
+obj_traverse_rec_remove(struct obj_traverse_data *data, VALUE obj)
+{
+    if (data->rec) {
+        st_data_t key = (st_data_t)obj;
+        st_delete(data->rec, &key, NULL);
+    }
+    else {
+        data->rec_stack_len--;
+    }
 }
 
 static int
@@ -1422,6 +1435,7 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
                     .stop = false,
                     .data = data,
                 };
+                rb_obj_info_dump(obj);
                 RB_VM_LOCKING_NO_BARRIER() {
                     rb_objspace_reachable_objects_from(obj, obj_traverse_reachable_i, &d);
                 }
@@ -1440,28 +1454,9 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         rb_bug("unreachable");
     }
 
-    if (data->leave_func(obj) == traverse_stop) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
-}
-
-struct rb_obj_traverse_final_data {
-    rb_obj_traverse_final_func final_func;
-    int stopped;
-};
-
-static int
-obj_traverse_final_i(st_data_t key, st_data_t val, st_data_t arg)
-{
-    struct rb_obj_traverse_final_data *data = (void *)arg;
-    if (data->final_func(key)) {
-        data->stopped = 1;
-        return ST_STOP;
-    }
-    return ST_CONTINUE;
+    enum obj_traverse_iterator_result result = data->leave_func(obj);
+    obj_traverse_rec_remove(data, obj);
+    return result == traverse_stop;
 }
 
 // 0: traverse all
@@ -1469,8 +1464,7 @@ obj_traverse_final_i(st_data_t key, st_data_t val, st_data_t arg)
 static int
 rb_obj_traverse(VALUE obj,
                 rb_obj_traverse_enter_func enter_func,
-                rb_obj_traverse_leave_func leave_func,
-                rb_obj_traverse_final_func final_func)
+                rb_obj_traverse_leave_func leave_func)
 {
     struct obj_traverse_data data = {
         .enter_func = enter_func,
@@ -1478,20 +1472,7 @@ rb_obj_traverse(VALUE obj,
         .rec = NULL,
     };
 
-    if (obj_traverse_i(obj, &data)) return 1;
-
-    if (!final_func) return 0;
-
-    if (data.rec) {
-        struct rb_obj_traverse_final_data f = {final_func, 0};
-        st_foreach(data.rec, obj_traverse_final_i, (st_data_t)&f);
-        return f.stopped;
-    }
-
-    for (int i = 0; i < data.rec_stack_len; i++) {
-        if (final_func(data.rec_stack[i])) return 1;
-    }
-    return 0;
+    return obj_traverse_i(obj, &data);
 }
 
 static int
@@ -1649,7 +1630,7 @@ rb_ractor_make_shareable(VALUE obj)
 {
     rb_obj_traverse(obj,
                     make_shareable_check_shareable,
-                    null_leave, mark_shareable);
+                    mark_shareable);
     return obj;
 }
 
@@ -1704,8 +1685,7 @@ bool
 rb_ractor_shareable_p_continue(VALUE obj)
 {
     if (rb_obj_traverse(obj,
-                        shareable_p_enter, null_leave,
-                        mark_shareable)) {
+                        shareable_p_enter, mark_shareable)) {
         return false;
     }
     else {
@@ -1743,7 +1723,7 @@ static VALUE
 ractor_reset_belonging(VALUE obj)
 {
 #if RACTOR_CHECK_MODE > 0
-    rb_obj_traverse(obj, reset_belonging_enter, null_leave, NULL);
+    rb_obj_traverse(obj, reset_belonging_enter, null_leave);
 #endif
     return obj;
 }
