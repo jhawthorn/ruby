@@ -1377,14 +1377,29 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
 
       case T_DATA:
         {
-            struct obj_traverse_callback_data d = {
-                .stop = false,
-                .data = data,
-            };
-            RB_VM_LOCKING_NO_BARRIER() {
-                rb_objspace_reachable_objects_from(obj, obj_traverse_reachable_i, &d);
+            void *const ptr = RTYPEDDATA_GET_DATA(obj);
+            const rb_data_type_t *type = RTYPEDDATA_TYPE(obj);
+
+            if (!ptr || !type->function.dmark) {
+                // no references (the class and ivars are handled elsewhere)
             }
-            if (d.stop) return 1;
+            else if (type->flags & RUBY_TYPED_DECL_MARKING) {
+                const size_t *offsets = (const size_t *)(uintptr_t)type->function.dmark;
+                for (; *offsets != RUBY_REF_END; offsets++) {
+                    VALUE ref = *(VALUE *)((char *)ptr + *offsets);
+                    if (obj_traverse_i(ref, data)) return 1;
+                }
+            }
+            else {
+                struct obj_traverse_callback_data d = {
+                    .stop = false,
+                    .data = data,
+                };
+                RB_VM_LOCKING_NO_BARRIER() {
+                    rb_objspace_reachable_objects_from(obj, obj_traverse_reachable_i, &d);
+                }
+                if (d.stop) return 1;
+            }
         }
         break;
 
