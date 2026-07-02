@@ -1376,7 +1376,6 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         break;
 
       case T_DATA:
-      case T_IMEMO:
         {
             struct obj_traverse_callback_data d = {
                 .stop = false,
@@ -1390,6 +1389,7 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         break;
 
       // unreachable
+      case T_IMEMO: // enter_func must skip imemos
       case T_CLASS:
       case T_MODULE:
       case T_ICLASS:
