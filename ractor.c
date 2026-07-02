@@ -1346,12 +1346,14 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         return 0;
     }
 
-    struct obj_traverse_callback_data d = {
-        .stop = false,
-        .data = data,
-    };
-    rb_ivar_foreach(obj, obj_traverse_ivar_foreach_i, (st_data_t)&d);
-    if (d.stop) return 1;
+    if (rb_obj_shape_has_ivars(obj)) {
+        struct obj_traverse_callback_data d = {
+            .stop = false,
+            .data = data,
+        };
+        rb_ivar_foreach(obj, obj_traverse_ivar_foreach_i, (st_data_t)&d);
+        if (d.stop) return 1;
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       // no child node
