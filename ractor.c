@@ -1231,6 +1231,14 @@ struct obj_traverse_data {
 
     st_table *rec;
     VALUE rec_hash;
+
+    // Depth of the shallowest still-open ancestor targeted by an
+    // as-yet-unresolved back-edge, or -1 if no cycle is pending.
+    int cycle_floor;
+
+    // Objects whose leave_func call is deferred because they sit inside an
+    // unresolved cycle; flushed in one batch once cycle_floor resolves.
+    VALUE pending;
 };
 
 
@@ -1269,26 +1277,39 @@ obj_traverse_reachable_i(VALUE obj, void *ptr)
     }
 }
 
-// Returns true if obj was already recorded as visited.
+// Returns true if obj was already recorded as visited (i.e. is a currently
+// open ancestor). Either way, *depth is set to obj's assigned depth.
 static bool
-obj_traverse_rec_insert_hash(struct obj_traverse_data *data, VALUE obj)
+obj_traverse_rec_insert_hash(struct obj_traverse_data *data, VALUE obj, int *depth)
 {
-    if (st_insert(data->rec, obj, 1)) return true;
+    st_data_t existing;
+    if (st_lookup(data->rec, (st_data_t)obj, &existing)) {
+        *depth = (int)existing;
+        return true;
+    }
+
+    *depth = data->rec_stack_len++;
+    st_insert(data->rec, (st_data_t)obj, (st_data_t)*depth);
     RB_OBJ_WRITTEN(data->rec_hash, Qundef, obj);
     return false;
 }
 
-// Returns true if obj was already recorded as visited.
+// Returns true if obj was already recorded as visited (i.e. is a currently
+// open ancestor). Either way, *depth is set to obj's assigned depth.
 static bool
-obj_traverse_rec_insert(struct obj_traverse_data *data, VALUE obj)
+obj_traverse_rec_insert(struct obj_traverse_data *data, VALUE obj, int *depth)
 {
-    if (data->rec) return obj_traverse_rec_insert_hash(data, obj);
+    if (data->rec) return obj_traverse_rec_insert_hash(data, obj, depth);
 
     for (int i = 0; i < data->rec_stack_len; i++) {
-        if (data->rec_stack[i] == obj) return true;
+        if (data->rec_stack[i] == obj) {
+            *depth = i;
+            return true;
+        }
     }
 
     if (data->rec_stack_len < OBJ_TRAVERSE_REC_STACK_SIZE) {
+        *depth = data->rec_stack_len;
         data->rec_stack[data->rec_stack_len++] = obj;
         return false;
     }
@@ -1297,14 +1318,21 @@ obj_traverse_rec_insert(struct obj_traverse_data *data, VALUE obj)
     rb_obj_hide(data->rec_hash);
     data->rec = RHASH_ST_TABLE(data->rec_hash);
 
+    // Preserve each entry's original depth; do not run it through the
+    // auto-incrementing path above.
     for (int i = 0; i < data->rec_stack_len; i++) {
-        obj_traverse_rec_insert_hash(data, data->rec_stack[i]);
+        st_insert(data->rec, (st_data_t)data->rec_stack[i], (st_data_t)i);
+        RB_OBJ_WRITTEN(data->rec_hash, Qundef, data->rec_stack[i]);
     }
-    return obj_traverse_rec_insert_hash(data, obj);
+    return obj_traverse_rec_insert_hash(data, obj, depth);
 }
 
 // obj is always the most recently inserted, not-yet-removed entry: enter/leave
 // nest strictly, so this is a LIFO stack even after promotion to a hash.
+// This always removes obj immediately once its own traversal returns,
+// regardless of whether leave_func has actually been called on it yet
+// (see obj_traverse_defer): rec only tracks "currently on the active
+// recursion path", which ends the moment the call returns.
 static void
 obj_traverse_rec_remove(struct obj_traverse_data *data, VALUE obj)
 {
@@ -1315,6 +1343,37 @@ obj_traverse_rec_remove(struct obj_traverse_data *data, VALUE obj)
     else {
         data->rec_stack_len--;
     }
+}
+
+// obj sits inside a not-yet-resolved cycle: hold it until the ancestor the
+// cycle targets (cycle_floor) itself leaves.
+static void
+obj_traverse_defer(struct obj_traverse_data *data, VALUE obj)
+{
+    if (!data->pending) {
+        data->pending = rb_ary_new();
+        rb_obj_hide(data->pending);
+    }
+    rb_ary_push(data->pending, obj);
+}
+
+// Called when the node at cycle_floor leaves: every object deferred while
+// that cycle was unresolved is now known-good and can be finalized.
+// Returns true if leave_func requested a stop.
+static bool
+obj_traverse_drain_pending(struct obj_traverse_data *data)
+{
+    if (!data->pending) return false;
+
+    VALUE pending = data->pending;
+    bool stopped = false;
+
+    while (RARRAY_LEN(pending) > 0) {
+        VALUE obj = rb_ary_pop(pending);
+        if (data->leave_func(obj) == traverse_stop) stopped = true;
+    }
+
+    return stopped;
 }
 
 static int
@@ -1341,8 +1400,12 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
       case traverse_stop: return 1; // stop search
     }
 
-    if (UNLIKELY(obj_traverse_rec_insert(data, obj))) {
-        // already traversed
+    int my_depth;
+    if (UNLIKELY(obj_traverse_rec_insert(data, obj, &my_depth))) {
+        // already traversed: a back-edge to a still-open ancestor at my_depth
+        if (data->cycle_floor == -1 || my_depth < data->cycle_floor) {
+            data->cycle_floor = my_depth;
+        }
         return 0;
     }
 
@@ -1437,7 +1500,6 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
                     .stop = false,
                     .data = data,
                 };
-                rb_obj_info_dump(obj);
                 RB_VM_LOCKING_NO_BARRIER() {
                     rb_objspace_reachable_objects_from(obj, obj_traverse_reachable_i, &d);
                 }
@@ -1456,9 +1518,28 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         rb_bug("unreachable");
     }
 
-    enum obj_traverse_iterator_result result = data->leave_func(obj);
+    bool stopped;
+
+    if (data->cycle_floor != -1 && my_depth > data->cycle_floor) {
+        // Inside an unresolved cycle rooted at a shallower ancestor: defer
+        // finalizing until that ancestor's own traversal concludes.
+        obj_traverse_defer(data, obj);
+        stopped = false;
+    }
+    else {
+        stopped = data->leave_func(obj) == traverse_stop;
+
+        if (my_depth == data->cycle_floor) {
+            // obj is the ancestor the cycle targeted, and it just leaves
+            // successfully: everything deferred waiting on it is safe to
+            // finalize now.
+            if (obj_traverse_drain_pending(data)) stopped = true;
+            data->cycle_floor = -1;
+        }
+    }
+
     obj_traverse_rec_remove(data, obj);
-    return result == traverse_stop;
+    return stopped;
 }
 
 // 0: traverse all
@@ -1472,6 +1553,7 @@ rb_obj_traverse(VALUE obj,
         .enter_func = enter_func,
         .leave_func = leave_func,
         .rec = NULL,
+        .cycle_floor = -1,
     };
 
     return obj_traverse_i(obj, &data);
