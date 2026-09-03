@@ -708,6 +708,28 @@ rb_ractor_postmortem_free(const struct rb_ractor_postmortem_frees *pf)
     if (pf->th) rb_thread_free_body(pf->th);
 }
 
+/* A shareable object that is not frozen can be reached by other ractors while it
+ * still mutates, so it is not allowed to carry instance variables.  Record that in
+ * the object's shape with SHAPE_ID_FL_FROZEN, which means "field writes are refused":
+ * it is part of SHAPE_ID_WRITE_MASK, so every setivar inline cache misses and lands in
+ * the slow path, which raises.  The object itself is not FL_FROZEN, which is how the
+ * slow path tells this case from a real freeze.
+ *
+ * Classes and modules are excluded: they have their own field path and their own
+ * ractor rules.  Objects that already carry instance variables are excluded too, so
+ * the flag always means "has no instance variables and never will".
+ */
+void
+rb_obj_mark_no_ivars(VALUE obj)
+{
+    if (!RB_OBJ_FROZEN_RAW(obj) &&
+        !RB_TYPE_P(obj, T_CLASS) && !RB_TYPE_P(obj, T_MODULE) && !RB_TYPE_P(obj, T_ICLASS) &&
+        !rb_obj_shape_has_ivars(obj)) {
+
+        RBASIC_SET_SHAPE_ID(obj, rb_shape_transition_frozen(RBASIC_SHAPE_ID(obj)));
+    }
+}
+
 static VALUE
 ractor_alloc(VALUE klass)
 {
@@ -715,6 +737,7 @@ ractor_alloc(VALUE klass)
     VALUE rv = TypedData_Make_Struct(klass, rb_ractor_t, &ractor_data_type, r);
     FL_SET_RAW(rv, RUBY_FL_SHAREABLE);
     rb_gc_obj_became_shareable(rv);
+    rb_obj_mark_no_ivars(rv);
     r->pub.self = rv;
     r->next_ec_serial = 1;
     VM_ASSERT(ractor_status_p(r, ractor_created));
@@ -831,6 +854,7 @@ rb_ractor_main_setup(rb_vm_t *vm, rb_ractor_t *r, rb_thread_t *th)
     VALUE rv = r->pub.self = TypedData_Wrap_Struct(rb_cRactor, &ractor_data_type, r);
     FL_SET_RAW(r->pub.self, RUBY_FL_SHAREABLE);
     rb_gc_obj_became_shareable(r->pub.self);
+    rb_obj_mark_no_ivars(r->pub.self);
     ractor_init(r, Qnil, Qnil);
     r->threads.main = th;
     rb_ractor_living_threads_insert(r, th);

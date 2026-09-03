@@ -36,6 +36,7 @@
 #include "internal/hash.h"
 #include "internal/object.h"
 #include "internal/proc.h"
+#include "internal/ractor.h"
 #include "internal/st.h"
 #include "internal/symbol.h"
 #include "internal/thread.h"
@@ -7971,6 +7972,7 @@ Init_Hash(void)
     envtbl = TypedData_Wrap_Struct(rb_cObject, &env_data_type, NULL);
     rb_extend_object(envtbl, rb_mEnumerable);
     RB_OBJ_SET_SHAREABLE(envtbl);
+    rb_obj_mark_no_ivars(envtbl);
 
     rb_define_singleton_method(envtbl, "[]", rb_f_getenv, 1);
     rb_define_singleton_method(envtbl, "fetch", env_fetch, -1);

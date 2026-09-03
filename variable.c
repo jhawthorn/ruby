@@ -1993,6 +1993,23 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
     return obj_field_set(obj, target_shape_id, id, val);
 }
 
+/* Refuse an instance variable write, for either reason a shape can carry
+ * SHAPE_ID_FL_FROZEN: the object is frozen, or it became shareable while unfrozen and
+ * so may not carry instance variables at all (see rb_obj_mark_no_ivars in ractor.c).
+ * This is what an instance variable write checks instead of rb_check_frozen. */
+void
+rb_check_ivar_writable(VALUE obj)
+{
+    rb_check_frozen(obj);
+
+    /* Not frozen, so the flag can only have come from rb_obj_mark_no_ivars. */
+    if (UNLIKELY(rb_shape_frozen_p(RBASIC_SHAPE_ID(obj)))) {
+        rb_raise(rb_eRactorIsolationError,
+                 "can not set instance variables of shareable %"PRIsVALUE" objects",
+                 rb_obj_class(obj));
+    }
+}
+
 /* Set the instance variable +val+ on object +obj+ at ivar name +id+.
  * This function only works with T_OBJECT objects, so make sure
  * +obj+ is of type T_OBJECT before using this function.
@@ -2000,7 +2017,7 @@ obj_ivar_set(VALUE obj, ID id, VALUE val)
 VALUE
 rb_vm_set_ivar_id(VALUE obj, ID id, VALUE val)
 {
-    rb_check_frozen(obj);
+    rb_check_ivar_writable(obj);
     obj_ivar_set(obj, id, val);
     return val;
 }
@@ -2059,7 +2076,7 @@ ivar_set(VALUE obj, ID id, VALUE val)
 VALUE
 rb_ivar_set(VALUE obj, ID id, VALUE val)
 {
-    rb_check_frozen(obj);
+    rb_check_ivar_writable(obj);
     ivar_set(obj, id, val);
     return val;
 }

@@ -1609,6 +1609,7 @@ rb_proc_isolate_bang(VALUE self, VALUE replace_self)
     }
 
     RB_OBJ_SET_SHAREABLE(self);
+    rb_obj_mark_no_ivars(self);
     return self;
 }
 
