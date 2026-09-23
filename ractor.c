@@ -3662,8 +3662,7 @@ ractor_native_shallow_copy(VALUE obj)
         rb_struct_init_copy(copy, obj);
         break;
       case T_MATCH:
-        copy = rb_obj_alloc(rb_obj_class(obj));
-        rb_match_init_copy(copy, obj);
+        copy = rb_match_dup(obj);
         break;
       case T_DATA:
         /* Keep a copied exception from carrying a raw pointer to the sender's backtrace

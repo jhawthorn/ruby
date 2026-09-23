@@ -1016,9 +1016,9 @@ match_alloc_n(VALUE klass, int num_regs)
 }
 
 static VALUE
-match_alloc(VALUE klass)
+match_alloc_copy(VALUE orig)
 {
-    return match_alloc_n(klass, 0);
+    return match_alloc_n(rb_obj_class(orig), RMATCH_NREGS(orig));
 }
 
 int
@@ -1236,9 +1236,7 @@ update_char_offset(VALUE match)
 static VALUE
 match_check(VALUE match)
 {
-    if (!RMATCH(match)->regexp) {
-        rb_raise(rb_eTypeError, "uninitialized MatchData");
-    }
+    RUBY_ASSERT(RMATCH(match)->regexp);
     return match;
 }
 
@@ -1269,6 +1267,26 @@ rb_match_init_copy(VALUE obj, VALUE orig)
     return obj;
 }
 
+VALUE
+rb_match_dup(VALUE orig)
+{
+    return rb_match_init_copy(match_alloc_copy(orig), orig);
+}
+
+/* :nodoc: */
+static VALUE
+match_dup(VALUE self)
+{
+    return rb_obj_dup_setup(self, match_alloc_copy(self));
+}
+
+/* :nodoc: */
+static VALUE
+match_clone(int argc, VALUE *argv, VALUE self)
+{
+    VALUE kwfreeze = rb_get_freeze_opt(argc, argv);
+    return rb_obj_clone_setup(self, match_alloc_copy(self), kwfreeze);
+}
 
 /*
  *  call-seq:
@@ -2783,12 +2801,9 @@ match_inspect(VALUE match)
     int num_regs = RMATCH_NREGS(match);
     struct backref_name_tag *names;
     VALUE names_obj = Qnil;
-    VALUE regexp = RMATCH(match)->regexp;
+    VALUE regexp = RMATCH(match_check(match))->regexp;
 
-    if (regexp == 0) {
-        return rb_sprintf("#<%"PRIsVALUE":%p>", cname, (void*)match);
-    }
-    else if (NIL_P(regexp)) {
+    if (NIL_P(regexp)) {
         return rb_sprintf("#<%"PRIsVALUE": %"PRIsVALUE">",
                           cname, rb_reg_nth_match(0, match));
     }
@@ -3793,7 +3808,8 @@ match_equal(VALUE match1, VALUE match2)
 {
     if (match1 == match2) return Qtrue;
     if (!RB_TYPE_P(match2, T_MATCH)) return Qfalse;
-    if (!RMATCH(match1)->regexp || !RMATCH(match2)->regexp) return Qfalse;
+    match_check(match1);
+    match_check(match2);
     if (!rb_str_equal(RMATCH(match1)->str, RMATCH(match2)->str)) return Qfalse;
     if (!rb_reg_equal(match_regexp(match1), match_regexp(match2))) return Qfalse;
     int num_regs = RMATCH_NREGS(match1);
@@ -5151,11 +5167,13 @@ Init_Regexp(void)
     rb_global_variable(&reg_cache);
 
     rb_cMatch  = rb_define_class("MatchData", rb_cObject);
-    rb_define_alloc_func(rb_cMatch, match_alloc);
+    rb_undef_alloc_func(rb_cMatch);
     rb_undef_method(CLASS_OF(rb_cMatch), "new");
     rb_undef_method(CLASS_OF(rb_cMatch), "allocate");
 
     rb_define_method(rb_cMatch, "initialize_copy", rb_match_init_copy, 1);
+    rb_define_method(rb_cMatch, "dup", match_dup, 0);
+    rb_define_method(rb_cMatch, "clone", match_clone, -1);
     rb_define_method(rb_cMatch, "regexp", match_regexp, 0);
     rb_define_method(rb_cMatch, "names", match_names, 0);
     rb_define_method(rb_cMatch, "size", match_size, 0);

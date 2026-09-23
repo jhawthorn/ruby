@@ -520,6 +520,17 @@ class TestRegexp < Test::Unit::TestCase
     end
     assert_equal([0, 3], m.offset(0))
     assert_equal(/foo/, m.dup.regexp)
+
+    # Large enough to not fit in the embedded registers
+    m = Regexp.new("(a)" * 50).match("a" * 50)
+    dup = m.dup
+    assert_equal(m, dup)
+    assert_equal(51, dup.size)
+    assert_equal([49, 50], dup.offset(50))
+
+    clone = m.clone(freeze: true)
+    assert_predicate(clone, :frozen?)
+    assert_equal(m.to_a, clone.to_a)
   end
 
   def test_match_size
@@ -1416,30 +1427,8 @@ class TestRegexp < Test::Unit::TestCase
     assert_raise(TypeError) { Regexp.allocate.named_captures }
 
     assert_not_respond_to(MatchData, :allocate)
-=begin
-    assert_raise(TypeError) { MatchData.allocate.hash }
-    assert_raise(TypeError) { MatchData.allocate.regexp }
-    assert_raise(TypeError) { MatchData.allocate.names }
-    assert_raise(TypeError) { MatchData.allocate.size }
-    assert_raise(TypeError) { MatchData.allocate.length }
-    assert_raise(TypeError) { MatchData.allocate.offset(0) }
-    assert_raise(TypeError) { MatchData.allocate.begin(0) }
-    assert_raise(TypeError) { MatchData.allocate.end(0) }
-    assert_raise(TypeError) { MatchData.allocate.to_a }
-    assert_raise(TypeError) { MatchData.allocate[:foo] }
-    assert_raise(TypeError) { MatchData.allocate.captures }
-    assert_raise(TypeError) { MatchData.allocate.values_at }
-    assert_raise(TypeError) { MatchData.allocate.pre_match }
-    assert_raise(TypeError) { MatchData.allocate.post_match }
-    assert_raise(TypeError) { MatchData.allocate.to_s }
-    assert_match(/^#<MatchData:.*>$/, MatchData.allocate.inspect)
-    assert_raise(TypeError) { MatchData.allocate.string }
-    $~ = MatchData.allocate
-    assert_raise(TypeError) { $& }
-    assert_raise(TypeError) { $` }
-    assert_raise(TypeError) { $' }
-    assert_raise(TypeError) { $+ }
-=end
+    assert_raise(NoMethodError) { MatchData.allocate }
+    assert_raise(TypeError) { Class.instance_method(:allocate).bind_call(MatchData) }
   end
 
   def test_unicode
