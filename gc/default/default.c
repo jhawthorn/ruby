@@ -1235,6 +1235,13 @@ slot_index_for_offset(size_t offset, uint64_t reciprocal)
     return (uint32_t)(((uint64_t)offset * reciprocal) >> SLOT_RECIPROCAL_SHIFT);
 }
 
+static inline bool
+slot_offset_aligned_p(const struct heap_page *page, uintptr_t p)
+{
+    size_t offset = p - page->start;
+    return slot_index_for_offset(offset, page->slot_size_reciprocal) * page->slot_size == offset;
+}
+
 #define SLOT_INDEX(page, p)          slot_index_for_offset((uintptr_t)(p) - (page)->start, (page)->slot_size_reciprocal)
 #define SLOT_BITMAP_INDEX(page, p)   (SLOT_INDEX(page, p) / BITS_BITLENGTH)
 #define SLOT_BITMAP_OFFSET(page, p)  (SLOT_INDEX(page, p) & (BITS_BITLENGTH - 1))
@@ -3688,7 +3695,7 @@ is_pointer_to_heap(rb_objspace_t *objspace, const void *ptr)
         else {
             if (p < page->start) return FALSE;
             if (p >= page->start + (page->total_slots * page->slot_size)) return FALSE;
-            if ((p - page->start) % page->slot_size != 0) return FALSE;
+            if (!slot_offset_aligned_p(page, p)) return FALSE;
 
             return TRUE;
         }
@@ -6454,7 +6461,7 @@ gc_global_pointer_to_heap_p(const void *ptr)
     if (heap_page_in_global_empty_pages_pool(page->objspace, page)) return false;
     if (p < page->start) return false;
     if (p >= page->start + (page->total_slots * page->slot_size)) return false;
-    if ((p - page->start) % page->slot_size != 0) return false;
+    if (!slot_offset_aligned_p(page, p)) return false;
     return true;
 }
 
