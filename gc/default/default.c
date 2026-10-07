@@ -6465,13 +6465,11 @@ gc_global_pointer_to_heap_p(const void *ptr)
     return true;
 }
 
-void
-rb_gc_impl_mark_maybe(void *objspace_ptr, VALUE obj)
+NOINLINE(static void gc_mark_maybe(rb_objspace_t *objspace, VALUE obj));
+
+static void
+gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
 {
-    rb_objspace_t *objspace = objspace_ptr;
-
-    (void)VALGRIND_MAKE_MEM_DEFINED(&obj, sizeof(obj));
-
     if (RB_UNLIKELY(objspace->flags.during_global_gc)
             ? gc_global_pointer_to_heap_p((void *)obj)
             : is_pointer_to_heap(objspace, (void *)obj)) {
@@ -6487,6 +6485,17 @@ rb_gc_impl_mark_maybe(void *objspace_ptr, VALUE obj)
             }
         }
     }
+}
+
+void
+rb_gc_impl_mark_maybe(void *objspace_ptr, VALUE obj)
+{
+    (void)VALGRIND_MAKE_MEM_DEFINED(&obj, sizeof(obj));
+
+    const rb_global_objspace_t *g = global_objspace;
+    if ((uintptr_t)obj < g->page_index.lomem || (uintptr_t)obj > g->page_index.himem) return;
+
+    gc_mark_maybe(objspace_ptr, obj);
 }
 
 static int

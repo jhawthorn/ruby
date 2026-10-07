@@ -2978,10 +2978,24 @@ gc_mark_and_pin_internal(const struct rb_gc_mark_ctx *ctx, VALUE obj)
     RB_GC_MARK_OR_TRAVERSE(ctx, rb_gc_impl_mark_and_pin, obj, obj, false);
 }
 
+NOINLINE(static void gc_mark_maybe_traverse(const struct rb_gc_mark_ctx *ctx, VALUE obj));
+
+static void
+gc_mark_maybe_traverse(const struct rb_gc_mark_ctx *ctx, VALUE obj)
+{
+    RB_GC_MARK_OR_TRAVERSE(ctx, rb_gc_impl_mark_maybe, obj, obj, true);
+}
+
 static inline void
 gc_mark_maybe_internal(const struct rb_gc_mark_ctx *ctx, VALUE obj)
 {
-    RB_GC_MARK_OR_TRAVERSE(ctx, rb_gc_impl_mark_maybe, obj, obj, true);
+    if (LIKELY(*ctx->mfdp == NULL)) {
+        GC_ASSERT(rb_gc_impl_during_gc_p(ctx->objspace));
+        rb_gc_impl_mark_maybe(ctx->objspace, obj);
+    }
+    else {
+        gc_mark_maybe_traverse(ctx, obj);
+    }
 }
 
 static inline void
