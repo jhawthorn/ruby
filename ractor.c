@@ -2855,7 +2855,9 @@ courier_capture(struct courier_build *b, VALUE obj)
 
     bool frozen = OBJ_FROZEN(obj);
     b->c->nodes[id].frozen = frozen;
-    courier_capture_ivars(b, obj, id);   /* shared: instance and generic ivars */
+    if (rb_obj_shape_has_ivars(obj)) {
+        courier_capture_ivars(b, obj, id);   /* shared: instance and generic ivars */
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       case T_STRING: {
