@@ -8477,7 +8477,9 @@ void
 rb_gc_impl_obj_became_shareable(void *objspace_ptr, VALUE obj)
 {
     /* An object becomes shareable on its owner thread, so this page update is
-     * single-writer. */
+     * single-writer.  Promoting a foreign object would race the owner's allocation and
+     * sweeping on the same bitmap words. */
+    GC_ASSERT(!gc_foreign_object_p(objspace_ptr, obj));
     struct heap_page *page = GET_HEAP_PAGE(obj);
 
     if (_MARKED_IN_BITMAP(page->shareable_bits, page, obj)) return;
