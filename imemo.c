@@ -502,6 +502,10 @@ rb_imemo_mark_and_move(const struct rb_gc_mark_ctx *ctx, VALUE obj, bool referen
       case imemo_ifunc: {
         struct vm_ifunc *ifunc = (struct vm_ifunc *)obj;
 
+        if (FL_TEST_RAW(obj, IFUNC_SVAR_ESCAPED)) {
+            rb_gc_mark_and_move(&ifunc->svar_lep[VM_ENV_DATA_INDEX_ENV]);
+        }
+
         if (!reference_updating) {
             rb_gc_mark_maybe_ctx(ctx, (VALUE)ifunc->data);
         }

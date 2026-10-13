@@ -1110,6 +1110,8 @@ struct rb_execution_context_struct {
     /* eval env */
     const VALUE *root_lep;
     VALUE root_svar;
+    VALUE svar_table; /* Weak escaped env keys, strong fiber-local svar values. */
+    const struct rb_execution_context_struct *svar_parent; /* Transparent fiber's resumer. */
 
     /* trace information */
     struct rb_trace_arg_struct *trace_arg;
@@ -2103,6 +2105,7 @@ typedef int rb_backtrace_iter_func(void *, VALUE, int, VALUE);
 rb_control_frame_t *rb_vm_get_ruby_level_next_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
 rb_control_frame_t *rb_vm_get_binding_creatable_next_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
 VALUE *rb_vm_svar_lep(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
+void rb_vm_svar_lep_escape(const rb_execution_context_t *ec);
 int rb_vm_get_sourceline(const rb_control_frame_t *);
 void rb_vm_stack_to_heap(rb_execution_context_t *ec);
 void ruby_thread_init_stack(rb_thread_t *th, void *local_in_parent_frame);
@@ -2159,7 +2162,7 @@ RUBY_EXTERN unsigned int ruby_vm_c_events_enabled;
 #define GET_EC()     rb_current_execution_context(true)
 
 static inline rb_serial_t
-rb_ec_serial(struct rb_execution_context_struct *ec)
+rb_ec_serial(const struct rb_execution_context_struct *ec)
 {
     VM_ASSERT(ec->serial >= 1);
     return ec->serial;

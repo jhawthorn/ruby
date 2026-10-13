@@ -132,13 +132,17 @@ English - `$ERROR_POSITION`.
 These global variables store information about the most recent
 successful match in the current scope.
 
+They are local to both the method frame and the fiber. A fiber created with
+`transparent: true` shares captured frames' special variables with its resumer;
+see Fiber.new. Enumerator uses this behavior for external iteration.
+
 For details and examples,
 see [Regexp Global Variables].
 
 ### `$~` (\MatchData)
 
 MatchData object created from the match;
-thread-local and frame-local.
+fiber-local and frame-local.
 
 English - `$LAST_MATCH_INFO`.
 
@@ -244,6 +248,9 @@ English - `$INPUT_LINE_NUMBER`, `$NR`
 ### `$_` (Last Read Line)
 
 The line (string) from the most recently read stream.
+
+Like `$~`, it is local to both the method frame and the fiber, with captured
+frames shared by transparent fibers; see Fiber.new.
 
 English - `$LAST_READ_LINE`.
 
@@ -608,4 +615,3 @@ Output:
 [command-line option `-w`]: rdoc-ref:language/options.md@-w-synonym-for--w1
 
 [Regexp Global Variables]: rdoc-ref:Regexp@Global+Variables
-

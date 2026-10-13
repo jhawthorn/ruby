@@ -288,6 +288,7 @@ struct rb_fiber_struct {
     /* Whether the fiber is allowed to implicitly yield. */
     unsigned int yielding : 1;
     unsigned int blocking : 1;
+    unsigned int transparent : 1;
 
     unsigned int killed : 1;
 
@@ -308,7 +309,7 @@ rb_free_shared_fiber_pool(void)
     }
 }
 
-static ID fiber_initialize_keywords[3] = {0};
+static ID fiber_initialize_keywords[4] = {0};
 
 static CCAN_LIST_HEAD(fiber_pool_list);
 static rb_nativethread_lock_t fiber_pool_list_lock;
@@ -2320,6 +2321,8 @@ fiber_t_alloc(VALUE fiber_value, unsigned int blocking)
 
     fiber->cont.saved_ec.fiber_ptr = fiber;
     fiber->cont.saved_ec.serial = next_ec_serial(th->ractor);
+    fiber->cont.saved_ec.svar_table = Qnil;
+    fiber->cont.saved_ec.svar_parent = NULL;
     rb_ec_clear_vm_stack(&fiber->cont.saved_ec);
 
     fiber->prev = NULL;
@@ -2514,7 +2517,7 @@ rb_fiber_storage_aset(VALUE class, VALUE key, VALUE value)
 }
 
 static VALUE
-fiber_initialize(VALUE self, VALUE proc, struct fiber_pool * fiber_pool, unsigned int blocking, VALUE storage)
+fiber_initialize(VALUE self, VALUE proc, struct fiber_pool * fiber_pool, unsigned int blocking, VALUE storage, bool transparent)
 {
     if (storage == Qundef || storage == Qtrue) {
         // The default, inherit storage (dup) from the current fiber:
@@ -2527,6 +2530,7 @@ fiber_initialize(VALUE self, VALUE proc, struct fiber_pool * fiber_pool, unsigne
 
     rb_fiber_t *fiber = fiber_t_alloc(self, blocking);
 
+    fiber->transparent = transparent;
     fiber->cont.saved_ec.storage = storage;
     fiber->first_proc = proc;
     fiber->stack.base = NULL;
@@ -2574,13 +2578,14 @@ rb_fiber_initialize_kw(int argc, VALUE* argv, VALUE self, int kw_splat)
     VALUE pool = Qnil;
     VALUE blocking = Qfalse;
     VALUE storage = Qundef;
+    VALUE transparent = Qfalse;
 
     if (kw_splat != RB_NO_KEYWORDS) {
         VALUE options = Qnil;
-        VALUE arguments[3] = {Qundef};
+        VALUE arguments[4];
 
         argc = rb_scan_args_kw(kw_splat, argc, argv, ":", &options);
-        rb_get_kwargs(options, fiber_initialize_keywords, 0, 3, arguments);
+        rb_get_kwargs(options, fiber_initialize_keywords, 0, 4, arguments);
 
         if (!UNDEF_P(arguments[0])) {
             blocking = arguments[0];
@@ -2591,14 +2596,17 @@ rb_fiber_initialize_kw(int argc, VALUE* argv, VALUE self, int kw_splat)
         }
 
         storage = arguments[2];
+        if (!UNDEF_P(arguments[3])) {
+            transparent = arguments[3];
+        }
     }
 
-    return fiber_initialize(self, rb_block_proc(), rb_fiber_pool_default(pool), RTEST(blocking), storage);
+    return fiber_initialize(self, rb_block_proc(), rb_fiber_pool_default(pool), RTEST(blocking), storage, RTEST(transparent));
 }
 
 /*
  *  call-seq:
- *     Fiber.new(blocking: false, storage: true) { |*args| ... } -> fiber
+ *     Fiber.new(blocking: false, storage: true, transparent: false) { |*args| ... } -> fiber
  *
  *  Creates new Fiber. Initially, the fiber is not running and can be resumed
  *  with #resume. Arguments to the first #resume call will be passed to the
@@ -2619,6 +2627,24 @@ rb_fiber_initialize_kw(int argc, VALUE* argv, VALUE self, int kw_splat)
  *  If <tt>blocking: false</tt> is passed to <tt>Fiber.new</tt>, _and_ current
  *  thread has a Fiber.scheduler defined, the Fiber becomes non-blocking (see
  *  "Non-blocking Fibers" section in class docs).
+ *
+ *  By default, special variables such as <tt>$~</tt>, <tt>$1</tt>, and
+ *  <tt>$_</tt> are local to both the fiber and the method frame.
+ *  With <tt>transparent: true</tt>, captured frames share their special
+ *  variables with the fiber that calls #resume. Methods called within the
+ *  transparent fiber still have their own special variables. The resumer
+ *  may change between calls to #resume.
+ *
+ *    /(a)/ =~ "a"
+ *    Fiber.new(transparent: true) do
+ *      p $1 # => "a"
+ *      /(b)/ =~ "b"
+ *    end.resume
+ *    p $1 # => "b"
+ *
+ *  Control cannot be transferred to or from a transparent fiber with
+ *  #transfer; use #resume and Fiber.yield instead. Enumerator uses
+ *  transparent fibers for external iteration.
  *
  *  If the <tt>storage</tt> is unspecified, the default is to inherit a copy of
  *  the storage from the current fiber. This is the same as specifying
@@ -2654,7 +2680,16 @@ rb_fiber_initialize(int argc, VALUE* argv, VALUE self)
 VALUE
 rb_fiber_new_storage(rb_block_call_func_t func, VALUE obj, VALUE storage)
 {
-    return fiber_initialize(fiber_alloc(rb_cFiber), rb_proc_new(func, obj), rb_fiber_pool_default(Qnil), 0, storage);
+    return fiber_initialize(fiber_alloc(rb_cFiber), rb_proc_new(func, obj), rb_fiber_pool_default(Qnil), 0, storage, false);
+}
+
+VALUE
+rb_fiber_new_transparent(rb_block_call_func_t func, VALUE obj)
+{
+    /* A C callback also needs the caller's special-variable frame when no
+     * Ruby block has caused that frame to escape yet. */
+    rb_vm_svar_lep_escape(GET_EC());
+    return fiber_initialize(fiber_alloc(rb_cFiber), rb_proc_new(func, obj), rb_fiber_pool_default(Qnil), 0, Qtrue, true);
 }
 
 VALUE
@@ -2808,6 +2843,7 @@ rb_fiber_start(rb_fiber_t *fiber_arg)
         th->ec->errinfo = Qnil;
         th->ec->root_lep = rb_vm_proc_local_ep(fiber->first_proc);
         th->ec->root_svar = Qfalse;
+        th->ec->svar_table = Qnil;
 
         EXEC_EVENT_HOOK(th->ec, RUBY_EVENT_FIBER_SWITCH, th->self, 0, 0, 0, Qnil);
         const rb_cref_t *cref = rb_proc_refinements_cref_for_call(fiber->first_proc);
@@ -2899,6 +2935,8 @@ rb_threadptr_root_fiber_terminate(rb_thread_t *th)
 
     fiber->status = FIBER_TERMINATED;
 
+    th->ec->svar_table = Qnil;
+
     // The vm_stack is `alloca`ed on the thread stack, so it's gone too:
     rb_ec_clear_vm_stack(th->ec);
 }
@@ -2911,6 +2949,7 @@ return_fiber(bool terminate)
 
     if (prev) {
         fiber->prev = NULL;
+        fiber->cont.saved_ec.svar_parent = NULL;
         prev->resuming_fiber = NULL;
         return prev;
     }
@@ -3033,6 +3072,9 @@ fiber_switch(rb_fiber_t *fiber, int argc, const VALUE *argv, int kw_splat, rb_fi
         current_fiber->resuming_fiber = resuming_fiber;
         fiber->prev = fiber_current();
         fiber->yielding = 0;
+        if (fiber->transparent) {
+            cont->saved_ec.svar_parent = th->ec;
+        }
     }
 
     VM_ASSERT(!current_fiber->yielding);
@@ -3079,10 +3121,20 @@ fiber_switch(rb_fiber_t *fiber, int argc, const VALUE *argv, int kw_splat, rb_fi
     return value;
 }
 
+static void
+fiber_check_transparent_transfer(rb_fiber_t *fiber)
+{
+    if (fiber->transparent || fiber_current()->transparent) {
+        rb_raise(rb_eFiberError, "cannot transfer to or from a transparent fiber");
+    }
+}
+
 VALUE
 rb_fiber_transfer(VALUE fiber_value, int argc, const VALUE *argv)
 {
-    return fiber_switch(fiber_ptr(fiber_value), argc, argv, RB_NO_KEYWORDS, NULL, false);
+    rb_fiber_t *fiber = fiber_ptr(fiber_value);
+    fiber_check_transparent_transfer(fiber);
+    return fiber_switch(fiber, argc, argv, RB_NO_KEYWORDS, NULL, false);
 }
 
 /*
@@ -3395,6 +3447,8 @@ rb_fiber_backtrace_locations(int argc, VALUE *argv, VALUE fiber)
  *  call-seq:
  *     fiber.transfer(args, ...) -> obj
  *
+ *  Raises FiberError if either fiber was created with <tt>transparent: true</tt>.
+ *
  *  Transfer control to another fiber, resuming it from where it last
  *  stopped or starting it if it was not resumed before. The calling
  *  fiber will be suspended much like in a call to
@@ -3482,6 +3536,8 @@ rb_fiber_m_transfer(int argc, VALUE *argv, VALUE self)
 static VALUE
 fiber_transfer_kw(rb_fiber_t *fiber, int argc, const VALUE *argv, int kw_splat)
 {
+  fiber_check_transparent_transfer(fiber);
+
   if (fiber->resuming_fiber) {
       rb_raise(rb_eFiberError, "attempt to transfer to a resuming fiber");
   }
@@ -3824,6 +3880,7 @@ Init_Cont(void)
     fiber_initialize_keywords[0] = rb_intern_const("blocking");
     fiber_initialize_keywords[1] = rb_intern_const("pool");
     fiber_initialize_keywords[2] = rb_intern_const("storage");
+    fiber_initialize_keywords[3] = rb_intern_const("transparent");
 
     const char *fiber_shared_fiber_pool_free_stacks = getenv("RUBY_SHARED_FIBER_POOL_FREE_STACKS");
     if (fiber_shared_fiber_pool_free_stacks) {

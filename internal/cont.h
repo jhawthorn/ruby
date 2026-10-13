@@ -15,6 +15,7 @@ struct rb_fiber_struct;         /* in cont.c */
 struct rb_execution_context_struct; /* in vm_core.c */
 
 /* cont.c */
+VALUE rb_fiber_new_transparent(rb_block_call_func_t func, VALUE obj);
 void rb_fiber_reset_root_local_storage(struct rb_thread_struct *);
 void ruby_register_rollback_func_for_ensure(VALUE (*ensure_func)(VALUE), VALUE (*rollback_func)(VALUE));
 

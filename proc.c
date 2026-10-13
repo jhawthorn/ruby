@@ -1493,6 +1493,10 @@ rb_vm_ifunc_new(rb_block_call_func_t func, const void *data, int min_argc, int m
 
     struct vm_ifunc *ifunc = IMEMO_NEW(struct vm_ifunc, imemo_ifunc, (VALUE)rb_vm_svar_lep(ec, ec->cfp));
 
+    if (ifunc->svar_lep && VM_ENV_ESCAPED_P(ifunc->svar_lep)) {
+        FL_SET_RAW((VALUE)ifunc, IFUNC_SVAR_ESCAPED);
+    }
+
     rb_gc_register_pinning_obj((VALUE)ifunc);
 
     ifunc->func = func;

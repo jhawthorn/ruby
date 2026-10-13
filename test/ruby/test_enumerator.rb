@@ -38,6 +38,84 @@ class TestEnumerator < Test::Unit::TestCase
     assert_raise(StopIteration){e.next}
   end
 
+  def test_next_reads_special_variables
+    /(b)/ =~ 'abc'
+    enum = [1, 2].lazy.map { |i| "#{$1}#{i}" }
+    assert_equal('b1', enum.next)
+    /(c)/ =~ 'abc'
+    assert_equal('c2', enum.next)
+  end
+
+  def test_next_writes_special_variables
+    enum = %w[first second].lazy.select { |line| /(.+)/ =~ line }
+    assert_equal('first', enum.next)
+    assert_equal('first', $1)
+    assert_equal('second', enum.next)
+    assert_equal('second', $1)
+  end
+
+  def test_next_gsub_special_variables
+    enum = 'ab'.gsub(/(.)/)
+    assert_equal('a', enum.next)
+    assert_equal('a', $1)
+    enum.feed('A')
+    assert_equal('b', enum.next)
+    assert_equal('b', $1)
+    enum.feed('B')
+    assert_equal('AB', assert_raise(StopIteration) { enum.next }.result)
+  end
+
+  def test_next_gsub_after_caller_returns
+    object = Object.new
+    def object.iterator
+      enum = 'ab'.gsub(/(.)/)
+      enum.next
+      enum
+    end
+    enum = object.iterator
+    GC.start
+    if GC.respond_to?(:compact)
+      GC.verify_compaction_references(expand_heap: true, toward: :empty)
+    end
+    assert_equal('b', enum.next)
+  end
+
+  def test_next_special_variables_follow_resumer
+    /(main)/ =~ 'main'
+    $_ = 'main'
+    enum = [1, 2].lazy.map { |i| [$1, $_, i] }
+    first = Fiber.new do
+      /(first)/ =~ 'first'
+      $_ = 'first'
+      enum.next
+    end
+    second = Fiber.new do
+      /(second)/ =~ 'second'
+      $_ = 'second'
+      enum.next
+    end
+
+    assert_equal(['first', 'first', 1], first.resume)
+    assert_equal(['second', 'second', 2], second.resume)
+    assert_equal(['main', 'main'], [$1, $_])
+  end
+
+  def test_next_keeps_method_special_variables
+    object = Object.new
+    def object.each
+      /(inner)/ =~ 'inner'
+      $_ = 'inner'
+      yield [$1, $_]
+      yield [$1, $_]
+    end
+    /(outer)/ =~ 'outer'
+    $_ = 'outer'
+    enum = object.to_enum
+    assert_equal(['inner', 'inner'], enum.next)
+    assert_equal(['outer', 'outer'], [$1, $_])
+    assert_equal(['inner', 'inner'], enum.next)
+  end
+
   def test_loop
     e = 3.times
     i = 0

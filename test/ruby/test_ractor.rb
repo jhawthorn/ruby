@@ -2,6 +2,38 @@
 require 'test/unit'
 
 class TestRactor < Test::Unit::TestCase
+  def test_shareable_proc_special_variables
+    assert_ractor(<<~'RUBY')
+      def variables
+        Ractor.shareable_proc do |value = nil|
+          if value
+            /(.+)/ =~ value
+            $_ = value
+            Thread.pass
+          end
+          [$1, $_]
+        end
+      end
+
+      shared = variables
+      ractors = %w[first second].map do |value|
+        Ractor.new(shared, value) do |accessor, value|
+          100.times do
+            actual = accessor.call(value)
+            raise actual.inspect unless actual == [value, value]
+          end
+          isolated = Fiber.new { accessor.call }.resume
+          transparent = Fiber.new(transparent: true) { accessor.call }.resume
+          [isolated, transparent]
+        end
+      end
+
+      assert_equal([[nil, nil], ['first', 'first']], ractors[0].value)
+      assert_equal([[nil, nil], ['second', 'second']], ractors[1].value)
+      assert_equal([nil, nil], shared.call)
+    RUBY
+  end
+
   def test_shareability_of_iseq_proc
     assert_raise Ractor::IsolationError do
       foo = []

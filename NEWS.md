@@ -11,6 +11,10 @@ Note that each entry is kept to a minimum, see links for details.
   method now works correctly.
   [[Feature #22309]]
 
+* Special variables such as `$~`, `$1`, and `$_` are local to both the method
+  frame and the fiber, including when a `Proc` or `Binding` is shared across
+  threads or fibers. [[Bug #22216]]
+
 * `Module#clone` and `Module#dup` no longer rewrite the lexical scope of
   copied methods. Constants and class variables resolve through the
   original class, consistent with inheritance and mixins.
@@ -61,6 +65,14 @@ Note: We're only listing outstanding class updates.
     * `ENV.fetch_values` is added. It returns an array of values for the
       given names, raising `KeyError` for missing names unless a block is
       given. [[Feature #21781]]
+
+* Fiber
+
+    * `Fiber.new` accepts `transparent: true` to share captured frames' special
+      variables with the fiber that resumes it. Methods called within the fiber
+      retain their own special variables. Transparent fibers cannot use
+      `transfer`. `Enumerator` uses transparent fibers for external iteration.
+      [[Bug #22216]]
 
 * Fiber::Scheduler
 
@@ -639,6 +651,7 @@ A lot of work has gone into making Ractors more stable, performant, and usable. 
 
 [Bug #18661]: https://bugs.ruby-lang.org/issues/18661
 [Bug #18947]: https://bugs.ruby-lang.org/issues/18947
+[Bug #22216]: https://bugs.ruby-lang.org/issues/22216
 [Bug #22273]: https://bugs.ruby-lang.org/issues/22273
 [Bug #22276]: https://bugs.ruby-lang.org/issues/22276
 [Bug #22379]: https://bugs.ruby-lang.org/issues/22379

@@ -75,6 +75,8 @@ VALUE vm_exec(rb_execution_context_t *);
 
 extern const char *const rb_debug_counter_names[];
 
+static VALUE *vm_ifunc_svar_lep(struct vm_ifunc *ifunc);
+
 PUREFUNC(static inline const VALUE *VM_EP_LEP(const VALUE *));
 static inline const VALUE *
 VM_EP_LEP(const VALUE *ep)
@@ -1171,6 +1173,14 @@ vm_make_env_each(const rb_execution_context_t * const ec, rb_control_frame_t *co
         local_size += VM_ENV_DATA_SIZE;
     }
 
+    /* An escaped local frame must remain local to a transparent fiber even
+     * after it returns, or before its first special-variable access. */
+    if (ec->svar_parent && VM_ENV_LOCAL_P(ep) &&
+            !imemo_type_p(ep[VM_ENV_DATA_INDEX_ME_CREF], imemo_svar)) {
+        struct vm_svar *svar = svar_new(ep[VM_ENV_DATA_INDEX_ME_CREF], rb_ec_serial(ec));
+        VM_STACK_ENV_WRITE(ep, VM_ENV_DATA_INDEX_ME_CREF, (VALUE)svar);
+    }
+
     // Invalidate JIT code that assumes cfp->ep == vm_base_ptr(cfp).
     // This is done before creating the imemo_env because VM_STACK_ENV_WRITE
     // below leaves the on-stack ep in a state that is unsafe to GC.
@@ -1746,22 +1756,9 @@ rb_vm_make_proc_lambda(const rb_execution_context_t *ec, const struct rb_capture
 
     if (code_type == imemo_ifunc) {
         struct vm_ifunc *ifunc = (struct vm_ifunc *)captured->code.val;
-        if (ifunc->svar_lep) {
-            VALUE ep0 = ifunc->svar_lep[0];
-            if (RB_TYPE_P(ep0, T_IMEMO) && imemo_type_p(ep0, imemo_env)) {
-                // `ep0 == imemo_env` means this ep is escaped to heap (in env object).
-                const rb_env_t *env = (const rb_env_t *)ep0;
-                ifunc->svar_lep = (VALUE *)env->ep;
-            }
-            else {
-                VM_ASSERT(FIXNUM_P(ep0));
-                if (ep0 & VM_ENV_FLAG_ESCAPED) {
-                    // ok. do nothing
-                }
-                else {
-                    ifunc->svar_lep = NULL;
-                }
-            }
+        VALUE *lep = vm_ifunc_svar_lep(ifunc);
+        if (lep && !VM_ENV_ESCAPED_P(lep)) {
+            ifunc->svar_lep = NULL;
         }
     }
 
@@ -2108,13 +2105,44 @@ rb_vm_invoke_proc_with_self(rb_execution_context_t *ec, rb_proc_t *proc, VALUE s
 
 /* special variable */
 
+static VALUE *
+vm_ifunc_svar_lep(struct vm_ifunc *ifunc)
+{
+    if (ifunc->svar_lep) {
+        VALUE ep0 = ifunc->svar_lep[0];
+        /* The captured stack frame may have escaped since the ifunc was
+         * created. vm_make_env_each leaves its env in the old ep[0]. */
+        if (imemo_type_p(ep0, imemo_env)) {
+            ifunc->svar_lep = (VALUE *)((const rb_env_t *)ep0)->ep;
+            FL_SET_RAW((VALUE)ifunc, IFUNC_SVAR_ESCAPED);
+            RB_OBJ_WRITTEN((VALUE)ifunc, Qundef, VM_ENV_ENVVAL(ifunc->svar_lep));
+        }
+    }
+    return ifunc->svar_lep;
+}
+
+void
+rb_vm_svar_lep_escape(const rb_execution_context_t *ec)
+{
+    VALUE *lep = rb_vm_svar_lep(ec, ec->cfp);
+    if (lep && !VM_ENV_ESCAPED_P(lep)) {
+        const rb_control_frame_t *owner = rb_vm_search_cf_from_ep(ec, ec->cfp, lep);
+        VM_ASSERT(owner != NULL);
+        /* Escape from the youngest frame down, so active blocks update their
+         * parent links when the local frame moves off the stack. */
+        for (rb_control_frame_t *cfp = ec->cfp; cfp <= owner; cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
+            if (CFP_ISEQ(cfp) || cfp == owner) vm_make_env_object(ec, cfp);
+        }
+    }
+}
+
 VALUE *
 rb_vm_svar_lep(const rb_execution_context_t *ec, const rb_control_frame_t *cfp)
 {
     while (!CFP_PC(cfp) || !CFP_ISEQ(cfp)) {
         if (VM_FRAME_TYPE(cfp) == VM_FRAME_MAGIC_IFUNC) {
             struct vm_ifunc *ifunc = (struct vm_ifunc *)CFP_ISEQ(cfp);
-            return ifunc->svar_lep;
+            return vm_ifunc_svar_lep(ifunc);
         }
         else {
             cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
@@ -3996,6 +4024,7 @@ rb_execution_context_mark(const rb_execution_context_t *ec)
 
     rb_gc_mark(ec->errinfo);
     rb_gc_mark(ec->root_svar);
+    rb_gc_mark(ec->svar_table);
     if (ec->local_storage) {
         rb_id_table_foreach_values(ec->local_storage, mark_local_storage_i, NULL);
     }
@@ -4209,6 +4238,8 @@ rb_ec_close(rb_execution_context_t *ec)
 {
     // Fiber storage is not accessible from outside the running fiber, so it is safe to clear it here.
     ec->storage = Qnil;
+    ec->svar_table = Qnil;
+    ec->svar_parent = NULL;
 }
 
 static void
@@ -4255,6 +4286,7 @@ th_init(rb_thread_t *th, VALUE self, rb_vm_t *vm)
 
     th->ec->errinfo = Qnil;
     th->ec->root_svar = Qfalse;
+    th->ec->svar_table = Qnil;
     th->ec->local_storage_recursive_hash = Qnil;
     th->ec->local_storage_recursive_hash_for_trace = Qnil;
 

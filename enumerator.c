@@ -22,6 +22,7 @@
 #include "id.h"
 #include "internal.h"
 #include "internal/class.h"
+#include "internal/cont.h"
 #include "internal/enumerator.h"
 #include "internal/error.h"
 #include "internal/hash.h"
@@ -115,8 +116,11 @@
  *
  * - Using \Fiber adds some overhead compared to internal enumeration.
  * - The stacktrace will only include the stack from the \Enumerator, not above.
- * - \Fiber-local variables are *not* inherited inside the \Enumerator \Fiber,
- *   which instead starts with no \Fiber-local variables.
+ * - \Fiber-local variables accessed through Thread#[] are *not* inherited
+ *   inside the \Enumerator \Fiber, which starts with none of these variables.
+ * - Special variables such as <tt>$~</tt>, <tt>$1</tt>, and <tt>$_</tt> in
+ *   captured frames are shared with the caller, as in internal iteration.
+ *   The \Enumerator uses a transparent \Fiber (see Fiber.new).
  * - \Fiber storage variables *are* inherited and are designed
  *   to handle \Enumerator Fibers. Assigning to a \Fiber storage variable
  *   only affects the current \Fiber, so if you want to change state
@@ -788,7 +792,7 @@ next_init(VALUE obj, struct enumerator *e)
 {
     VALUE curr = rb_fiber_current();
     RB_OBJ_WRITE(obj, &e->dst, curr);
-    RB_OBJ_WRITE(obj, &e->fib, rb_fiber_new(next_i, obj));
+    RB_OBJ_WRITE(obj, &e->fib, rb_fiber_new_transparent(next_i, obj));
     e->lookahead = Qundef;
 }
 

@@ -597,24 +597,169 @@ vm_svar_valid_p(VALUE svar)
 }
 #endif
 
-/* Should this frame's special variables live in the env's svar slot?  A SHAREABLE env
- * (isolated proc) can run in several Ractors at once, making svar shared mutable state
- * leaking $~/$_ across Ractors: keep them per-EC instead. */
+/* An escaped frame keeps the first fiber's svar in its env. Other fibers use
+ * this table, whose weak keys do not keep captured environments alive. */
+struct svar_table {
+    st_table *table;
+};
+
+static int
+svar_table_mark_i(st_data_t key, st_data_t val, st_data_t arg)
+{
+    rb_gc_mark_movable((VALUE)val);
+    return ST_CONTINUE;
+}
+
+static void
+svar_table_mark(void *ptr)
+{
+    struct svar_table *t = ptr;
+    if (t->table) st_foreach(t->table, svar_table_mark_i, 0);
+}
+
+static void
+svar_table_free(void *ptr)
+{
+    struct svar_table *t = ptr;
+    if (t->table) st_free_table(t->table);
+}
+
+static size_t
+svar_table_memsize(const void *ptr)
+{
+    const struct svar_table *t = ptr;
+    return t->table ? st_memsize(t->table) : 0;
+}
+
+static int
+svar_table_compact_i(st_data_t key, st_data_t val, st_data_t arg, int error)
+{
+    VALUE moved_key = rb_gc_location((VALUE)key);
+    VALUE moved_val = rb_gc_location((VALUE)val);
+
+    /* The keys are hashed by address, so moved keys must be reinserted. */
+    if ((VALUE)key != moved_key) {
+        st_insert((st_table *)arg, (st_data_t)moved_key, (st_data_t)moved_val);
+        return ST_DELETE;
+    }
+    return (VALUE)val != moved_val ? ST_REPLACE : ST_CONTINUE;
+}
+
+static int
+svar_table_compact_replace_i(st_data_t *key, st_data_t *val, st_data_t arg, int existing)
+{
+    *val = (st_data_t)rb_gc_location((VALUE)*val);
+    return ST_CONTINUE;
+}
+
+static void
+svar_table_compact(void *ptr)
+{
+    struct svar_table *t = ptr;
+    if (t->table) {
+        DURING_GC_COULD_MALLOC_REGION_START();
+        {
+            st_foreach_with_replace(t->table, svar_table_compact_i,
+                                    svar_table_compact_replace_i, (st_data_t)t->table);
+        }
+        DURING_GC_COULD_MALLOC_REGION_END();
+    }
+}
+
+static int
+svar_table_handle_weak_references_i(st_data_t key, st_data_t val, st_data_t arg)
+{
+    return rb_gc_handle_weak_references_alive_p((VALUE)key) ? ST_CONTINUE : ST_DELETE;
+}
+
+static void
+svar_table_handle_weak_references(void *ptr)
+{
+    struct svar_table *t = ptr;
+    st_foreach(t->table, svar_table_handle_weak_references_i, 0);
+}
+
+static const rb_data_type_t svar_table_data_type = {
+    "VM/svar_table",
+    {
+        svar_table_mark,
+        svar_table_free,
+        svar_table_memsize,
+        svar_table_compact,
+        svar_table_handle_weak_references,
+    },
+    0, 0, RUBY_TYPED_THREAD_SAFE_FREE | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_EMBEDDABLE
+};
+
+static VALUE
+svar_table_new(void)
+{
+    struct svar_table *t;
+    VALUE obj = TypedData_Make_Struct(0, struct svar_table, &svar_table_data_type, t);
+    t->table = st_init_numtable();
+    rb_gc_declare_weak_references(obj);
+    return obj;
+}
+
+static struct vm_svar *
+ec_svar_table_lookup(const rb_execution_context_t *ec, const VALUE *lep)
+{
+    if (!RTEST(ec->svar_table)) return NULL;
+
+    struct svar_table *t = RTYPEDDATA_GET_DATA(ec->svar_table);
+    st_data_t svar;
+    if (!st_lookup(t->table, (st_data_t)VM_ENV_ENVVAL(lep), &svar)) return NULL;
+    return (struct vm_svar *)svar;
+}
+
+static void
+ec_svar_table_insert(const rb_execution_context_t *ec, const VALUE *lep, const struct vm_svar *svar)
+{
+    if (!RTEST(ec->svar_table)) {
+        RB_OBJ_WRITE(rb_ec_thread_ptr(ec)->self, &ec->svar_table, svar_table_new());
+    }
+
+    struct svar_table *t = RTYPEDDATA_GET_DATA(ec->svar_table);
+    VALUE env = VM_ENV_ENVVAL(lep);
+    st_insert(t->table, (st_data_t)env, (st_data_t)svar);
+
+    /* Remember the weak key too, so a minor GC that can collect the env also
+     * visits the table's weak references. */
+    RB_OBJ_WRITTEN(ec->svar_table, Qundef, env);
+    RB_OBJ_WRITTEN(ec->svar_table, Qundef, (VALUE)svar);
+}
+
+static inline bool
+svar_owned_by_ec_p(VALUE svar, const rb_execution_context_t *ec)
+{
+    return imemo_type_p(svar, imemo_svar) &&
+        ((struct vm_svar *)svar)->owner_ec_serial == rb_ec_serial(ec);
+}
+
+/* Delegate external frames to the current resumer. vm_make_env_each installs
+ * an owned svar before a transparent fiber's local frame escapes, so that
+ * frame stays local even after its defining method returns. */
+static inline const rb_execution_context_t *
+lep_svar_ec(const rb_execution_context_t *ec, const VALUE *lep)
+{
+    while (ec->svar_parent) {
+        if (lep) {
+            if (!VM_ENV_ESCAPED_P(lep)) {
+                if (!VM_EP_IN_HEAP_P(ec, lep)) break;
+            }
+            else if (svar_owned_by_ec_p(lep[VM_ENV_DATA_INDEX_ME_CREF], ec)) {
+                break;
+            }
+        }
+        ec = ec->svar_parent;
+    }
+    return ec;
+}
+
 static inline bool
 lep_svar_in_env_p(const rb_execution_context_t *ec, const VALUE *lep)
 {
-    if (!lep) return false;
-    if (ec == NULL) return true;
-    if (ec->root_lep == lep) return false;
-    /* lep may be a stale on-stack ep of a frame whose env already escaped: lep[0]
-     * still holds the imemo_env, so flags is not a FIXNUM and VM_ENV_ESCAPED_P
-     * asserts.  That is not a live shareable proc's env, so fall back to in-env. */
-    if (FIXNUM_P(lep[VM_ENV_DATA_INDEX_FLAGS]) &&
-            VM_ENV_ESCAPED_P(lep) &&
-            RB_FL_TEST_RAW(VM_ENV_ENVVAL(lep), RUBY_FL_SHAREABLE)) {
-        return false;
-    }
-    return true;
+    return lep && ec->root_lep != lep;
 }
 
 static inline struct vm_svar *
@@ -650,9 +795,18 @@ lep_svar_write(const rb_execution_context_t *ec, const VALUE *lep, const struct 
 static VALUE
 lep_svar_get(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key)
 {
-    const struct vm_svar *svar = lep_svar(ec, lep);
+    ec = lep_svar_ec(ec, lep);
+    const struct vm_svar *svar;
 
-    if ((VALUE)svar == Qfalse || imemo_type((VALUE)svar) != imemo_svar) return Qnil;
+    if (lep_svar_in_env_p(ec, lep) && VM_ENV_ESCAPED_P(lep)) {
+        VALUE ep_val = lep[VM_ENV_DATA_INDEX_ME_CREF];
+        svar = svar_owned_by_ec_p(ep_val, ec) ? (struct vm_svar *)ep_val : ec_svar_table_lookup(ec, lep);
+        if (!svar) return Qnil;
+    }
+    else {
+        svar = lep_svar(ec, lep);
+        if (!imemo_type_p((VALUE)svar, imemo_svar)) return Qnil;
+    }
 
     switch (key) {
       case VM_SVAR_LASTLINE:
@@ -673,12 +827,13 @@ lep_svar_get(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key)
 }
 
 static struct vm_svar *
-svar_new(VALUE obj)
+svar_new(VALUE obj, rb_serial_t owner_ec_serial)
 {
     struct vm_svar *svar = IMEMO_NEW(struct vm_svar, imemo_svar, obj);
     *((VALUE *)&svar->lastline) = Qnil;
     *((VALUE *)&svar->backref) = Qnil;
     *((VALUE *)&svar->others) = Qnil;
+    svar->owner_ec_serial = owner_ec_serial;
 
     return svar;
 }
@@ -686,11 +841,37 @@ svar_new(VALUE obj)
 static void
 lep_svar_set(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key, VALUE val)
 {
-    struct vm_svar *svar = lep_svar(ec, lep);
+    ec = lep_svar_ec(ec, lep);
+    struct vm_svar *svar;
 
-    if ((VALUE)svar == Qfalse || imemo_type((VALUE)svar) != imemo_svar) {
-        lep_svar_write(ec, lep, svar = svar_new((VALUE)svar));
+    if (lep_svar_in_env_p(ec, lep) && VM_ENV_ESCAPED_P(lep)) {
+        VALUE ep_val = lep[VM_ENV_DATA_INDEX_ME_CREF];
+
+        if (svar_owned_by_ec_p(ep_val, ec)) {
+            svar = (struct vm_svar *)ep_val;
+        }
+        else if (imemo_type_p(ep_val, imemo_svar) || RB_OBJ_SHAREABLE_P(VM_ENV_ENVVAL(lep))) {
+            svar = ec_svar_table_lookup(ec, lep);
+            if (!svar) {
+                VALUE cref_or_me = imemo_type_p(ep_val, imemo_svar) ?
+                    ((struct vm_svar *)ep_val)->cref_or_me : ep_val;
+                svar = svar_new(cref_or_me, rb_ec_serial(ec));
+                ec_svar_table_insert(ec, lep, svar);
+            }
+        }
+        else {
+            svar = svar_new(ep_val, rb_ec_serial(ec));
+            lep_svar_write(ec, lep, svar);
+        }
     }
+    else {
+        svar = lep_svar(ec, lep);
+        if (!imemo_type_p((VALUE)svar, imemo_svar)) {
+            lep_svar_write(ec, lep, svar = svar_new((VALUE)svar, rb_ec_serial(ec)));
+        }
+    }
+
+    rb_ractor_confirm_belonging((VALUE)svar);
 
     switch (key) {
       case VM_SVAR_LASTLINE:

@@ -12,6 +12,7 @@
 #include <stddef.h>             /* for size_t */
 #include "id_table.h"
 #include "internal/array.h"     /* for rb_ary_hidden_new_fill */
+#include "internal/serial.h"    /* for rb_serial_t */
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for rb_block_call_func_t */
 
@@ -57,6 +58,7 @@ struct vm_svar {
     const VALUE lastline;
     const VALUE backref;
     const VALUE others;
+    rb_serial_t owner_ec_serial; /* Does not keep the owning fiber alive. */
 };
 
 /*! THROW_DATA */
@@ -94,6 +96,7 @@ struct vm_ifunc {
     struct vm_ifunc_argc argc;
 };
 #define IFUNC_YIELD_OPTIMIZABLE IMEMO_FL_USER0
+#define IFUNC_SVAR_ESCAPED IMEMO_FL_USER1
 
 struct rb_imemo_tmpbuf_struct {
     VALUE flags;
