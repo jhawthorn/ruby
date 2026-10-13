@@ -1920,6 +1920,18 @@ fiber_setcontext(rb_fiber_t *new_fiber, rb_fiber_t *old_fiber)
     __sanitizer_start_switch_fiber(FIBER_TERMINATED_P(old_fiber) ? NULL : &old_fiber->context.fake_stack, new_fiber->context.stack_base, new_fiber->context.stack_size);
 #endif
 
+#if defined(COROUTINE_SANITIZE_THREAD)
+    /* Hand TSan's per-thread shadow stack to the destination fiber; otherwise
+     * it leaks across switches and eventually faults inside libtsan.
+     * A root fiber is set up by the thread that creates the new thread, so
+     * its borrowed TSan fiber is only known to be the right one once it is
+     * running. */
+    if (!old_fiber->context.tsan_fiber_owned) {
+        old_fiber->context.tsan_fiber = __tsan_get_current_fiber();
+    }
+    __tsan_switch_to_fiber(new_fiber->context.tsan_fiber, 0);
+#endif
+
     /* swap machine context */
     struct coroutine_context * from = coroutine_transfer(&old_fiber->context, &new_fiber->context);
 
@@ -2115,8 +2127,9 @@ rb_callcc(VALUE self)
         return rb_yield(val);
     }
 }
-#ifdef RUBY_ASAN_ENABLED
-/* callcc can't possibly work with ASAN; see bug #20273. Also this function
+#if defined(RUBY_ASAN_ENABLED) || defined(RUBY_TSAN_ENABLED)
+/* callcc can't possibly work with ASAN; see bug #20273. Nor with TSan, which
+ * cannot follow the machine stack being copied back. Also this function
  * definition below avoids a "defined and not used" warning. */
 MAYBE_UNUSED(static void notusing_callcc(void)) { rb_callcc(Qnil); }
 # define rb_callcc rb_f_notimplement

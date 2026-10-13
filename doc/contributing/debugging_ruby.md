@@ -92,6 +92,45 @@ Please note, however, the following caveats!
 [llvm/llvm-project#75659]: https://github.com/llvm/llvm-project/pull/75659#issuecomment-1861584777
 [Ruby Issue Tracking System]: https://bugs.ruby-lang.org
 
+## Building with Thread Sanitizer
+
+Ruby can be built with [ThreadSanitizer](https://github.com/google/sanitizers/wiki/ThreadSanitizerCppManual)
+to find data races. Both gcc and clang work (clang needs its `compiler-rt`
+runtime installed, for example `libclang-rt-dev` on Debian):
+
+```sh
+./configure cflags='-fsanitize=thread -O1 -g' LDFLAGS=-fsanitize=thread --disable-install-doc --disable-yjit
+```
+
+When TSan is detected `configure` also turns off `_FORTIFY_SOURCE` and
+`__builtin_setjmp`, and uses `longjmp` for exceptions. TSan keeps a shadow call
+stack that it only unwinds in its `longjmp` interceptor (not `_longjmp`,
+`__longjmp_chk` or `__builtin_longjmp`), so otherwise the shadow stack
+overflows after enough exceptions and libtsan crashes.
+
+Run with the suppressions file in `misc/`:
+
+```sh
+export TSAN_OPTIONS="suppressions=$(pwd)/misc/tsan_suppressions.txt:die_after_fork=0:exitcode=0:disable_coredump=0:handle_segv=0:report_signal_unsafe=0:allow_user_segv_handler=1:strip_path_prefix=$(pwd)/"
+export RUBY_MN_THREADS=-1
+make -j test-all TESTOPTS="--timeout-scale=10"
+```
+
+* `RUBY_MN_THREADS=-1` gives every Ractor's threads a native thread, instead of
+  running them on the M:N scheduler. The M:N scheduler hands the scheduler lock
+  from one coroutine to another, which TSan reports as an unlock by the wrong
+  thread (thousands of times), so you probably want this to see anything else.
+* `exitcode=0` stops a report from failing the build or test run. Use
+  `log_path=/tmp/tsan` to write each process's reports to its own file.
+* `handle_segv=0`, `allow_user_segv_handler=1` and `report_signal_unsafe=0` let
+  Ruby handle its own crash reports and signals, and `disable_coredump=0` stops
+  TSan from lowering `RLIMIT_CORE`; the tests for those need them.
+* `callcc` is not available (it copies the machine stack).
+* A few tests that `fork` and then signal the child hang under TSan
+  (`TestIO#test_fcntl_lock_linux`, `TestUbfAsyncSafe#test_ubf_async_safe`,
+  `TestProcess#test_signals_work_after_exec_fail`).
+* Tests run much slower under TSan; raise timeouts with `--timeout-scale`.
+
 ## Crash dumps
 
 A `[BUG]` report shows the backtrace of the crashing thread, but not the other threads or the memory, and some crashes leave no report at all, such as one in a thread other than the main one on Windows. A crash dump keeps that state for a debugger.

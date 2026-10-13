@@ -1,5 +1,11 @@
 dnl -*- Autoconf -*-
 AC_DEFUN([RUBY_SETJMP_TYPE], [
+# (rb_cv_tsan_enabled is set in configure.ac)
+# ThreadSanitizer keeps a shadow call stack which it only unwinds when
+# longjmp or siglongjmp is called (_longjmp is not intercepted), and which it
+# cannot follow through __builtin_setjmp at all.  Without this the shadow
+# stack overflows after enough exceptions and libtsan crashes.
+AS_IF([test "$rb_cv_tsan_enabled" = yes], [ac_cv_func___builtin_setjmp=no])
 RUBY_CHECK_BUILTIN_SETJMP
 RUBY_CHECK_SETJMP(_setjmpex, [], [@%:@include <setjmpex.h>])
 RUBY_CHECK_SETJMP(_setjmp)
@@ -37,7 +43,9 @@ AS_IF([test ${setjmp_prefix+set}], [
 ])
 AC_MSG_RESULT(${setjmp_prefix}setjmp${setjmp_suffix}${setjmp_cast:+\($setjmp_cast\)})
 AC_DEFINE_UNQUOTED([RUBY_SETJMP(env)], [${setjmp_prefix}setjmp${setjmp_suffix}($setjmp_cast(env))])
-AC_DEFINE_UNQUOTED([RUBY_LONGJMP(env,val)], [${setjmp_prefix}longjmp($setjmp_cast(env),val)])
+longjmp_prefix=$setjmp_prefix
+AS_IF([test "$rb_cv_tsan_enabled" = yes], [longjmp_prefix=])
+AC_DEFINE_UNQUOTED([RUBY_LONGJMP(env,val)], [${longjmp_prefix}longjmp($setjmp_cast(env),val)])
 AS_CASE(["$GCC:$setjmp_prefix"], [yes:__builtin_], [], AC_DEFINE_UNQUOTED(RUBY_JMP_BUF, jmp_buf))
 AS_IF([test x$setjmp_suffix = xex], [AC_DEFINE_UNQUOTED(RUBY_USE_SETJMPEX, 1)])
 ])dnl

@@ -878,6 +878,16 @@ AC_ARG_WITH(compress-debug-sections,
 	    [enable debug section compression]),
 	[compress_debug_sections=$withval], [compress_debug_sections=])
 
+AC_CACHE_CHECK([whether ThreadSanitizer is enabled], [rb_cv_tsan_enabled],
+    [save_CFLAGS="$CFLAGS"
+    CFLAGS="$CFLAGS $orig_cflags"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [[
+#if !defined(__SANITIZE_THREAD__) && !(defined(__has_feature) && __has_feature(thread_sanitizer))
+#error not tsan
+#endif
+]])], [rb_cv_tsan_enabled=yes], [rb_cv_tsan_enabled=no])
+    CFLAGS="$save_CFLAGS"])
+
 AS_IF([test "$GCC" = yes], [
     # -D_FORTIFY_SOURCE
     # When defined _FORTIFY_SOURCE, glibc enables some additional sanity
@@ -890,6 +900,9 @@ AS_IF([test "$GCC" = yes], [
     [mingw*], [
 	fortify_source=no
     ])
+    # glibc turns longjmp into __longjmp_chk, which ThreadSanitizer does not
+    # intercept, so it would never unwind its shadow stack.
+    AS_IF([test "$rb_cv_tsan_enabled" = yes], [fortify_source=no])
     AC_ARG_ENABLE(fortify_source,
 		  AS_HELP_STRING([--disable-fortify-source],
 				 [disable -D_FORTIFY_SOURCE=2 option, which causes link error on mingw]),

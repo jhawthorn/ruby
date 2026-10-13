@@ -5,11 +5,12 @@
 # Many of these indicate bugs. Others are benign (ex. data races that can be
 # replaced with relaxed atomic loads)
 #
-# Usage:
+# Usage: see "Building with Thread Sanitizer" in doc/contributing/debugging_ruby.md
 #   Configure with:
-#     ./configure cflags='-fsanitize=thread' CC=clang
+#     ./configure cflags='-fsanitize=thread -O1 -g' LDFLAGS=-fsanitize=thread
 #   Build and run with:
-#     TSAN_OPTIONS="suppressions=$(pwd)/misc/tsan_suppressions.txt:die_after_fork=0"
+#     export RUBY_MN_THREADS=-1
+#     export TSAN_OPTIONS="suppressions=$(pwd)/misc/tsan_suppressions.txt:die_after_fork=0:exitcode=0:disable_coredump=0:handle_segv=0:report_signal_unsafe=0:allow_user_segv_handler=1"
 #
 # Other useful TSAN_OPTIONS:
 #   * halt_on_error=1
@@ -58,7 +59,7 @@ deadlock:ractor_lock_self
 deadlock:rb_ractor_sched_barrier_start
 
 # RVALUE_AGE_SET manipulates flag bits on objects which may be accessed in Ractors
-race_top:RVALUE_AGE_SET
+race:RVALUE_AGE_SET
 
 # Inline caches and call cache updates
 # Multiple threads can race when updating shared call caches during method lookups
@@ -107,3 +108,80 @@ race:rb_tracepoint_enable
 # GC enable/disable flag modifications race with object allocation flag reads
 race_top:rb_gc_impl_gc_disable
 race_top:rb_gc_impl_gc_enable
+
+# More call cache / inline cache / method entry races
+race_top:vm_cc_hit_p
+race_top:vm_cc_cme
+race_top:vm_ic_hit_p
+race_top:vm_call_single_noarg_leaf_builtin
+race_top:callable_method_entry_or_negative
+race:vm_cc_new
+race:vm_cc_bf_set
+race:vm_ccs_create
+race:vm_cc_table_dup_i
+
+# Racy read of whether the VM has multiple ractors (written when one is created)
+race:vm_insert_ractor0
+race:rb_gc_objspace_alloc
+race_top:rb_gc_single_objspace_p
+race_top:rb_gc_ever_multi_ractor_p
+
+# Several threads starting GC at once
+race_top:gc_set_incremental_marking
+race_top:gc_page_add_shareable
+race_top:rb_gc_vm_forget_zombie
+race_top:rb_gc_vm_zombie_total_pages
+
+# Two threads creating metaclasses for the same superclass (non-atomic flag updates)
+race:class_associate_super
+
+# Non-atomic lazy initialized static variables
+race:init_leap_second_info
+
+# Native thread scheduler state read outside the scheduler lock
+race_top:thread_sched_to_running
+race_top:thread_sched_wait_running_turn
+race_top:thread_sched_to_waiting_common
+race:rb_threadptr_pending_interrupt_enque
+
+
+# Ractor sync
+race:ractor_value
+race:ractor_set_successor_once
+
+# thread_sched lock vs. th->interrupt_lock ordering in ubf_set
+deadlock:ubf_set
+
+# Native thread scheduler internals (data races between the timer thread and
+# threads waiting for the GVL, and with M:N scheduling)
+race:register_ubf_list
+race:ubf_threads_empty
+race:thread_sched_setup_running_threads
+race:thread_sched_set_running
+race:thread_sched_deq
+race:thread_sched_enq
+race:thread_sched_to_waiting_until_wakeup
+race:timeslice_scan
+race_top:rb_ractor_thread_switch
+
+# Lazily initialized, flag, and GC bookkeeping races that are benign in practice
+race_top:fptr_finalize_flush
+race_top:rb_io_getline_1
+race_top:str_fill_term
+race_top:rb_register_transcoder
+race_top:gc_mark_classext_module
+race_top:gc_foreign_object_p
+race_top:rb_gc_impl_stress_set
+race_top:ec_switch
+race_top:cc_is_active
+race_top:rb_iseq_mark_and_move
+race_top:vm_method_cfunc_entry
+race_top:rbimpl_atomic_or
+
+# Test extensions
+race_top:find_last_event
+race_top:ubf_for_loop_dlsym
+
+# stdio used from signal handlers in tests
+signal:_IO_fclose
+signal:_IO_fdopen
