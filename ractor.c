@@ -1545,6 +1545,8 @@ rb_obj_set_shareable_no_assert(VALUE obj)
     /* make_shareable_check_shareable refuses an IO, because the traversal cannot reach
      * the VALUE members inside its fptr. */
     VM_ASSERT(!RB_TYPE_P(obj, T_FILE));
+    // Promotion writes the header and the owner's page bits, and freezes ivars below.
+    VM_ASSERT(!rb_objspace_foreign_object_p(obj));
 
     FL_SET_RAW(obj, FL_SHAREABLE);
     rb_gc_obj_became_shareable(obj);

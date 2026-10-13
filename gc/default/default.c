@@ -8205,6 +8205,8 @@ rgengc_remembersetbits_set(rb_objspace_t *objspace, VALUE obj)
     struct heap_page *page = GET_HEAP_PAGE(obj);
     bits_t *bits = &page->remembered_bits[0];
 
+    GC_ASSERT(!gc_skip_foreign_object_p(objspace, obj));
+
     /* remembered_bits writers are always serialized: the write barrier only remembers a
      * local a (under its Ractor's GVL) and a global GC writes from the driver alone.
      * Set the bit before the page flag so a page pending re-scan stays in
@@ -8438,6 +8440,7 @@ rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
     if (RB_UNLIKELY(RB_FL_TEST_RAW(a, RUBY_FL_SHAREABLE)) &&
             !RB_FL_TEST_RAW(b, RUBY_FL_SHAREABLE)) {
         struct heap_page *bpage = GET_HEAP_PAGE(b);
+        GC_ASSERT(!gc_foreign_object_p(objspace, b));
         if (!_MARKED_IN_BITMAP(bpage->shref_bits, bpage, b)) {
             _MARK_IN_BITMAP(bpage->shref_bits, bpage, b);
             bpage->flags.has_shref_objects = TRUE;
@@ -8503,6 +8506,7 @@ rb_gc_impl_writebarrier_unprotect(void *objspace_ptr, VALUE obj)
      * store into s->u going through the write barrier, which keeps wb_unprotected_bits
      * single-writer (only the owner thread can unprotect its own unshareable objects). */
     GC_ASSERT(!RB_FL_TEST_RAW(obj, RUBY_FL_SHAREABLE));
+    GC_ASSERT(!gc_foreign_object_p(objspace, obj));
 
     if (RVALUE_WB_UNPROTECTED(objspace, obj)) {
         return;
