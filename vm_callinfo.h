@@ -478,7 +478,9 @@ vm_cc_call(const struct rb_callcache *cc)
     VM_ASSERT(cc->call_ != NULL);
     VM_ASSERT(cc->klass != Qundef || !vm_cc_markable(cc) || vm_cc_invalid_super(cc) || VM_CC_RACED_P());
     VM_ASSERT(cc_check_class(cc->klass));
-    return cc->call_;
+    /* Acquire: pairs with vm_cc_call_set, which another Ractor can do on a shared
+     * cache after setting up what the new handler reads (vm_cc_bf_set). */
+    return (vm_call_handler)(uintptr_t)rbimpl_atomic_ptr_load((void **)&cc->call_, RBIMPL_ATOMIC_ACQUIRE);
 }
 
 static inline uint64_t
@@ -529,32 +531,49 @@ vm_cc_call_set(const struct rb_callcache *cc, vm_call_handler call)
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *(vm_call_handler *)&cc->call_ = call;
+    rbimpl_atomic_ptr_store((volatile void **)&cc->call_, (void *)(uintptr_t)call, RBIMPL_ATOMIC_RELEASE);
+}
+
+/* A call cache can be shared by Ractors, which then set its flags, attr cache and
+ * builtin function at the same time (and read them with vm_cc_atomic_cache_read
+ * and so on). */
+static inline void
+vm_cc_flag_set(const struct rb_callcache *cc, VALUE flag)
+{
+    volatile VALUE *flags = (volatile VALUE *)&cc->flags;
+    VALUE old = rbimpl_atomic_value_load(flags, RBIMPL_ATOMIC_RELAXED);
+
+    while (!(old & flag)) {
+        VALUE prev = rbimpl_atomic_value_cas(flags, old, old | flag,
+                                             RBIMPL_ATOMIC_RELAXED, RBIMPL_ATOMIC_RELAXED);
+        if (prev == old) break;
+        old = prev;
+    }
 }
 
 static inline void
 set_vm_cc_ivar(const struct rb_callcache *cc)
 {
-    *(VALUE *)&cc->flags |= VM_CALLCACHE_IVAR;
+    vm_cc_flag_set(cc, VM_CALLCACHE_IVAR);
 }
 
 static inline bool
 vm_cc_ivar_p(const struct rb_callcache *cc)
 {
-    return (cc->flags & VM_CALLCACHE_IVAR) != 0;
+    return (rbimpl_atomic_value_load((volatile VALUE *)&cc->flags, RBIMPL_ATOMIC_RELAXED) & VM_CALLCACHE_IVAR) != 0;
 }
 
 static inline void
 vm_cc_attr_index_set(const struct rb_callcache *cc, uint64_t packed_cache)
 {
-    uint64_t *attr_value = (uint64_t *)&cc->aux_.attr.value;
+    rbimpl_atomic_uint64_t *attr_value = (rbimpl_atomic_uint64_t *)&cc->aux_.attr.value;
     if (!vm_cc_markable(cc)) {
-        *attr_value = IVAR_CACHE_INIT;
+        ATOMIC_U64_SET_RELAXED(*attr_value, IVAR_CACHE_INIT);
         return;
     }
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *attr_value = packed_cache;
+    ATOMIC_U64_SET_RELAXED(*attr_value, packed_cache);
     set_vm_cc_ivar(cc);
 }
 
@@ -582,14 +601,20 @@ vm_cc_bf_set(const struct rb_callcache *cc, const struct rb_builtin_function *bf
 {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
-    *(const struct rb_builtin_function **)&cc->aux_.bf = bf;
-    *(VALUE *)&cc->flags |= VM_CALLCACHE_BF;
+    rbimpl_atomic_ptr_store((volatile void **)&cc->aux_.bf, (void *)bf, RBIMPL_ATOMIC_RELAXED);
+    vm_cc_flag_set(cc, VM_CALLCACHE_BF);
+}
+
+static inline const struct rb_builtin_function *
+vm_cc_bf(const struct rb_callcache *cc)
+{
+    return rbimpl_atomic_ptr_load((void **)&cc->aux_.bf, RBIMPL_ATOMIC_RELAXED);
 }
 
 static inline bool
 vm_cc_bf_p(const struct rb_callcache *cc)
 {
-    return (cc->flags & VM_CALLCACHE_BF) != 0;
+    return (rbimpl_atomic_value_load((volatile VALUE *)&cc->flags, RBIMPL_ATOMIC_RELAXED) & VM_CALLCACHE_BF) != 0;
 }
 
 static inline void

@@ -3162,7 +3162,7 @@ static VALUE
 vm_call_single_noarg_leaf_builtin(rb_execution_context_t *ec, rb_control_frame_t *cfp,
                                     struct rb_calling_info *calling)
 {
-    const struct rb_builtin_function *bf = calling->cc->aux_.bf;
+    const struct rb_builtin_function *bf = vm_cc_bf(calling->cc);
     cfp->sp -= (calling->argc + 1);
     rb_insn_func_t func_ptr = (rb_insn_func_t)(uintptr_t)bf->func_ptr;
     return builtin_invoker0(ec, calling->recv, NULL, func_ptr);
@@ -5217,7 +5217,7 @@ rb_vm_cc_general(const struct rb_callcache *cc)
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc != vm_cc_empty());
 
-    *(vm_call_handler *)&cc->call_ = vm_call_general;
+    vm_cc_call_set(cc, vm_call_general);
 }
 
 static VALUE
