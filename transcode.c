@@ -262,7 +262,7 @@ rb_register_transcoder(const rb_transcoder *tr)
             rb_raise(rb_eArgError, "transcoder from %s to %s has been already registered",
                     sname, dname);
         }
-        entry->transcoder = tr;
+        RUBY_ATOMIC_PTR_SET(entry->transcoder, (void *)tr);
     }
 }
 
@@ -411,12 +411,16 @@ transcode_search_path(const char *sname, const char *dname,
 
 int rb_require_internal_silent(VALUE fname);
 
+/* entry->transcoder is set under the VM lock by rb_register_transcoder, maybe
+ * while another Ractor is looking it up here, so it is read atomically. */
 static const rb_transcoder *
 load_transcoder_entry(transcoder_entry_t *entry)
 {
+    const rb_transcoder *tr;
+
     ASSERT_vm_unlocking();
-    if (entry->transcoder)
-        return entry->transcoder;
+    if ((tr = RUBY_ATOMIC_PTR_LOAD(entry->transcoder)) != NULL)
+        return tr;
 
     if (entry->lib) {
         const char *const lib = entry->lib;
@@ -432,10 +436,7 @@ load_transcoder_entry(transcoder_entry_t *entry)
         rb_require_internal_silent(fn); // Sets entry->transcoder
     }
 
-    if (entry->transcoder)
-        return entry->transcoder;
-
-    return NULL;
+    return RUBY_ATOMIC_PTR_LOAD(entry->transcoder);
 }
 
 static const char*
