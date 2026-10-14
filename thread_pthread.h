@@ -115,6 +115,11 @@ struct rb_native_thread {
     struct coroutine_context *nt_context;
     int dedicated;
 
+    // The machine stack footer of an M:N thread that terminated on this
+    // native thread. The dying thread can't free the stack it runs on, so it
+    // leaves it here for whichever context this native thread resumes next.
+    void *dead_stack_footer;
+
     size_t machine_stack_maxsize;
 };
 

@@ -329,6 +329,9 @@ static void timer_thread_wakeup(void);
 static void timer_thread_wakeup_locked(rb_vm_t *vm);
 static void timer_thread_wakeup_force(void);
 static void thread_sched_switch(rb_thread_t *cth, rb_thread_t *next_th);
+#if USE_MN_THREADS
+static void nt_free_dead_stack(struct rb_native_thread *nt);
+#endif
 static void coroutine_transfer0(struct coroutine_context *transfer_from,
                                 struct coroutine_context *transfer_to, bool to_dead);
 
@@ -924,6 +927,9 @@ thread_sched_wait_running_turn(struct rb_thread_sched *sched, rb_thread_t *th, b
                     {
                         rb_ractor_set_current_ec(th->ractor, NULL);
                         coroutine_transfer0(th->sched.context, nt->nt_context, false);
+#if USE_MN_THREADS
+                        nt_free_dead_stack(th->nt);
+#endif
                     }
                     thread_sched_set_locked(sched, th);
                 }
@@ -1259,6 +1265,9 @@ thread_sched_switch(rb_thread_t *cth, rb_thread_t *next_th)
     native_thread_assign(NULL, cth);
     RUBY_DEBUG_LOG("th:%u->%u on nt:%d", rb_th_serial(cth), rb_th_serial(next_th), nt->serial);
     thread_sched_switch0(cth->sched.context, next_th, nt, cth->status == THREAD_KILLED);
+#if USE_MN_THREADS
+    nt_free_dead_stack(cth->nt);
+#endif
 }
 
 #if VM_CHECK_MODE > 0
@@ -2344,6 +2353,9 @@ nt_start(void *ptr)
                     if (next_th && next_th->nt == NULL) {
                         RUBY_DEBUG_LOG("nt:%d next_th:%d", (int)nt->serial, (int)next_th->serial);
                         thread_sched_switch0(nt->nt_context, next_th, nt, false);
+#if USE_MN_THREADS
+                        nt_free_dead_stack(nt);
+#endif
                     }
                     else {
                         RUBY_DEBUG_LOG("no schedulable threads -- next_th:%p", next_th);

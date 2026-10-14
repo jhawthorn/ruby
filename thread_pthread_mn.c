@@ -377,14 +377,14 @@ nt_madvise_free_or_dontneed(void *addr, size_t len)
 #endif
 }
 
+// Return a stack to the pool. Doesn't use GET_VM(), so that a native thread can
+// still release the stack of a thread that just terminated while the VM is
+// being destructed.
 static void
-nt_free_stack(void *mstack)
+nt_free_stack_footer(struct nt_machine_stack_footer *msf)
 {
-    if (!mstack) return;
-
     rb_native_mutex_lock(&nt_machine_stack_lock);
     {
-        struct nt_machine_stack_footer *msf = nt_stack_chunk_get_msf(GET_VM(), mstack);
         struct nt_stack_chunk_header *ch = msf->ch;
         int idx = (int)msf->index;
         void *stack = nt_stack_chunk_get_stack_start(ch, idx);
@@ -401,6 +401,28 @@ nt_free_stack(void *mstack)
         nt_madvise_free_or_dontneed(stack, nt_thread_stack_size());
     }
     rb_native_mutex_unlock(&nt_machine_stack_lock);
+}
+
+static void
+nt_free_stack(void *mstack)
+{
+    if (!mstack) return;
+
+    nt_free_stack_footer(nt_stack_chunk_get_msf(GET_VM(), mstack));
+}
+
+// Free the stack of a thread that terminated on this native thread. Called
+// right after every point where a context resumes on nt: the dying thread
+// has completed its final transfer by then, so nothing runs on its stack.
+static void
+nt_free_dead_stack(struct rb_native_thread *nt)
+{
+    struct nt_machine_stack_footer *msf = nt->dead_stack_footer;
+
+    if (msf) {
+        nt->dead_stack_footer = NULL;
+        nt_free_stack_footer(msf);
+    }
 }
 
 
@@ -463,6 +485,7 @@ co_start(struct coroutine_context *from, struct coroutine_context *self)
     rb_thread_t *th = (rb_thread_t *)self->argument;
     struct rb_thread_sched *sched = TH_SCHED(th);
     VM_ASSERT(th->nt != NULL);
+    nt_free_dead_stack(th->nt);
     VM_ASSERT(th == sched->running);
     VM_ASSERT(sched->lock_owner == NULL);
 
@@ -485,6 +508,13 @@ co_start(struct coroutine_context *from, struct coroutine_context *self)
     bool is_dnt = th_has_dedicated_nt(th);
     native_thread_assign(NULL, th);
     rb_ractor_set_current_ec(th->ractor, NULL);
+
+    // Release the stack as soon as we have switched off it, like a terminated
+    // fiber does, instead of when the Thread object is collected. th may be
+    // freed once finished is set, so resolve the footer now.
+    VM_ASSERT(nt->dead_stack_footer == NULL);
+    nt->dead_stack_footer = nt_stack_chunk_get_msf(th->vm, th->sched.context_stack);
+    th->sched.context_stack = NULL;
 
     if (is_dnt) {
         // SNT became DNT while running. Just return to the nt_context
