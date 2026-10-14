@@ -45,6 +45,7 @@
 #include "ruby/encoding.h"
 #include "ruby/util.h"
 #include "timev.h"
+#include "vm_sync.h"
 
 #if defined(_WIN32)
 # include <timezoneapi.h> /* DYNAMIC_TIME_ZONE_INFORMATION */
@@ -1269,41 +1270,38 @@ gmtime_with_leapsecond(const time_t *timep, struct tm *result)
 #endif
 }
 
-static long this_year = 0;
+static rb_atomic_t leap_second_info_ready = 0;
 static time_t known_leap_seconds_limit;
 static int number_of_leap_seconds_known;
 
+/* Called with the VM lock held, so that only one Ractor computes the values. */
 static void
-init_leap_second_info(void)
+compute_leap_second_info(void)
 {
     /*
      * leap seconds are determined by IERS.
      * It is announced 6 months before the leap second.
      * So no one knows leap seconds in the future after the next year.
      */
-    if (this_year == 0) {
-        time_t now;
-        struct tm *tm, result;
-        struct vtm vtm;
-        wideval_t timew;
-        now = time(NULL);
+    time_t now;
+    struct tm *tm, result;
+    struct vtm vtm;
+    wideval_t timew;
+    now = time(NULL);
 #ifdef HAVE_GMTIME_R
-        gmtime_r(&now, &result);
+    gmtime_r(&now, &result);
 #else
-        gmtime(&now);
+    gmtime(&now);
 #endif
-        tm = gmtime_with_leapsecond(&now, &result);
-        if (!tm) return;
-        this_year = tm->tm_year;
+    tm = gmtime_with_leapsecond(&now, &result);
+    if (!tm) return;
 
-        if (TIMET_MAX - now < (time_t)(366*86400))
-            known_leap_seconds_limit = TIMET_MAX;
-        else
-            known_leap_seconds_limit = now + (time_t)(366*86400);
+    if (TIMET_MAX - now < (time_t)(366*86400))
+        known_leap_seconds_limit = TIMET_MAX;
+    else
+        known_leap_seconds_limit = now + (time_t)(366*86400);
 
-        if (!gmtime_with_leapsecond(&known_leap_seconds_limit, &result))
-            return;
-
+    if (gmtime_with_leapsecond(&known_leap_seconds_limit, &result)) {
         vtm.year = LONG2NUM(result.tm_year + 1900);
         vtm.mon = result.tm_mon + 1;
         vtm.mday = result.tm_mday;
@@ -1317,13 +1315,29 @@ init_leap_second_info(void)
 
         number_of_leap_seconds_known = NUM2INT(w2v(wsub(TIMET2WV(known_leap_seconds_limit), rb_time_unmagnify(timew))));
     }
+
+    /* Publish only once both values above are written: other Ractors read them
+     * without the lock after seeing this. */
+    RUBY_ATOMIC_SET(leap_second_info_ready, 1);
+}
+
+static void
+init_leap_second_info(void)
+{
+    if (RUBY_ATOMIC_LOAD(leap_second_info_ready)) return;
+
+    RB_VM_LOCKING() {
+        if (!RUBY_ATOMIC_LOAD(leap_second_info_ready)) {
+            compute_leap_second_info();
+        }
+    }
 }
 
 /* Use this if you want to re-run init_leap_second_info() */
 void
 ruby_reset_leap_second_info(void)
 {
-    this_year = 0;
+    RUBY_ATOMIC_SET(leap_second_info_ready, 0);
 }
 
 static wideval_t
