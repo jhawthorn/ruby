@@ -177,7 +177,9 @@ struct rb_ractor_struct {
     VALUE verbose;
     VALUE debug;
 
-    bool malloc_gc_disabled;
+    /* Set by the thread holding sync.lock, read by any thread of the Ractor in
+     * malloc, with or without the GVL. */
+    rb_atomic_t malloc_gc_disabled;
     bool main_ractor;
     void *newobj_cache;
 

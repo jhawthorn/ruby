@@ -95,8 +95,8 @@ ractor_lock(rb_ractor_t *r, const char *file, int line)
     const rb_execution_context_t *ec = rb_current_ec_noinline();
     if (ec) {
         rb_ractor_t *cr = rb_ec_ractor_ptr(ec);
-        VM_ASSERT(!cr->malloc_gc_disabled);
-        cr->malloc_gc_disabled = true;
+        VM_ASSERT(!RUBY_ATOMIC_LOAD(cr->malloc_gc_disabled));
+        RUBY_ATOMIC_SET(cr->malloc_gc_disabled, true);
     }
 
 #if RACTOR_CHECK_MODE > 0
@@ -130,8 +130,8 @@ ractor_unlock(rb_ractor_t *r, const char *file, int line)
     const rb_execution_context_t *ec = rb_current_ec_noinline();
     if (ec) {
         rb_ractor_t *cr = rb_ec_ractor_ptr(ec);
-        VM_ASSERT(cr->malloc_gc_disabled);
-        cr->malloc_gc_disabled = false;
+        VM_ASSERT(RUBY_ATOMIC_LOAD(cr->malloc_gc_disabled));
+        RUBY_ATOMIC_SET(cr->malloc_gc_disabled, false);
     }
 
     rb_native_mutex_unlock(&r->sync.lock);

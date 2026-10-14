@@ -3624,10 +3624,10 @@ rb_gc_mark_registered_addrs(rb_ractor_t *r, bool need_lock)
     if (RB_UNLIKELY(cnt > capa)) {
         if (need_lock) rb_native_mutex_unlock(&vm->gc.registered_addrs.lock);
         rb_ractor_t *cr = rb_current_ractor_raw(false);
-        bool saved_malloc_gc_disabled = cr ? cr->malloc_gc_disabled : false;
-        if (cr) cr->malloc_gc_disabled = true;
+        bool saved_malloc_gc_disabled = cr ? RUBY_ATOMIC_LOAD(cr->malloc_gc_disabled) : false;
+        if (cr) RUBY_ATOMIC_SET(cr->malloc_gc_disabled, true);
         snap = ALLOC_N(VALUE, cnt);
-        if (cr) cr->malloc_gc_disabled = saved_malloc_gc_disabled;
+        if (cr) RUBY_ATOMIC_SET(cr->malloc_gc_disabled, saved_malloc_gc_disabled);
         capa = cnt;
         if (need_lock) rb_native_mutex_lock(&vm->gc.registered_addrs.lock);
         cnt = r->registered_addrs_cnt;
@@ -6734,9 +6734,12 @@ ruby_xmalloc(size_t size)
 static bool
 malloc_gc_allowed(void)
 {
+    /* With a single Ractor this answers the main Ractor on any thread, including
+     * ones outside Ruby (the timer thread), which cannot GC anyway
+     * (garbage_collect_with_gvl). */
     rb_ractor_t *r = rb_current_ractor_raw(false);
 
-    return r == NULL || !r->malloc_gc_disabled;
+    return r == NULL || !RUBY_ATOMIC_LOAD(r->malloc_gc_disabled);
 }
 
 static void *
