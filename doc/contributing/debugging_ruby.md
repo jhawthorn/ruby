@@ -95,11 +95,15 @@ Please note, however, the following caveats!
 ## Building with Thread Sanitizer
 
 Ruby can be built with [ThreadSanitizer](https://github.com/google/sanitizers/wiki/ThreadSanitizerCppManual)
-to find data races. Both gcc and clang work (clang needs its `compiler-rt`
-runtime installed, for example `libclang-rt-dev` on Debian):
+to find data races. Use gcc to run the test suite: with clang, libtsan starts
+`llvm-symbolizer` as a child process of Ruby the first time it reports
+something, and the check for leftover child processes after each test
+(`Process.waitall` in `tool/lib/zombie_hunter.rb`) then waits for it forever.
+clang works otherwise (it needs its `compiler-rt` runtime, for example
+`libclang-rt-dev` on Debian).
 
 ```sh
-./configure cflags='-fsanitize=thread -O1 -g' LDFLAGS=-fsanitize=thread --disable-install-doc --disable-yjit
+./configure CC=gcc cflags='-fsanitize=thread -O1 -g' LDFLAGS=-fsanitize=thread --disable-install-doc --disable-yjit
 ```
 
 When TSan is detected `configure` also turns off `_FORTIFY_SOURCE` and
@@ -117,9 +121,10 @@ make -j test-all TESTOPTS="--timeout-scale=10"
 ```
 
 * `RUBY_MN_THREADS=-1` gives every Ractor's threads a native thread, instead of
-  running them on the M:N scheduler. The M:N scheduler hands the scheduler lock
-  from one coroutine to another, which TSan reports as an unlock by the wrong
-  thread (thousands of times), so you probably want this to see anything else.
+  running them on the M:N scheduler. Under the M:N scheduler each process
+  forked from an M:N thread reports an unlock of an unlocked mutex in
+  `nt_shared_loop` (TSan seems to lose track of the native thread's fiber
+  across `fork`).
 * `exitcode=0` stops a report from failing the build or test run. Use
   `log_path=/tmp/tsan` to write each process's reports to its own file.
 * `handle_segv=0`, `allow_user_segv_handler=1` and `report_signal_unsafe=0` let
