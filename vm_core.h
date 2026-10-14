@@ -1214,11 +1214,14 @@ typedef struct rb_thread_struct {
     BITFIELD(enum rb_thread_status, status, 2);
     /* bit flags */
     unsigned int main_thread : 1;
-    unsigned int has_dedicated_nt : 1;
     unsigned int to_kill : 1;
     unsigned int abort_on_exception: 1;
     unsigned int report_on_exception: 1;
     unsigned int pending_interrupt_queue_checked: 1;
+    /* Not a bit field: the scheduler reads it without the GVL while other
+     * threads holding it update the bits above (Thread#raise clearing
+     * pending_interrupt_queue_checked, say). */
+    bool has_dedicated_nt;
     int8_t priority; /* -3 .. 3 (RUBY_THREAD_PRIORITY_{MIN,MAX}) */
     uint32_t running_time_us; /* 12500..800000 */
 
