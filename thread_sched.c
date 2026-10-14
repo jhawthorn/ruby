@@ -2556,7 +2556,10 @@ timeslice_scan(rb_vm_t *vm, bool interrupt)
                     found = true;
                     if (interrupt) {
                         RUBY_DEBUG_LOG("timeslice th:%u", rb_th_serial(sched->running));
-                        RUBY_VM_SET_TIMER_INTERRUPT(sched->running->ec);
+                        // th->ec changes on a Fiber switch (ec_switch), which
+                        // doesn't take sched.lock
+                        rb_execution_context_t *ec = RUBY_ATOMIC_PTR_LOAD(sched->running->ec);
+                        RUBY_VM_SET_TIMER_INTERRUPT(ec);
                     }
                 }
                 // else: waiters behind a blocked runner need no ticks; the

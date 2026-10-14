@@ -1058,7 +1058,9 @@ ec_switch(rb_thread_t *th, rb_fiber_t *fiber)
 #ifdef RUBY_ASAN_ENABLED
     ec->machine.asan_fake_stack_handle = asan_get_thread_fake_stack_handle();
 #endif
-    rb_ractor_set_current_ec(th->ractor, th->ec = ec);
+    /* The timer thread reads th->ec to set a timeslice interrupt on it. */
+    RUBY_ATOMIC_PTR_SET(th->ec, ec);
+    rb_ractor_set_current_ec(th->ractor, ec);
     // ruby_current_execution_context_ptr = th->ec = ec;
 
     /*
