@@ -1840,7 +1840,7 @@ thread_sched_atfork(struct rb_thread_sched *sched)
         // no known pthread gives the child a new pthread_t, but just in case
         th->nt->thread_id = pthread_self();
 #ifdef RB_THREAD_T_HAS_NATIVE_ID
-        th->nt->tid = get_native_thread_id();
+        RUBY_ATOMIC_SET(th->nt->tid, (rb_atomic_t)get_native_thread_id());
 #endif
     }
 }

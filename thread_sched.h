@@ -125,7 +125,7 @@ struct rb_native_thread {
     rb_nativethread_id_t thread_id;
 
 #ifdef RB_THREAD_T_HAS_NATIVE_ID
-    int tid;
+    rb_atomic_t tid; /* set by the thread itself, read by Thread#native_thread_id */
 #endif
 
 #if defined(_WIN32)

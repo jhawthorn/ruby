@@ -860,7 +860,7 @@ native_thread_setup_on_thread(struct rb_native_thread *nt)
 
     // init tid
 #ifdef RB_THREAD_T_HAS_NATIVE_ID
-    nt->tid = get_native_thread_id();
+    RUBY_ATOMIC_SET(nt->tid, (rb_atomic_t)get_native_thread_id());
 #endif
 
     // init signal handler
@@ -1144,7 +1144,7 @@ native_thread_native_thread_id(rb_thread_t *target_th)
     if (!target_th->nt) return Qnil;
 
 #ifdef RB_THREAD_T_HAS_NATIVE_ID
-    int tid = target_th->nt->tid;
+    int tid = (int)RUBY_ATOMIC_LOAD(target_th->nt->tid);
     if (tid == 0) return Qnil;
     return INT2FIX(tid);
 #elif defined(__APPLE__)
