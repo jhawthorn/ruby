@@ -1055,12 +1055,14 @@ rb_ractor_setup_default_port(rb_ractor_t *r)
 static rb_ractor_t *
 ractor_set_successor_once(rb_ractor_t *r, rb_ractor_t *cr)
 {
-    if (r->sync.successor == NULL) {
-        rb_ractor_t *successor = ATOMIC_PTR_CAS(r->sync.successor, NULL, cr);
+    rb_ractor_t *successor = RUBY_ATOMIC_PTR_LOAD(r->sync.successor);
+
+    if (successor == NULL) {
+        successor = ATOMIC_PTR_CAS(r->sync.successor, NULL, cr);
         return successor == NULL ? cr : successor;
     }
 
-    return r->sync.successor;
+    return successor;
 }
 
 static VALUE
