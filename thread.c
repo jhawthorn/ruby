@@ -1154,7 +1154,7 @@ create_ractor_alloc_thread(rb_ractor_t *r, rb_ractor_t *cr, rb_execution_context
     RB_VM_LOCKING() {
         if (multi_objspace) {
             RUBY_ASSERT(cr->creating_child_objspace == NULL);
-            cr->creating_child_objspace = child_objspace;
+            RUBY_ATOMIC_PTR_SET(cr->creating_child_objspace, child_objspace);
         }
         /* Suppress the child's GC, not the creator's: a cycle here would collect a
          * half-built child.  Single allocations; this costs only a little growth. */
@@ -1171,7 +1171,7 @@ create_ractor_alloc_thread(rb_ractor_t *r, rb_ractor_t *cr, rb_execution_context
             /* Drop the cover and park the objspace in this same section: between two of
              * them another Ractor's global GC would find a populated objspace that is
              * neither covered nor a zombie. */
-            if (multi_objspace) cr->creating_child_objspace = NULL;
+            if (multi_objspace) RUBY_ATOMIC_PTR_SET(cr->creating_child_objspace, NULL);
             if (r->objspace) {
                 rb_gc_objspace_disown(r->objspace);
                 r->objspace = NULL;
@@ -1211,7 +1211,7 @@ rb_thread_create_ractor(rb_ractor_t *r, VALUE args, VALUE proc)
     if (state != TAG_NONE) {
         RB_VM_LOCKING() {
             if (cr->creating_child_objspace == r->objspace) {
-                cr->creating_child_objspace = NULL;
+                RUBY_ATOMIC_PTR_SET(cr->creating_child_objspace, NULL);
             }
             if (r->objspace) {
                 rb_gc_objspace_disown(r->objspace);
@@ -6640,7 +6640,7 @@ rb_internal_thread_specific_key_create(void)
 {
     rb_vm_t *vm = GET_VM();
 
-    if (specific_key_count == 0 && vm->ractor.cnt > 1) {
+    if (specific_key_count == 0 && RUBY_ATOMIC_LOAD(vm->ractor.cnt) > 1) {
         rb_raise(rb_eThreadError, "The first rb_internal_thread_specific_key_create() is called with multiple ractors");
     }
     else if (specific_key_count > RB_INTERNAL_THREAD_SPECIFIC_KEY_MAX) {

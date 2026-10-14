@@ -935,7 +935,7 @@ native_thread_check_and_create_shared(rb_vm_t *vm)
 
     ractor_sched_lock(vm, NULL); // NULL: the timer thread also calls this
     {
-        unsigned int schedulable_ractor_cnt = vm->ractor.cnt;
+        unsigned int schedulable_ractor_cnt = RUBY_ATOMIC_LOAD(vm->ractor.cnt);
         RUBY_ASSERT(schedulable_ractor_cnt >= 1);
 
         if (!vm->ractor.main_ractor->threads.sched.enable_mn_threads)

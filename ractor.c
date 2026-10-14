@@ -627,7 +627,7 @@ vm_insert_ractor0(rb_vm_t *vm, rb_ractor_t *r, bool single_ractor_mode)
     }
 
     ccan_list_add_tail(&vm->ractor.set, &r->vmlr_node);
-    vm->ractor.cnt++;
+    RUBY_ATOMIC_INC(vm->ractor.cnt);
 
     if (r->newobj_cache) {
         VM_ASSERT(r == ruby_single_main_ractor);
@@ -643,7 +643,7 @@ cancel_single_ractor_mode(void)
     // enable multi-ractor mode
     RUBY_DEBUG_LOG("enable multi-ractor mode");
 
-    ruby_single_main_ractor = NULL;
+    RUBY_ATOMIC_PTR_SET(ruby_single_main_ractor, NULL);
     rb_yjit_invalidate_single_ractor();
     rb_zjit_invalidate_single_ractor();
 
@@ -666,7 +666,7 @@ vm_insert_ractor(rb_vm_t *vm, rb_ractor_t *r)
              * same VM lock that added it, so no whole-VM walk sees both. */
             rb_ractor_t *cur = rb_current_ractor_raw(false);
             if (cur && cur->creating_child_objspace == r->objspace) {
-                cur->creating_child_objspace = NULL;
+                RUBY_ATOMIC_PTR_SET(cur->creating_child_objspace, NULL);
             }
         }
         RB_VM_UNLOCK();
@@ -687,7 +687,7 @@ vm_insert_ractor(rb_vm_t *vm, rb_ractor_t *r)
              * sweeps its live main Thread and root Fiber. */
             rb_ractor_t *cur = rb_current_ractor_raw(false);
             if (cur && cur->creating_child_objspace == r->objspace) {
-                cur->creating_child_objspace = NULL;
+                RUBY_ATOMIC_PTR_SET(cur->creating_child_objspace, NULL);
             }
         }
     }
@@ -735,7 +735,7 @@ vm_remove_ractor(rb_vm_t *vm, rb_ractor_t *cr)
              * so the entry measures exactly the pages the joiner will inherit. */
             rb_gc_objspace_retire(&cr->objspace);
         }
-        vm->ractor.cnt--;
+        RUBY_ATOMIC_DEC(vm->ractor.cnt);
 
         ractor_status_set(cr, ractor_terminated);
     }
@@ -828,7 +828,7 @@ void
 rb_ractor_atfork(rb_vm_t *vm, rb_thread_t *th)
 {
     // initialize as a main ractor
-    vm->ractor.cnt = 0;
+    RUBY_ATOMIC_SET(vm->ractor.cnt, 0);
     vm->ractor.blocking_cnt = 0;
     /* Only main survives a fork: the holds of dead Ractors and of critical sections are
      * gone, leaving main's own disable. */
@@ -836,7 +836,7 @@ rb_ractor_atfork(rb_vm_t *vm, rb_thread_t *th)
     /* Only the main Ractor survives a fork, so drop the creation cover.  The set was
      * just emptied by rb_vm_living_threads_init, and zombie_objspaces still holds the
      * non-main objspaces that terminate_atfork parked there for the orphan merge. */
-    th->ractor->creating_child_objspace = NULL;
+    RUBY_ATOMIC_PTR_SET(th->ractor->creating_child_objspace, NULL);
     // requests from the parent's Ractors: their waiters are gone
     shareable_p_requests_atfork(th->ractor);
     ractor_reply_port_atfork(th->ractor);
@@ -1140,7 +1140,7 @@ rb_ractor_cancel_creation(rb_ractor_t *r, rb_thread_t *th)
         rb_vm_t *vm = th->vm;
         VM_ASSERT(vm->ractor.cnt > 1);
         ccan_list_del(&r->vmlr_node);
-        vm->ractor.cnt--;
+        RUBY_ATOMIC_DEC(vm->ractor.cnt);
         /* Give back the blocking count vm_insert_ractor took at insert time.  A child
          * that never ran has no chance to decrement it, and without this the
          * blocking_cnt <= cnt invariant breaks on the next insert. */
