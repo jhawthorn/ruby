@@ -827,12 +827,19 @@ rb_class_update_superclasses(VALUE klass)
     }
 
     super_depth = RCLASS_SUPERCLASS_DEPTH(super);
-    if (RCLASS_SUPERCLASSES_WITH_SELF_P(super)) {
-        superclasses = RCLASS_SUPERCLASSES(super);
-    }
-    else {
-        superclasses = class_superclasses_including_self(super);
-        RCLASS_WRITE_SUPERCLASSES(super, super_depth, superclasses, true);
+    // super may be shared with other Ractors subclassing it at the same time:
+    // build its array including itself only once.
+    RB_VM_LOCKING() {
+        if (RCLASS_SUPERCLASSES_WITH_SELF_P(super)) {
+            superclasses = RCLASS_SUPERCLASSES(super);
+        }
+        else {
+            superclasses = class_superclasses_including_self(super);
+            // its depth is unchanged and read without the lock above
+            rb_classext_t *ext = RCLASS_EXT_PRIME(super);
+            RCLASSEXT_SUPERCLASSES(ext) = superclasses;
+            RCLASSEXT_SUPERCLASSES_WITH_SELF(ext) = true;
+        }
     }
 
     size_t depth = super_depth == RCLASS_MAX_SUPERCLASS_DEPTH ? super_depth : super_depth + 1;
