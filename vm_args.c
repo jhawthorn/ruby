@@ -1247,7 +1247,7 @@ vm_caller_setup_fwd_args(const rb_execution_context_t *ec, rb_control_frame_t *r
             );
 
     adjusted_cd->cd.ci = adjusted_ci;
-    adjusted_cd->cd.cc = cd->cc;
+    adjusted_cd->cd.cc = rbimpl_atomic_ptr_load((void **)&cd->cc, RBIMPL_ATOMIC_ACQUIRE); /* see vm_cd_cc_load */
     adjusted_cd->caller_ci = caller_ci;
 
     return bh;

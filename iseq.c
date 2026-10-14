@@ -432,7 +432,9 @@ rb_iseq_mark_and_move(const struct rb_gc_mark_ctx *ctx, rb_iseq_t *iseq, bool re
 
                 if (cds[i].ci) rb_gc_mark_and_move_ptr_ctx(ctx, &cds[i].ci);
 
-                const struct rb_callcache *cc = cds[i].cc;
+                // Other Ractors running this iseq replace its caches while this one
+                // marks (see vm_cd_cc_store).
+                const struct rb_callcache *cc = rbimpl_atomic_ptr_load((void **)&cds[i].cc, RBIMPL_ATOMIC_ACQUIRE);
                 if (!cc || cc == &rb_vm_empty_cc || cc == &rb_vm_empty_cc_for_super ||
                     cc == &rb_vm_uncached_cc) {
                     // No need for marking, reference updating, or clearing
@@ -449,8 +451,10 @@ rb_iseq_mark_and_move(const struct rb_gc_mark_ctx *ctx, rb_iseq_t *iseq, bool re
                     }
                     else {
                         // Either the CC or CME has been invalidated. Replace
-                        // it with the empty CC so that it can be GC'd.
-                        cds[i].cc = &rb_vm_empty_cc;
+                        // it with the empty CC so that it can be GC'd, unless
+                        // another Ractor has just put a new one there.
+                        rbimpl_atomic_ptr_cas((void **)&cds[i].cc, (void *)cc, (void *)&rb_vm_empty_cc,
+                                              RBIMPL_ATOMIC_RELAXED, RBIMPL_ATOMIC_RELAXED);
                     }
                 }
             }
