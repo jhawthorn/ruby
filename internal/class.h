@@ -42,7 +42,7 @@ struct rb_classext_struct {
     VALUE fields_obj; // Fields are either ivar or other internal properties stored inline
     struct rb_id_table *m_tbl;
     struct rb_id_table *const_tbl;
-    struct rb_id_table *callable_m_tbl;
+    VALUE callable_m_tbl; /* a marked id table, replaced (copy-on-write) when shared */
     VALUE cc_tbl; /* { ID => { cme, [cc1, cc2, ...] }, ... } */
     VALUE cvc_tbl;
     VALUE *superclasses;
@@ -242,7 +242,7 @@ static inline void RCLASS_SET_SUPER(VALUE klass, VALUE super);
 static inline void RCLASS_WRITE_SUPER(VALUE klass, VALUE super);
 static inline void RCLASS_SET_CONST_TBL(VALUE klass, struct rb_id_table *table, bool shared);
 static inline void RCLASS_WRITE_CONST_TBL(VALUE klass, struct rb_id_table *table, bool shared);
-static inline void RCLASS_WRITE_CALLABLE_M_TBL(VALUE klass, struct rb_id_table *table);
+static inline void RCLASS_WRITE_CALLABLE_M_TBL(VALUE klass, VALUE table);
 static inline void RCLASS_WRITE_CC_TBL(VALUE klass, VALUE table);
 static inline void RCLASS_SET_CVC_TBL(VALUE klass, VALUE table);
 static inline void RCLASS_WRITE_CVC_TBL(VALUE klass, VALUE table);
@@ -597,9 +597,9 @@ RCLASS_WRITE_CONST_TBL(VALUE klass, struct rb_id_table *table, bool shared)
 }
 
 static inline void
-RCLASS_WRITE_CALLABLE_M_TBL(VALUE klass, struct rb_id_table *table)
+RCLASS_WRITE_CALLABLE_M_TBL(VALUE klass, VALUE table)
 {
-    RCLASSEXT_CALLABLE_M_TBL(RCLASS_EXT_WRITABLE(klass)) = table;
+    RB_OBJ_ATOMIC_WRITE(klass, &RCLASSEXT_CALLABLE_M_TBL(RCLASS_EXT_WRITABLE(klass)), table);
 }
 
 static inline void

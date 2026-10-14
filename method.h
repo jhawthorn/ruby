@@ -305,7 +305,7 @@ void rb_vm_insert_cc_refinement(const struct rb_callcache *cc);
 
 void rb_clear_method_cache(VALUE klass_or_module, ID mid);
 void rb_clear_all_refinement_method_cache(void);
-void rb_invalidate_method_caches(struct rb_id_table *cm_tbl, VALUE cc_tbl);
+void rb_invalidate_method_caches(VALUE cm_tbl, VALUE cc_tbl);
 struct rb_hook_list_struct *rb_method_def_local_hooks(rb_method_definition_t *def, struct rb_ractor_struct *cr, bool create);
 void rb_method_definition_addref(rb_method_definition_t *def);
 void rb_method_definition_release(rb_method_definition_t *def);

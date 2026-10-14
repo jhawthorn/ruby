@@ -127,10 +127,6 @@ rb_iclass_classext_free(VALUE klass, rb_classext_t *ext, bool is_prime)
         rb_id_table_free(RCLASSEXT_M_TBL(ext));
     }
 
-    if (RCLASSEXT_CALLABLE_M_TBL(ext) != NULL) {
-        rb_id_table_free(RCLASSEXT_CALLABLE_M_TBL(ext));
-    }
-
     if (!is_prime) { // the prime classext will be freed with RClass
         SIZED_FREE(ext);
     }
@@ -142,10 +138,6 @@ iclass_free_orphan_classext(VALUE klass, rb_classext_t *ext)
     if (RCLASSEXT_ICLASS_IS_ORIGIN(ext) && !RCLASSEXT_ICLASS_ORIGIN_SHARED_MTBL(ext)) {
         /* Method table is not shared for origin iclasses of classes */
         rb_id_table_free(RCLASSEXT_M_TBL(ext));
-    }
-
-    if (RCLASSEXT_CALLABLE_M_TBL(ext) != NULL) {
-        rb_id_table_free(RCLASSEXT_CALLABLE_M_TBL(ext));
     }
 
     SIZED_FREE(ext);

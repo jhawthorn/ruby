@@ -287,13 +287,13 @@ vm_mtbl_dump(VALUE klass, ID target_mid)
         }
         if (RCLASS_WRITABLE_CALLABLE_M_TBL(klass)) {
             if (target_mid != 0) {
-                if (rb_id_table_lookup(RCLASS_WRITABLE_CALLABLE_M_TBL(klass), target_mid, &me)) {
+                if (rb_managed_id_table_lookup(RCLASS_WRITABLE_CALLABLE_M_TBL(klass), target_mid, &me)) {
                     rp_m("  [CM**] ", me);
                 }
             }
             else {
                 fprintf(stderr, "  ## RCLASS_CALLABLE_M_TBL\n");
-                rb_id_table_foreach(RCLASS_WRITABLE_CALLABLE_M_TBL(klass), vm_cme_dump_i, NULL);
+                rb_managed_id_table_foreach(RCLASS_WRITABLE_CALLABLE_M_TBL(klass), vm_cme_dump_i, NULL);
             }
         }
         if (RCLASS_WRITABLE_CC_TBL(klass)) {
@@ -378,14 +378,35 @@ invalidate_method_cache_in_cc_table(VALUE tbl, ID mid)
     }
 }
 
-static void
-invalidate_callable_method_entry_in_callable_m_table(struct rb_id_table *tbl, ID mid)
+/* Remove mid from the callable method table of ext (of klass), under the VM lock.
+ * Once there are Ractors, others may be marking the table (lock-free), so replace
+ * it rather than change it, as for the cc table. */
+static bool
+callable_m_tbl_delete(VALUE klass, rb_classext_t *ext, ID mid)
 {
+    ASSERT_vm_locking();
+
+    VALUE tbl = RCLASSEXT_CALLABLE_M_TBL(ext);
     VALUE cme;
-    if (tbl && rb_id_table_lookup(tbl, mid, &cme)) {
-        rb_yjit_cme_invalidate((rb_callable_method_entry_t *)cme);
-        rb_zjit_cme_invalidate((rb_callable_method_entry_t *)cme);
-        rb_id_table_delete(tbl, mid);
+    if (!tbl || !rb_managed_id_table_lookup(tbl, mid, &cme)) return false;
+
+    rb_yjit_cme_invalidate((rb_callable_method_entry_t *)cme);
+    rb_zjit_cme_invalidate((rb_callable_method_entry_t *)cme);
+    if (rb_multi_ractor_p()) {
+        VALUE new_tbl = rb_marked_id_table_dup(tbl);
+        rb_managed_id_table_delete(new_tbl, mid);
+        RB_OBJ_ATOMIC_WRITE(klass, &RCLASSEXT_CALLABLE_M_TBL(ext), new_tbl);
+    }
+    else {
+        rb_managed_id_table_delete(tbl, mid);
+    }
+    return true;
+}
+
+static void
+invalidate_callable_method_entry_in_callable_m_table(VALUE klass, rb_classext_t *ext, ID mid)
+{
+    if (callable_m_tbl_delete(klass, ext, mid)) {
         RB_DEBUG_COUNTER_INC(cc_invalidate_leaf_callable);
     }
 }
@@ -448,13 +469,9 @@ invalidate_callable_method_entry_in_every_m_table(VALUE klass, ID mid, const rb_
 }
 
 static void
-invalidate_complemented_method_entry_in_callable_m_table(struct rb_id_table *tbl, ID mid)
+invalidate_complemented_method_entry_in_callable_m_table(VALUE klass, rb_classext_t *ext, ID mid)
 {
-    VALUE cme;
-    if (tbl && rb_id_table_lookup(tbl, mid, &cme)) {
-        rb_yjit_cme_invalidate((rb_callable_method_entry_t *)cme);
-        rb_zjit_cme_invalidate((rb_callable_method_entry_t *)cme);
-        rb_id_table_delete(tbl, mid);
+    if (callable_m_tbl_delete(klass, ext, mid)) {
         RB_DEBUG_COUNTER_INC(cc_invalidate_tree_callable);
     }
 }
@@ -485,10 +502,10 @@ clear_method_cache_by_id_in_class(VALUE klass, ID mid)
             }
 
             // remove from callable_m_tbl, if exists
-            struct rb_id_table *cm_tbl = RCLASS_WRITABLE_CALLABLE_M_TBL(klass);
-            invalidate_callable_method_entry_in_callable_m_table(cm_tbl, mid);
+            VALUE cm_tbl = RCLASS_WRITABLE_CALLABLE_M_TBL(klass);
+            invalidate_callable_method_entry_in_callable_m_table(klass, RCLASS_EXT_WRITABLE(klass), mid);
             if (RCLASS_CALLABLE_M_TBL_NOT_PRIME_P(klass, cm_tbl)) {
-                invalidate_callable_method_entry_in_callable_m_table(RCLASS_PRIME_CALLABLE_M_TBL(klass), mid);
+                invalidate_callable_method_entry_in_callable_m_table(klass, RCLASS_EXT_PRIME(klass), mid);
             }
 
             RB_DEBUG_COUNTER_INC(cc_invalidate_leaf);
@@ -562,11 +579,10 @@ clear_method_cache_by_id_in_class(VALUE klass, ID mid)
                 // invalidate complement tbl
                 if (METHOD_ENTRY_COMPLEMENTED(cme)) {
                     VALUE defined_class = cme->defined_class;
-                    struct rb_id_table *cm_tbl = RCLASS_WRITABLE_CALLABLE_M_TBL(defined_class);
-                    invalidate_complemented_method_entry_in_callable_m_table(cm_tbl, mid);
+                    VALUE cm_tbl = RCLASS_WRITABLE_CALLABLE_M_TBL(defined_class);
+                    invalidate_complemented_method_entry_in_callable_m_table(defined_class, RCLASS_EXT_WRITABLE(defined_class), mid);
                     if (RCLASS_CALLABLE_M_TBL_NOT_PRIME_P(defined_class, cm_tbl)) {
-                        struct rb_id_table *prime_cm_table = RCLASS_PRIME_CALLABLE_M_TBL(defined_class);
-                        invalidate_complemented_method_entry_in_callable_m_table(prime_cm_table, mid);
+                        invalidate_complemented_method_entry_in_callable_m_table(defined_class, RCLASS_EXT_PRIME(defined_class), mid);
                     }
                 }
 
@@ -621,7 +637,9 @@ static enum rb_id_table_iterator_result
 invalidate_method_entry_in_iclass_callable_m_tbl(VALUE cme, void *data)
 {
     vm_cme_invalidate((rb_callable_method_entry_t *)cme);
-    return ID_TABLE_DELETE;
+    /* The classext holding the table is being replaced.  With Ractors, leave the
+     * entries be: another may be marking the table. */
+    return rb_multi_ractor_p() ? ID_TABLE_CONTINUE : ID_TABLE_DELETE;
 }
 
 static enum rb_id_table_iterator_result
@@ -634,10 +652,10 @@ invalidate_ccs_in_iclass_cc_tbl(VALUE value, void *data)
 }
 
 void
-rb_invalidate_method_caches(struct rb_id_table *cm_tbl, VALUE cc_tbl)
+rb_invalidate_method_caches(VALUE cm_tbl, VALUE cc_tbl)
 {
     if (cm_tbl) {
-        rb_id_table_foreach_values(cm_tbl, invalidate_method_entry_in_iclass_callable_m_tbl, NULL);
+        rb_managed_id_table_foreach_values(cm_tbl, invalidate_method_entry_in_iclass_callable_m_tbl, NULL);
     }
     if (cc_tbl) {
         rb_managed_id_table_foreach_values(cc_tbl, invalidate_ccs_in_iclass_cc_tbl, NULL);
@@ -1972,7 +1990,7 @@ rb_method_entry(VALUE klass, ID id)
 static inline const rb_callable_method_entry_t *
 prepare_callable_method_entry(VALUE defined_class, ID id, const rb_method_entry_t * const me, int create)
 {
-    struct rb_id_table *mtbl;
+    VALUE mtbl;
     const rb_callable_method_entry_t *cme;
     VALUE cme_data;
     int cme_found = 0;
@@ -1982,8 +2000,8 @@ prepare_callable_method_entry(VALUE defined_class, ID id, const rb_method_entry_
             RB_DEBUG_COUNTER_INC(mc_cme_complement);
             VM_ASSERT_TYPE2(defined_class, T_ICLASS, T_MODULE);
 
-            mtbl = RCLASS_WRITABLE_CALLABLE_M_TBL(defined_class);
-            if (mtbl && rb_id_table_lookup(mtbl, id, &cme_data)) {
+            mtbl = RUBY_ATOMIC_VALUE_LOAD(RCLASS_WRITABLE_CALLABLE_M_TBL(defined_class));
+            if (mtbl && rb_managed_id_table_lookup(mtbl, id, &cme_data)) {
                 cme = (rb_callable_method_entry_t *)cme_data;
                 cme_found = 1;
             }
@@ -1993,13 +2011,22 @@ prepare_callable_method_entry(VALUE defined_class, ID id, const rb_method_entry_
                 VM_ASSERT(!METHOD_ENTRY_INVALIDATED(cme));
             }
             else if (create) {
+                cme = rb_method_entry_complement_defined_class(me, me->called_id, defined_class);
+                // Others may be marking a published table: with Ractors, insert
+                // into a copy and publish that, as for the cc table.
                 if (!mtbl) {
-                    mtbl = rb_id_table_create(0);
+                    mtbl = rb_marked_id_table_new(0);
+                    rb_marked_id_table_insert(mtbl, id, (VALUE)cme);
                     RCLASS_WRITE_CALLABLE_M_TBL(defined_class, mtbl);
                 }
-                cme = rb_method_entry_complement_defined_class(me, me->called_id, defined_class);
-                rb_id_table_insert(mtbl, id, (VALUE)cme);
-                RB_OBJ_WRITTEN(defined_class, Qundef, (VALUE)cme);
+                else if (rb_multi_ractor_p()) {
+                    mtbl = rb_marked_id_table_dup(mtbl);
+                    rb_marked_id_table_insert(mtbl, id, (VALUE)cme);
+                    RCLASS_WRITE_CALLABLE_M_TBL(defined_class, mtbl);
+                }
+                else {
+                    rb_marked_id_table_insert(mtbl, id, (VALUE)cme);
+                }
                 VM_ASSERT(callable_method_entry_p(cme));
             }
             else {

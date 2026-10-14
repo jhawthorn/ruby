@@ -3810,14 +3810,14 @@ gc_mark_classext_module(rb_classext_t *ext, bool prime, VALUE box_value, void *a
     mark_m_tbl(ctx, RCLASSEXT_M_TBL(ext));
 
     gc_mark_internal(ctx, RCLASSEXT_FIELDS_OBJ(ext));
-    // Other Ractors replace the cvc and cc tables (RB_OBJ_ATOMIC_WRITE) while
+    // Other Ractors replace the cvc, callable method and cc tables (RB_OBJ_ATOMIC_WRITE) while
     // this one marks.
     gc_mark_internal(ctx, RUBY_ATOMIC_VALUE_LOAD(RCLASSEXT_CVC_TBL(ext)));
 
     if (!RCLASSEXT_SHARED_CONST_TBL(ext) && RCLASSEXT_CONST_TBL(ext)) {
         mark_const_tbl(ctx, RCLASSEXT_CONST_TBL(ext));
     }
-    mark_m_tbl(ctx, RCLASSEXT_CALLABLE_M_TBL(ext));
+    gc_mark_internal(ctx, RUBY_ATOMIC_VALUE_LOAD(RCLASSEXT_CALLABLE_M_TBL(ext)));
     gc_mark_internal(ctx, RUBY_ATOMIC_VALUE_LOAD(RCLASSEXT_CC_TBL(ext)));
     if (RCLASSEXT_SUBCLASSES(ext)) {
         gc_mark_internal(ctx, RCLASSEXT_SUBCLASSES(ext));
@@ -3843,7 +3843,7 @@ gc_mark_classext_iclass(rb_classext_t *ext, bool prime, VALUE box_value, void *a
     if (RCLASSEXT_MODULE_REFINEMENT_ICLASSES(ext)) {
         gc_mark_internal(ctx, RCLASSEXT_MODULE_REFINEMENT_ICLASSES(ext));
     }
-    mark_m_tbl(ctx, RCLASSEXT_CALLABLE_M_TBL(ext));
+    gc_mark_internal(ctx, RUBY_ATOMIC_VALUE_LOAD(RCLASSEXT_CALLABLE_M_TBL(ext)));
     gc_mark_internal(ctx, RUBY_ATOMIC_VALUE_LOAD(RCLASSEXT_CC_TBL(ext)));
     if (RCLASSEXT_SUBCLASSES(ext)) {
         gc_mark_internal(ctx, RCLASSEXT_SUBCLASSES(ext));
@@ -5174,7 +5174,7 @@ update_iclass_classext(rb_classext_t *ext, bool is_prime, VALUE box_value, void 
         UPDATE_IF_MOVED(objspace, RCLASSEXT_SUPER(ext));
     }
     update_m_tbl(objspace, RCLASSEXT_M_TBL(ext));
-    update_m_tbl(objspace, RCLASSEXT_CALLABLE_M_TBL(ext));
+    UPDATE_IF_MOVED(objspace, RCLASSEXT_CALLABLE_M_TBL(ext));
     UPDATE_IF_MOVED(objspace, RCLASSEXT_CC_TBL(ext));
     UPDATE_IF_MOVED(objspace, RCLASSEXT_CVC_TBL(ext));
     if (RCLASSEXT_SUBCLASSES(ext)) {
