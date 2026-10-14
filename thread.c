@@ -1815,7 +1815,7 @@ rb_nogvl(void *(*func)(void *), void *data1,
         // and the ractor scheduler lock: not async-signal-safe, whatever the
         // caller claims.
         if ((flags & RB_NOGVL_UBF_ASYNC_SAFE) && !sentinel_ubf) {
-            vm->ubf_async_safe = 1;
+            RUBY_ATOMIC_SET(vm->ubf_async_safe, 1);
         }
     }
 
@@ -1826,7 +1826,7 @@ rb_nogvl(void *(*func)(void *), void *data1,
     }, ubf, data2, flags);
     vm = saved_vm;
 
-    if (is_main_thread) vm->ubf_async_safe = 0;
+    if (is_main_thread) RUBY_ATOMIC_SET(vm->ubf_async_safe, 0);
 
     if ((flags & RB_NOGVL_INTR_FAIL) == 0) {
         RUBY_VM_CHECK_INTS_BLOCKING(ec);

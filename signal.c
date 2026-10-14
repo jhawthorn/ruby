@@ -748,7 +748,7 @@ rb_get_next_signal(void)
 
     if (rb_signal_buff_size() != 0) {
         for (i=1; i<RUBY_NSIG; i++) {
-            if (signal_buff.cnt[i] > 0) {
+            if (RUBY_ATOMIC_LOAD(signal_buff.cnt[i]) > 0) {
                 ATOMIC_DEC(signal_buff.cnt[i]);
                 ATOMIC_DEC(signal_buff.size);
                 sig = i;
