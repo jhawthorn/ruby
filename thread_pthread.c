@@ -289,6 +289,8 @@ rb_native_cond_timedwait(rb_nativethread_cond_t *cond, pthread_mutex_t *mutex, u
 
 // thread scheduling
 
+// Added and removed under rb_internal_thread_event_hooks_rw_lock, but
+// RB_INTERNAL_THREAD_HOOK checks for any without it.
 static rb_internal_thread_event_hook_t *rb_internal_thread_event_hooks = NULL;
 static void rb_thread_execute_hooks(rb_event_flag_t event, rb_thread_t *th);
 
@@ -312,12 +314,12 @@ event_name(rb_event_flag_t event)
 }
 
 #define RB_INTERNAL_THREAD_HOOK(event, th) \
-    if (UNLIKELY(rb_internal_thread_event_hooks)) { \
+    if (UNLIKELY(RUBY_ATOMIC_PTR_LOAD(rb_internal_thread_event_hooks))) { \
         fprintf(stderr, "[thread=%"PRIxVALUE"] %s in %s (%s:%d)\n", th->self, event_name(event), __func__, __FILE__, __LINE__); \
         rb_thread_execute_hooks(event, th); \
     }
 #else
-#define RB_INTERNAL_THREAD_HOOK(event, th) if (UNLIKELY(rb_internal_thread_event_hooks)) { rb_thread_execute_hooks(event, th); }
+#define RB_INTERNAL_THREAD_HOOK(event, th) if (UNLIKELY(RUBY_ATOMIC_PTR_LOAD(rb_internal_thread_event_hooks))) { rb_thread_execute_hooks(event, th); }
 #endif
 
 static rb_serial_t current_fork_gen = 1; /* We can't use GET_VM()->fork_gen */
