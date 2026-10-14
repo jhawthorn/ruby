@@ -59,6 +59,7 @@ static void thread_sched_lock_(struct rb_thread_sched *sched, rb_thread_t *th, c
 static void thread_sched_unlock_(struct rb_thread_sched *sched, rb_thread_t *th, const char *file, int line);
 static void thread_sched_unlock_no_log(struct rb_thread_sched *sched, rb_thread_t *th);
 static void thread_sched_set_locked(struct rb_thread_sched *sched, rb_thread_t *th);
+static inline void thread_sched_lock_handoff_take(struct rb_thread_sched *sched);
 static void thread_sched_setup_running_threads(struct rb_thread_sched *sched, rb_ractor_t *cr, rb_vm_t *vm,
                                                rb_thread_t *add_th, rb_thread_t *del_th);
 static void thread_sched_add_running_thread(struct rb_thread_sched *sched, rb_thread_t *th);
@@ -227,6 +228,30 @@ thread_sched_unlock_no_log(struct rb_thread_sched *sched, rb_thread_t *th)
     thread_sched_set_unlocked(sched, th); // pointer compare only
 
     rb_native_mutex_unlock(&sched->lock_);
+}
+
+// The sched lock is held across some coroutine transfers and released by the
+// coroutine that receives it.  Under TSan each coroutine is a fiber of its own
+// (coroutine_transfer0), and so a separate thread to it: tell TSan the lock
+// changes hands there.  Otherwise the receiver's unlock is reported as an
+// unlock by the wrong thread and not treated as a release, and everything
+// ordered by the sched lock afterwards is reported as a data race.
+static inline void
+thread_sched_lock_handoff_give(struct rb_thread_sched *sched)
+{
+#if defined(COROUTINE_SANITIZE_THREAD)
+    __tsan_mutex_pre_unlock(&sched->lock_, 0);
+    __tsan_mutex_post_unlock(&sched->lock_, 0);
+#endif
+}
+
+static inline void
+thread_sched_lock_handoff_take(struct rb_thread_sched *sched)
+{
+#if defined(COROUTINE_SANITIZE_THREAD)
+    __tsan_mutex_pre_lock(&sched->lock_, 0);
+    __tsan_mutex_post_lock(&sched->lock_, 0, 0);
+#endif
 }
 
 static void
@@ -830,7 +855,9 @@ thread_sched_wait_running_turn(struct rb_thread_sched *sched, rb_thread_t *th, b
                     thread_sched_set_unlocked(sched, th);
                     {
                         rb_ractor_set_current_ec(th->ractor, NULL);
+                        thread_sched_lock_handoff_give(sched);
                         thread_sched_switch(th, next_th);
+                        thread_sched_lock_handoff_take(sched);
                     }
                     thread_sched_set_locked(sched, th);
                 }
@@ -844,7 +871,9 @@ thread_sched_wait_running_turn(struct rb_thread_sched *sched, rb_thread_t *th, b
                     thread_sched_set_unlocked(sched, th);
                     {
                         rb_ractor_set_current_ec(th->ractor, NULL);
+                        thread_sched_lock_handoff_give(sched);
                         coroutine_transfer0(th->sched.context, nt->nt_context, false);
+                        thread_sched_lock_handoff_take(sched);
                     }
                     thread_sched_set_locked(sched, th);
                 }
@@ -2090,6 +2119,7 @@ nt_shared_loop(struct rb_native_thread *nt)
 
                 if (next_th && next_th->nt == NULL) {
                     RUBY_DEBUG_LOG("nt:%d next_th:%d", (int)nt->serial, (int)next_th->serial);
+                    thread_sched_lock_handoff_give(sched);
 #if USE_MN_THREADS
                     thread_sched_switch0(nt->nt_context, next_th, nt, false);
 
@@ -2106,6 +2136,9 @@ nt_shared_loop(struct rb_native_thread *nt)
 #else
                     thread_sched_switch0(nt->nt_context, next_th, nt, false);
 #endif
+                    if (locked) {
+                        thread_sched_lock_handoff_take(sched);
+                    }
                 }
                 else {
                     RUBY_DEBUG_LOG("no schedulable threads -- next_th:%p", next_th);
@@ -2147,6 +2180,7 @@ nt_loop_co(struct coroutine_context *from, struct coroutine_context *self)
     nt->dead_co = NULL;
     if (!thread_sched_reclaim(dead_co)) {
         rb_thread_t *parked_th = (rb_thread_t *)from->argument;
+        thread_sched_lock_handoff_take(TH_SCHED(parked_th));
         thread_sched_unlock(TH_SCHED(parked_th), NULL);
     }
 

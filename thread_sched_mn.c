@@ -1101,6 +1101,8 @@ co_start(struct coroutine_context *from, struct coroutine_context *self)
 
     // RUBY_DEBUG_LOG("th:%u", rb_th_serial(th));
 
+    // whoever transferred here holds the sched lock for us
+    thread_sched_lock_handoff_take(sched);
     thread_sched_set_locked(sched, th);
     thread_sched_add_running_thread(TH_SCHED(th), th);
     thread_sched_unlock(sched, th);
