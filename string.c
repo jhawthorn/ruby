@@ -183,7 +183,9 @@ VALUE rb_cSymbol;
         RB_OBJ_WRITE((str), &RSTRING(str)->as.heap.aux.shared, (shared_str)); \
         FL_SET((str), STR_SHARED); \
         rb_gc_register_pinning_obj(str); \
-        FL_SET((shared_str), STR_SHARED_ROOT); \
+        /* shared_str may be shared by Ractors */ \
+        if (!FL_TEST_RAW((shared_str), STR_SHARED_ROOT)) \
+            rb_obj_flags_update_shared((shared_str), STR_SHARED_ROOT, 0); \
         if (RBASIC_CLASS((shared_str)) == 0) /* for CoW-friendliness */ \
             FL_SET_RAW((shared_str), STR_BORROWED); \
     } \
@@ -974,7 +976,9 @@ int
 rbimpl_enc_str_coderange_scan(VALUE str)
 {
     int cr = enc_coderange_scan(str, get_encoding(str));
-    ENC_CODERANGE_SET(str, cr);
+    /* Caching the code range of a shared frozen String, other Ractors may be
+     * updating its flags too. */
+    rb_obj_flags_update_shared(str, cr, ENC_CODERANGE_MASK);
     return cr;
 }
 

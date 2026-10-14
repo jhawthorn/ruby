@@ -704,8 +704,12 @@ class_associate_super(VALUE klass, VALUE super, bool init)
             if (RCLASS_SINGLETON_P(klass)) {
                 // Instead of adding singleton classes to the subclass list,
                 // just set a flag so that method cache invalidation takes the
-                // tree path.
-                FL_SET_RAW(super, RCLASS_HAS_SUBCLASSES);
+                // tree path.  super may be shared with other Ractors, and its
+                // owner's GC updates its flags too, without the VM lock: set
+                // the flag with an atomic read-modify-write.
+                if (!FL_TEST_RAW(super, RCLASS_HAS_SUBCLASSES)) {
+                    rb_obj_flags_update_atomic(super, RCLASS_HAS_SUBCLASSES, 0);
+                }
             }
             else {
                 class_switch_superclass(super, klass);
@@ -993,7 +997,9 @@ void
 rb_class_set_initialized(VALUE klass)
 {
     RUBY_ASSERT(RB_TYPE_P(klass, T_CLASS) || RB_TYPE_P(klass, T_MODULE));
-    FL_SET_RAW(klass, RCLASS_IS_INITIALIZED);
+    /* klass is already on its superclass's subclass list, where other Ractors
+     * reach it. */
+    rb_obj_flags_update_atomic(klass, RCLASS_IS_INITIALIZED, 0);
     /* no more re-initialization */
 }
 

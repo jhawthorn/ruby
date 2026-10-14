@@ -1348,15 +1348,42 @@ RVALUE_AGE_SET_BITMAP(VALUE obj, int age)
     age_bits[idx + 1] = (age_bits[idx + 1] & ~mask) | ((bits_t)((age >> 1) & 1) << shift);
 }
 
+/* Other Ractors read and write the flags of a shareable object at any time
+ * (coderange caching on a shared String, say), so update those atomically, or
+ * one of the two updates can be lost.  Frozen objects too: they can be shared
+ * without being flagged shareable (literals, for one). */
+static inline void
+gc_obj_flags_update(VALUE obj, VALUE set, VALUE clear)
+{
+    VALUE *flags = &RBASIC(obj)->flags;
+
+    if (!RB_FL_TEST_RAW(obj, RUBY_FL_SHAREABLE | RUBY_FL_FREEZE)) {
+        *flags = (*flags & ~clear) | set;
+        return;
+    }
+
+    VALUE old = rbimpl_atomic_value_load(flags, RBIMPL_ATOMIC_RELAXED);
+    for (;;) {
+        VALUE prev = rbimpl_atomic_value_cas(flags, old, (old & ~clear) | set,
+                                             RBIMPL_ATOMIC_RELAXED, RBIMPL_ATOMIC_RELAXED);
+        if (prev == old) break;
+        old = prev;
+    }
+}
+
 static void
 RVALUE_AGE_SET(VALUE obj, int age)
 {
     RVALUE_AGE_SET_BITMAP(obj, age);
     if (age == RVALUE_OLD_AGE) {
-        RB_FL_SET_RAW(obj, RUBY_FL_PROMOTED);
+        if (!RB_FL_TEST_RAW(obj, RUBY_FL_PROMOTED)) {
+            gc_obj_flags_update(obj, RUBY_FL_PROMOTED, 0);
+        }
     }
     else {
-        RB_FL_UNSET_RAW(obj, RUBY_FL_PROMOTED);
+        if (RB_FL_TEST_RAW(obj, RUBY_FL_PROMOTED)) {
+            gc_obj_flags_update(obj, 0, RUBY_FL_PROMOTED);
+        }
     }
 }
 

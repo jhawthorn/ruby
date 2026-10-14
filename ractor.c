@@ -1581,7 +1581,7 @@ rb_obj_set_shareable_no_assert(VALUE obj)
      * the VALUE members inside its fptr. */
     VM_ASSERT(!RB_TYPE_P(obj, T_FILE));
 
-    FL_SET_RAW(obj, FL_SHAREABLE);
+    rb_obj_flags_update_atomic(obj, FL_SHAREABLE, 0);
     rb_gc_obj_became_shareable(obj);
 
     /* Ivars on a shareable object would be mutable shared state, so freeze them
