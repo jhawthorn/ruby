@@ -95,16 +95,26 @@ Please note, however, the following caveats!
 ## Building with Thread Sanitizer
 
 Ruby can be built with [ThreadSanitizer](https://github.com/google/sanitizers/wiki/ThreadSanitizerCppManual)
-to find data races. Use gcc to run the test suite: with clang, libtsan starts
-`llvm-symbolizer` as a child process of Ruby the first time it reports
-something, and the check for leftover child processes after each test
-(`Process.waitall` in `tool/lib/zombie_hunter.rb`) then waits for it forever.
-clang works otherwise (it needs its `compiler-rt` runtime, for example
-`libclang-rt-dev` on Debian).
+to find data races. Both gcc and clang work (clang needs its `compiler-rt`
+runtime installed, for example `libclang-rt-dev` on Debian):
 
 ```sh
 ./configure CC=gcc cflags='-fsanitize=thread -O1 -g' LDFLAGS=-fsanitize=thread --disable-install-doc --disable-yjit
 ```
+
+gcc is the better choice for running the tests. With clang, libtsan starts
+`llvm-symbolizer` as a child process of Ruby the first time it reports
+something, which the tests do not expect:
+
+* The check for leftover child processes after each test
+  (`tool/lib/zombie_hunter.rb`) waits for it forever. Set
+  `RUBY_TEST_NO_ZOMBIE_HUNTER=1` to turn that check off.
+* A few tests wait for any child process; `test/.excludes-tsan-clang` excludes
+  them.
+* A forked child inherits the pipes to its parent's `llvm-symbolizer`, and if
+  it reports something it can deadlock on them.  The test then hangs until
+  the leftover child is killed, which `make btest` does not do: the test at
+  `bootstraptest/test_ractor.rb:2990` (Ractors and `fork`) hits this.
 
 When TSan is detected `configure` also turns off `_FORTIFY_SOURCE` and
 `__builtin_setjmp`, and uses `longjmp` for exceptions. TSan keeps a shadow call
@@ -117,6 +127,7 @@ Run with the suppressions file in `misc/`:
 ```sh
 export TSAN_OPTIONS="suppressions=$(pwd)/misc/tsan_suppressions.txt:die_after_fork=0:exitcode=0:disable_coredump=0:handle_segv=0:report_signal_unsafe=0:allow_user_segv_handler=1:strip_path_prefix=$(pwd)/"
 export RUBY_MN_THREADS=-1
+export EXCLUDES=$(pwd)/test/.excludes-tsan  # with clang, also :$(pwd)/test/.excludes-tsan-clang
 make -j test-all TESTOPTS="--timeout-scale=10"
 ```
 
@@ -131,9 +142,8 @@ make -j test-all TESTOPTS="--timeout-scale=10"
   Ruby handle its own crash reports and signals, and `disable_coredump=0` stops
   TSan from lowering `RLIMIT_CORE`; the tests for those need them.
 * `callcc` is not available (it copies the machine stack).
-* A few tests that `fork` and then signal the child hang under TSan
-  (`TestIO#test_fcntl_lock_linux`, `TestUbfAsyncSafe#test_ubf_async_safe`,
-  `TestProcess#test_signals_work_after_exec_fail`).
+* A few tests that `fork` and then signal the child hang under TSan;
+  `test/.excludes-tsan` excludes them.
 * Tests run much slower under TSan; raise timeouts with `--timeout-scale`.
 
 ## Crash dumps
