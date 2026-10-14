@@ -106,7 +106,7 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsign
 
         VM_ASSERT(vm->ractor.sync.lock_rec == 0);
         VM_ASSERT(vm->ractor.sync.lock_owner == NULL);
-        vm->ractor.sync.lock_owner = cr;
+        RUBY_ATOMIC_PTR_SET(vm->ractor.sync.lock_owner, cr);
     }
 
     vm->ractor.sync.lock_rec++;
@@ -150,7 +150,7 @@ vm_lock_leave(rb_vm_t *vm, bool no_barrier, unsigned int *lev APPEND_LOCATION_AR
     *lev = vm->ractor.sync.lock_rec;
 
     if (vm->ractor.sync.lock_rec == 0) {
-        vm->ractor.sync.lock_owner = NULL;
+        RUBY_ATOMIC_PTR_SET(vm->ractor.sync.lock_owner, NULL);
         rb_native_mutex_unlock(&vm->ractor.sync.lock);
     }
 }

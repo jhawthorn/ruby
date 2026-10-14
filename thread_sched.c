@@ -1585,7 +1585,7 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
         // release VM lock
         lock_rec = vm->ractor.sync.lock_rec;
         vm->ractor.sync.lock_rec = 0;
-        vm->ractor.sync.lock_owner = NULL;
+        RUBY_ATOMIC_PTR_SET(vm->ractor.sync.lock_owner, NULL);
         rb_native_mutex_unlock(&vm->ractor.sync.lock);
 
         // Interrupt all running threads: running_dnts plus each snt's running_th.
@@ -1648,7 +1648,7 @@ rb_ractor_sched_barrier_start(rb_vm_t *vm, rb_ractor_t *cr)
         // acquire VM lock
         rb_native_mutex_lock(&vm->ractor.sync.lock);
         vm->ractor.sync.lock_rec = lock_rec;
-        vm->ractor.sync.lock_owner = cr;
+        RUBY_ATOMIC_PTR_SET(vm->ractor.sync.lock_owner, cr);
     }
 
     // do not release ractor_sched_lock and there is no newly added (resumed) thread
@@ -2696,14 +2696,14 @@ rb_ractor_sched_wait_terminate(rb_vm_t *vm, rb_nativethread_cond_t *cond, unsign
     rb_ractor_t *lock_owner = vm->ractor.sync.lock_owner;
 
     vm->ractor.sync.lock_rec = 0;
-    vm->ractor.sync.lock_owner = NULL;
+    RUBY_ATOMIC_PTR_SET(vm->ractor.sync.lock_owner, NULL);
 
     native_thread_dedicated_inc(vm, th->ractor, th->nt);
     rb_native_cond_timedwait(cond, &vm->ractor.sync.lock, msec);
     native_thread_dedicated_dec(vm, th->ractor, th->nt);
 
     vm->ractor.sync.lock_rec = lock_rec;
-    vm->ractor.sync.lock_owner = lock_owner;
+    RUBY_ATOMIC_PTR_SET(vm->ractor.sync.lock_owner, lock_owner);
 }
 
 void

@@ -2285,13 +2285,13 @@ void rb_ec_vm_lock_rec_release(const rb_execution_context_t *ec,
                                unsigned int recorded_lock_rec,
                                unsigned int current_lock_rec);
 
-/* This technically is a data race, as it's checked without the lock, however we
- * check against a value only our own thread will write. */
-NO_SANITIZE("thread", static inline bool
-vm_locked_by_ractor_p(rb_vm_t *vm, rb_ractor_t *cr))
+/* Checked without the lock, which is fine as we check against a value only our
+ * own thread will write; it is written and read atomically for this. */
+static inline bool
+vm_locked_by_ractor_p(rb_vm_t *vm, rb_ractor_t *cr)
 {
     VM_ASSERT(cr == GET_RACTOR());
-    return vm->ractor.sync.lock_owner == cr;
+    return RUBY_ATOMIC_PTR_LOAD(vm->ractor.sync.lock_owner) == cr;
 }
 
 static inline unsigned int
