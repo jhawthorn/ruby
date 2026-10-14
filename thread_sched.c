@@ -781,8 +781,8 @@ thread_sched_wait_running_turn(struct rb_thread_sched *sched, rb_thread_t *th, b
             // The hot thread cannot steal the control (e.g. the running thread
             // is an MN thread). It is going to sleep, so it is no longer spinning;
             // drop the hint so that other threads don't yield the lock to it.
-            sched->runnable_hot_th = NULL;
-            sched->runnable_hot_th_waiting = 0;
+            RUBY_ATOMIC_PTR_SET(sched->runnable_hot_th, NULL);
+            RUBY_ATOMIC_SET(sched->runnable_hot_th_waiting, 0);
         }
 
         // already deleted from running threads
@@ -829,7 +829,7 @@ thread_sched_wait_running_turn(struct rb_thread_sched *sched, rb_thread_t *th, b
                     end = NULL;
                 }
 
-                if (sched->runnable_hot_th != NULL && sched->runnable_hot_th_waiting) {
+                if (sched->runnable_hot_th != NULL && RUBY_ATOMIC_LOAD(sched->runnable_hot_th_waiting)) {
                     VM_ASSERT(sched->runnable_hot_th != th);
                     // Give the hot thread a chance to preempt, if it's actively spinning.
                     // On multicore, this reduces the rate of core-switching. On single-core it
@@ -892,8 +892,8 @@ thread_sched_wait_running_turn(struct rb_thread_sched *sched, rb_thread_t *th, b
 
     // Control transfer to the current thread is now complete. The original thread
     // cannot steal control at this point.
-    sched->runnable_hot_th = NULL;
-    sched->runnable_hot_th_waiting = 0;
+    RUBY_ATOMIC_PTR_SET(sched->runnable_hot_th, NULL);
+    RUBY_ATOMIC_SET(sched->runnable_hot_th_waiting, 0);
 
     // also on the M:N path and when the waker already made th running
     rb_ractor_thread_switch(th->ractor, th, false);
@@ -934,12 +934,13 @@ thread_sched_to_running_common(struct rb_thread_sched *sched, rb_thread_t *th)
 static void
 thread_sched_to_running(struct rb_thread_sched *sched, rb_thread_t *th)
 {
-    // We are reading and writing these sched fields without lock cover, but
-    // there are no correctness issues resulting from stale cache or delayed writeback.
+    // We are reading and writing these sched fields without lock cover (hence
+    // atomically), but there are no correctness issues resulting from stale
+    // cache or delayed writeback.
     // When it works, this causes the next-scheduled thread to yield the sched lock
     // briefly so that we can grab it if we're still spinning (not descheduled yet).
-    if (sched->runnable_hot_th == th) {
-        sched->runnable_hot_th_waiting = 1;
+    if (RUBY_ATOMIC_PTR_LOAD(sched->runnable_hot_th) == th) {
+        RUBY_ATOMIC_SET(sched->runnable_hot_th_waiting, 1);
     }
     thread_sched_lock(sched, th);
     {
@@ -1020,8 +1021,8 @@ thread_sched_to_waiting_common(struct rb_thread_sched *sched, rb_thread_t *th, b
 
     native_thread_dedicated_inc(th->vm, th->ractor, th->nt);
     if (!yield_immediately) {
-        sched->runnable_hot_th = th;
-        sched->runnable_hot_th_waiting = 0;
+        RUBY_ATOMIC_PTR_SET(sched->runnable_hot_th, th);
+        RUBY_ATOMIC_SET(sched->runnable_hot_th_waiting, 0);
     }
     thread_sched_wakeup_next_thread(sched, th, false);
 }
