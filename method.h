@@ -72,16 +72,33 @@ typedef struct rb_callable_method_entry_struct { /* same fields with rb_method_e
 #define METHOD_ENTRY_BASIC(me) (int)                   (((me)->flags & (IMEMO_FL_USER2                 )) >> (IMEMO_FL_USHIFT+2))
 #define METHOD_ENTRY_COMPLEMENTED(me)        ((me)->flags & IMEMO_FL_USER3)
 #define METHOD_ENTRY_COMPLEMENTED_SET(me)    ((me)->flags |= IMEMO_FL_USER3)
-#define METHOD_ENTRY_CACHED(me)              ((me)->flags & IMEMO_FL_USER4)
-#define METHOD_ENTRY_INVALIDATED(me)         ((me)->flags & IMEMO_FL_USER5)
-#define METHOD_ENTRY_INVALIDATED_SET(me)     ((me)->flags |= IMEMO_FL_USER5)
+/* A method entry is shared by Ractors, which cache it and see it invalidated at any
+ * time: set those two flags with an atomic read-modify-write, so that neither can
+ * lose the other (an invalidated entry that looks valid keeps being called). */
+#define METHOD_ENTRY_FLAGS_LOAD(me)          rbimpl_atomic_value_load((volatile VALUE *)&(me)->flags, RBIMPL_ATOMIC_RELAXED)
+#define METHOD_ENTRY_CACHED(me)              (METHOD_ENTRY_FLAGS_LOAD(me) & IMEMO_FL_USER4)
+#define METHOD_ENTRY_INVALIDATED(me)         (METHOD_ENTRY_FLAGS_LOAD(me) & IMEMO_FL_USER5)
+
+static inline void
+METHOD_ENTRY_FLAG_SET_ATOMIC(const void *me, VALUE flag)
+{
+    volatile VALUE *flags = (volatile VALUE *)&((const rb_method_entry_t *)me)->flags;
+    VALUE old = rbimpl_atomic_value_load(flags, RBIMPL_ATOMIC_RELAXED);
+
+    while (!(old & flag)) {
+        VALUE prev = rbimpl_atomic_value_cas(flags, old, old | flag,
+                                             RBIMPL_ATOMIC_RELAXED, RBIMPL_ATOMIC_RELAXED);
+        if (prev == old) break;
+        old = prev;
+    }
+}
+
+#define METHOD_ENTRY_INVALIDATED_SET(me)     METHOD_ENTRY_FLAG_SET_ATOMIC((me), IMEMO_FL_USER5)
 
 static inline void
 METHOD_ENTRY_CACHED_SET(rb_callable_method_entry_t *me)
 {
-    if (!METHOD_ENTRY_CACHED(me)) {
-        me->flags |= IMEMO_FL_USER4;
-    }
+    METHOD_ENTRY_FLAG_SET_ATOMIC(me, IMEMO_FL_USER4);
 }
 
 static inline void
