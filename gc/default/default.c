@@ -3847,7 +3847,8 @@ rb_gc_impl_make_zombie(void *objspace_ptr, VALUE obj, void (*dfree)(void *), voi
 static void
 tdata_unsafe_free_chunk_reset(struct tdata_unsafe_free_chunk *chunk)
 {
-    chunk->next = NULL;
+    /* A Ractor whose pop of chunk lost the race may still be reading next. */
+    rbimpl_atomic_ptr_store((volatile void **)&chunk->next, NULL, RBIMPL_ATOMIC_RELAXED);
     chunk->count = 0;
     chunk->embed_xfree_bits = 0;
 }
@@ -3866,7 +3867,8 @@ tdata_unsafe_free_chunk_alloc(void)
     while (head) {
         struct tdata_unsafe_free_chunk *prev =
             rbimpl_atomic_ptr_cas((void **)&global_objspace->tdata_unsafe_free_cache,
-                                  head, head->next,
+                                  head,
+                                  rbimpl_atomic_ptr_load((void **)&head->next, RBIMPL_ATOMIC_RELAXED),
                                   RBIMPL_ATOMIC_ACQ_REL, RBIMPL_ATOMIC_ACQUIRE);
         if (prev == head) {
             rbimpl_atomic_size_dec(&global_objspace->tdata_unsafe_free_cache_len,
@@ -3899,7 +3901,9 @@ gc_tdata_unsafe_free_publish(rb_objspace_t *objspace)
         rbimpl_atomic_ptr_load((void **)&global_objspace->tdata_unsafe_free_published,
                                RBIMPL_ATOMIC_RELAXED);
     do {
-        chunk->next = prev = head;
+        prev = head;
+        /* atomic: see tdata_unsafe_free_chunk_reset */
+        rbimpl_atomic_ptr_store((volatile void **)&chunk->next, prev, RBIMPL_ATOMIC_RELAXED);
         head = rbimpl_atomic_ptr_cas((void **)&global_objspace->tdata_unsafe_free_published,
                                      prev, chunk,
                                      RBIMPL_ATOMIC_ACQ_REL, RBIMPL_ATOMIC_ACQUIRE);
