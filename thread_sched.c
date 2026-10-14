@@ -2452,7 +2452,15 @@ ubf_select(void *ptr)
 static bool
 ubf_threads_empty(void)
 {
-    return ccan_list_empty(&ubf_list_head) != 0;
+    bool empty;
+
+    rb_native_mutex_lock(&ubf_list_lock);
+    {
+        empty = ccan_list_empty(&ubf_list_head) != 0;
+    }
+    rb_native_mutex_unlock(&ubf_list_lock);
+
+    return empty;
 }
 
 static void
