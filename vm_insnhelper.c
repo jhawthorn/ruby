@@ -1145,7 +1145,8 @@ vm_get_ev_const(rb_execution_context_t *ec, VALUE orig_klass, ID id, bool allow_
                         }
                         else {
                             if (UNLIKELY(!rb_class_owned_p(klass))) {
-                                if (!rb_ractor_shareable_p(val)) {
+                                val = rb_ractor_foreign_class_value(klass, id, val);
+                                if (UNDEF_P(val)) {
                                     rb_raise(rb_eRactorIsolationError,
                                              "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" of a class/module created by another Ractor.", rb_class_path(klass), rb_id2str(id));
                                 }

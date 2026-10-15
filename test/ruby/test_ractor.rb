@@ -249,6 +249,166 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  # A value read from another Ractor's class is decided by the Ractor whose objspace
+  # holds it.  The reader must not walk it (a T_DATA walk used to hit rb_bug), and the
+  # value is only promoted when it is read, so freezing an inner object last still works.
+  def test_read_frozen_value_from_another_ractors_class
+    assert_ractor(<<~'RUBY')
+      class C
+        class << self; attr_accessor :h; end
+        S = Set[1, 2].freeze
+        A = [[1], "x"].freeze
+        @@cv = {k: [1]}.freeze
+        def self.cv = @@cv
+      end
+      inner = []
+      C.h = {a: inner}
+      C.h.freeze
+      inner.freeze
+      C::A.each(&:freeze)
+      C.cv[:k].freeze
+
+      assert_equal({a: []}, Ractor.new { C.h }.value)
+      assert_equal true, Ractor.new { C::S.include?(1) }.value
+      assert_equal [[1], "x"], Ractor.new { C::A }.value
+      assert_equal [[1], "x"], Ractor.new { C.const_get(:A) }.value
+      assert_equal({k: [1]}, Ractor.new { C.cv }.value)
+      assert_equal [[1], "x"], Ractor.new { C.dup::A }.value
+      assert Ractor.shareable?(C::A)
+    RUBY
+  end
+
+  def test_read_unshareable_value_from_another_ractors_class
+    assert_ractor(<<~'RUBY')
+      class C
+        U = [Object.new].freeze
+        X = [1]
+        class << self; attr_reader :u; end
+        @u = [[]].freeze
+      end
+
+      assert_equal Ractor::IsolationError, Ractor.new { C::U rescue $! }.value.class
+      assert_equal Ractor::IsolationError, Ractor.new { C::X rescue $! }.value.class
+      assert_equal Ractor::IsolationError, Ractor.new { C.u rescue $! }.value.class
+      refute Ractor.shareable?(C::U)
+    RUBY
+  end
+
+  # The owner walks the object it is sent, not a slot it reads itself: its thread may be
+  # in another Box, whose classext holds a different constant.
+  def test_read_frozen_value_from_another_ractors_class_while_owner_is_in_a_box
+    assert_separately([{'RUBY_BOX' => '1'}, "-W0"], __FILE__, __LINE__, <<~'RUBY', ignore_stderr: true)
+      require "tmpdir"
+      BOXED = ["root".freeze].freeze
+      Dir.mktmpdir do |dir|
+        inner = File.join(dir, "inner.rb")
+        File.write(inner, <<~'INNER')
+          class Object
+            BOXED = ["inner".freeze].freeze
+          end
+          module Waiter
+            def self.wait(r) = r.value
+          end
+        INNER
+        box = Ruby::Box.new
+        box.require(inner)
+        r = Ractor.new { BOXED }
+        assert_equal ["root"], box::Waiter.wait(r)
+      end
+    RUBY
+  end
+
+  # The owner here is not the main Ractor, and it is busy in Ruby when asked.  Once it
+  # has exited there is nobody to ask, until taking its value makes its objects ours.
+  def test_read_frozen_value_from_non_main_ractors_class
+    assert_ractor(<<~'RUBY')
+      owner = Ractor.new do
+        m = Module.new
+        m.const_set(:W, [[4]].freeze)
+        m::W[0].freeze
+        m.const_set(:V, [[5]].freeze)
+        m::V[0].freeze
+        Ractor.main << m
+        t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        nil while Process.clock_gettime(Process::CLOCK_MONOTONIC) - t < 0.5
+        Ractor.receive
+      end
+      m = Ractor.receive
+      assert_equal [[4]], m::W
+      assert Ractor.shareable?(m::W)
+
+      port = Ractor::Port.new
+      owner.monitor(port)
+      owner << nil
+      assert_equal [owner, :exited], port.receive
+      assert_raise(Ractor::IsolationError) { m::V }
+      owner.value # inherits its objspace
+      assert_equal [[5]], m::V
+    RUBY
+  end
+
+  # Two Ractors each read a value of the other's module at the same time: each serves the
+  # other's request while it waits for its own.  (The values are deeply frozen before they
+  # are published: the owner decides at whatever interrupt check it serves the request.)
+  def test_read_frozen_values_from_each_others_classes
+    assert_ractor(<<~'RUBY')
+      owners = 2.times.map do |i|
+        Ractor.new(i) do |i|
+          $VERBOSE = nil # constant V is reassigned
+          m = Module.new
+          m.const_set(:V, [[-1]].freeze)
+          m::V[0].freeze
+          Ractor.main << m
+          other = Ractor.receive
+          n = 0
+          200.times do |k|
+            v = [[k]]
+            v[0].freeze
+            m.const_set(:V, v.freeze)
+            n += 1 if other::V[0][0].is_a?(Integer)
+          end
+          Ractor.main << :done
+          Ractor.receive # stay alive until the other has read our values too
+          n
+        end
+      end
+      mods = 2.times.map { Ractor.receive }
+      owners[0] << mods[1]
+      owners[1] << mods[0]
+      2.times { assert_equal :done, Ractor.receive }
+      owners.each { |r| r << nil }
+      assert_equal [200, 200], owners.map(&:value)
+    RUBY
+  end
+
+  # A reader that stops waiting (here: a thread raised and one killed) leaves the owner a
+  # request whose port is closed; the owner must swallow that when it finally replies.
+  def test_read_frozen_value_from_another_ractors_class_interrupted
+    assert_ractor(<<~'RUBY')
+      owner = Ractor.new do
+        m = Module.new
+        m.const_set(:W, [[4]].freeze)
+        m::W[0].freeze
+        Ractor.main << m
+        t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        nil while Process.clock_gettime(Process::CLOCK_MONOTONIC) - t < 0.5
+        Ractor.receive
+      end
+      m = Ractor.receive
+      th = Thread.new { m::W }
+      th.report_on_exception = false
+      Thread.pass until th.stop?
+      th.raise(RuntimeError, "stop")
+      assert_raise_with_message(RuntimeError, "stop") { th.join }
+      th = Thread.new { m::W }
+      Thread.pass until th.stop?
+      th.kill.join
+      owner << nil
+      owner.join
+      assert_equal [[4]], m::W
+    RUBY
+  end
+
   def test_struct_instance_variables
     assert_ractor(<<~'RUBY')
       StructIvar = Struct.new(:member) do

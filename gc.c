@@ -4657,6 +4657,13 @@ rb_gc_obj_foreign_p(VALUE obj)
     return rb_gc_impl_obj_foreign_p(rb_gc_get_objspace(), obj);
 }
 
+/* Does obj belong to objspace (some Ractor's r->objspace)? */
+bool
+rb_gc_obj_in_objspace_p(void *objspace, VALUE obj)
+{
+    return !rb_gc_impl_obj_foreign_p(objspace, obj);
+}
+
 bool
 rb_gc_single_objspace_p(void)
 {

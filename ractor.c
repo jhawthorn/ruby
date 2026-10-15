@@ -4308,6 +4308,196 @@ rb_ractor_autoload_load(VALUE module, ID name)
     }
 }
 
+// Shareability of another Ractor's class values
+
+/* A Ractor reading an unflagged value out of a class owned by another Ractor has to
+ * decide whether it is shareable, and deciding walks the value and promotes it.  But the
+ * value lives in its owner's objspace, so a walk from here races the owner: FL_SHAREABLE
+ * and the page's shareable bits are plain stores the owner's allocation and sweep also
+ * make, the owner may replace the value and collect it mid-walk, and a T_DATA walk
+ * refuses a foreign object outright.  So the Ractor whose objspace holds the value walks
+ * it, at the next interrupt check of its main thread, and replies through a port.  The
+ * reader then re-reads its slot and trusts only the flag. */
+
+struct foreign_class_value_request {
+    VALUE port;
+    /* Not marked from here, and written without RB_OBJ_WRITE: obj is unshareable and in
+     * the owner's objspace, so an edge from this (shareable) object would be illegal.
+     * The reader's stack keeps obj alive while it waits, and the owner checks obj is
+     * still a live object of its own before walking it. */
+    VALUE obj;
+};
+
+RUBY_REFERENCES(foreign_class_value_request_refs) = {
+    RUBY_REF_EDGE(struct foreign_class_value_request, port),
+    RUBY_REF_END
+};
+
+static const rb_data_type_t foreign_class_value_request_data_type = {
+    "ractor/foreign_class_value_request",
+    {
+        RUBY_REFS_LIST_PTR(foreign_class_value_request_refs),
+        RUBY_DEFAULT_FREE,
+        NULL, // memsize
+        NULL, // compact
+    },
+    0, 0, RUBY_TYPED_THREAD_SAFE_FREE | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_DECL_MARKING | RUBY_TYPED_EMBEDDABLE
+};
+
+/* Owner side.  obj can have died: the reader may have stopped waiting, or its class
+ * dropped it and a global GC ran, which kept it alive only through the reader's stack
+ * and re-derived no shref bit for it, so our next local GC freed it.  live_object_p
+ * checks the address is in our heap before reading the slot.  A reused slot just gets
+ * some other object of ours walked, which is harmless: promoting a shareable object is
+ * always allowed. */
+static VALUE
+foreign_class_value_walk(VALUE req_obj)
+{
+    struct foreign_class_value_request *req = RTYPEDDATA_GET_DATA(req_obj);
+    VALUE obj = req->obj;
+
+    if (rb_objspace_live_object_p(obj) && !rb_objspace_garbage_object_p(obj)) {
+        rb_ractor_shareable_p(obj);
+    }
+    return Qnil;
+}
+
+static VALUE
+foreign_class_value_reply(VALUE req_obj)
+{
+    struct foreign_class_value_request *req = RTYPEDDATA_GET_DATA(req_obj);
+    ractor_port_send(GET_EC(), req->port, Qtrue, Qfalse);
+    return Qnil;
+}
+
+static VALUE
+foreign_class_value_func(void *data)
+{
+    VALUE req_obj = (VALUE)data;
+    int state;
+
+    // an exception leaves obj unflagged, so the reader refuses it
+    rb_protect(foreign_class_value_walk, req_obj, &state);
+    // ClosedError if the reader stopped waiting
+    rb_protect(foreign_class_value_reply, req_obj, &state);
+    RB_GC_GUARD(req_obj);
+    return Qnil;
+}
+
+/* The live Ractor whose objspace holds obj, or nil: an exited Ractor's objspace that
+ * nobody has inherited yet. */
+static VALUE
+foreign_class_value_owner(VALUE obj)
+{
+    VALUE owner = Qnil;
+
+    RB_VM_LOCKING() {
+        rb_ractor_t *r;
+        ccan_list_for_each(&GET_VM()->ractor.set, r, vmlr_node) {
+            if (r->objspace && rb_gc_obj_in_objspace_p(r->objspace, obj)) {
+                owner = r->pub.self;
+                break;
+            }
+        }
+    }
+    return owner;
+}
+
+static VALUE
+foreign_class_value_receive(VALUE port)
+{
+    return ractor_port_receive(GET_EC(), port, Qnil);
+}
+
+static VALUE
+foreign_class_value_cleanup(VALUE args)
+{
+    const VALUE *argv = (const VALUE *)args;
+    rb_execution_context_t *ec = GET_EC();
+    ractor_unmonitor(ec, argv[0], argv[1]);
+    ractor_port_close(ec, argv[1]);
+    return Qnil;
+}
+
+/* Reader side: have owner walk obj.  Returns the owner's reply (Qtrue), its exit pair
+ * if it exited before replying, or Qundef if it had already exited and was not asked. */
+static VALUE
+foreign_class_value_ask(VALUE owner, VALUE obj)
+{
+    rb_execution_context_t *ec = GET_EC();
+    struct foreign_class_value_request *req;
+    VALUE req_obj = TypedData_Make_Struct(0, struct foreign_class_value_request,
+                                          &foreign_class_value_request_data_type, req);
+    RB_OBJ_SET_SHAREABLE(req_obj);
+    req->obj = obj;
+    VALUE port = rb_ractor_make_shareable(ractor_port_new(GET_RACTOR()));
+    RB_OBJ_WRITE(req_obj, &req->port, port);
+    VALUE args[2] = {owner, port};
+    VALUE reply = Qundef;
+
+    /* Monitor before posting: an exiting owner drops its pending tasks, and then its
+     * exit token is what wakes us.  The token is sent after the point where monitoring
+     * starts failing, so a monitor that succeeded gets one. */
+    if (RTEST(ractor_monitor(ec, owner, port))) {
+        RB_VM_LOCKING() {
+            // rb_ractor_teardown clears threads.main under the VM lock
+            rb_thread_t *th = RACTOR_PTR(owner)->threads.main;
+            if (th) {
+                rb_threadptr_interrupt_exec(th, foreign_class_value_func, (void *)req_obj,
+                                            rb_interrupt_exec_flag_value_data);
+                reply = Qnil;
+            }
+        }
+    }
+
+    if (UNDEF_P(reply)) {
+        foreign_class_value_cleanup((VALUE)args);
+    }
+    else {
+        reply = rb_ensure(foreign_class_value_receive, port, foreign_class_value_cleanup, (VALUE)args);
+    }
+    RB_GC_GUARD(req_obj);
+    RB_GC_GUARD(obj); // see the request struct
+    return reply;
+}
+
+VALUE
+rb_ractor_foreign_class_value_slow(VALUE klass, ID id, VALUE val)
+{
+    while (1) {
+        if (UNDEF_P(val)) return Qundef;
+        if (RB_SPECIAL_CONST_P(val) || RB_OBJ_SHAREABLE_P(val)) return val;
+
+        /* Classes and modules are born shareable, and anything else must be frozen to
+         * become shareable, so there is nothing to ask. */
+        if (!RB_OBJ_FROZEN_RAW(val)) return Qundef;
+
+        /* Ours after all (we inherited an exited owner's objspace): walk it here. */
+        if (!rb_objspace_foreign_object_p(val)) {
+            return rb_ractor_shareable_p(val) ? val : Qundef;
+        }
+
+        // the owner may need the VM lock before it gets to our request
+        if (rb_vm_locked_p()) return Qundef;
+
+        /* An owner that has already exited is not asked: it may still be in the set
+         * while its main thread finishes, so waiting on it would just spin.  Its objects
+         * are refused until some Ractor takes its value and inherits them. */
+        VALUE owner = foreign_class_value_owner(val);
+        if (NIL_P(owner)) return Qundef;
+        VALUE reply = foreign_class_value_ask(owner, val);
+        if (UNDEF_P(reply)) return Qundef;
+
+        /* Re-read the slot ourselves: the owner's thread may be in another Box, whose
+         * classext holds a different value.  If the slot still holds val and the owner
+         * decided, the flag is the answer.  Otherwise start over: with the new value,
+         * or (the owner exited before deciding) with whoever holds val now. */
+        VALUE cur = rb_class_value_lookup_raw(klass, id);
+        if (cur == val && reply == Qtrue) return RB_OBJ_SHAREABLE_P(val) ? val : Qundef;
+        val = cur;
+    }
+}
+
 VALUE
 rb_builtin_shareable_proc(rb_execution_context_t *ec, VALUE self, VALUE arg_self)
 {
