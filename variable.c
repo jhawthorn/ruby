@@ -1291,18 +1291,14 @@ cvar_set_ractor_check(VALUE klass, ID id)
     }
 }
 
-static VALUE
+static void
 cvar_read_ractor_check(VALUE klass, ID id, VALUE val)
 {
-    if (UNLIKELY(!rb_class_owned_p(klass))) {
-        val = rb_ractor_foreign_class_value(klass, id, val);
-        if (UNDEF_P(val)) {
-            rb_raise(rb_eRactorIsolationError,
-                     "can not read non-shareable class variable %"PRIsVALUE" of %"PRIsVALUE", which was created by another Ractor",
-                     rb_id2str(id), klass);
-        }
+    if (UNLIKELY(!rb_class_owned_p(klass)) && !rb_ractor_foreign_shareable_p(val)) {
+        rb_raise(rb_eRactorIsolationError,
+                 "can not read non-shareable class variable %"PRIsVALUE" of %"PRIsVALUE", which was created by another Ractor",
+                 rb_id2str(id), klass);
     }
-    return val;
 }
 
 static inline void
@@ -1595,9 +1591,13 @@ rb_obj_field_get(VALUE obj, shape_id_t target_shape_id)
     return rb_imemo_fields_ptr(fields_obj)[index];
 }
 
-static VALUE
-ivar_lookup_raw(VALUE obj, ID id, VALUE undef, bool is_class)
+VALUE
+rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
 {
+    if (SPECIAL_CONST_P(obj)) return undef;
+
+    int type = BUILTIN_TYPE(obj);
+    bool is_class = type == T_CLASS || type == T_MODULE;
     VALUE fields_obj = rb_obj_fields(obj, is_class ? 0 : id);
 
     if (!fields_obj) {
@@ -1621,46 +1621,19 @@ ivar_lookup_raw(VALUE obj, ID id, VALUE undef, bool is_class)
         val = rb_imemo_fields_ptr(fields_obj)[index];
     }
 
-    return val;
-}
-
-VALUE
-rb_ivar_lookup(VALUE obj, ID id, VALUE undef)
-{
-    if (SPECIAL_CONST_P(obj)) return undef;
-
-    int type = BUILTIN_TYPE(obj);
-    bool is_class = type == T_CLASS || type == T_MODULE;
-    VALUE val = ivar_lookup_raw(obj, id, undef, is_class);
-
     if (is_class && val != undef && rb_is_instance_id(id)) {
-        if (UNLIKELY(!rb_class_owned_p(obj))) {
-            val = rb_ractor_foreign_class_value(obj, id, val);
-            if (UNDEF_P(val)) {
-                rb_raise(
-                    rb_eRactorIsolationError,
-                    "can not get unshareable values from instance variables of classes/modules "
-                    "created by another Ractor (%"PRIsVALUE" from %"PRIsVALUE")",
-                    rb_id2str(id),
-                    obj
-                );
-            }
+        if (UNLIKELY(!rb_class_owned_p(obj)) && !rb_ractor_foreign_shareable_p(val)) {
+            rb_raise(
+                rb_eRactorIsolationError,
+                "can not get unshareable values from instance variables of classes/modules "
+                "created by another Ractor (%"PRIsVALUE" from %"PRIsVALUE")",
+                rb_id2str(id),
+                obj
+            );
         }
     }
 
     return val;
-}
-
-/* The current value of klass's constant, class ivar or class variable id, or Qundef.
- * No Ractor check: for rb_ractor_foreign_class_value to re-read the slot. */
-VALUE
-rb_class_value_lookup_raw(VALUE klass, ID id)
-{
-    if (rb_is_const_id(id)) {
-        rb_const_entry_t *ce = rb_const_lookup(klass, id);
-        return ce ? ce->value : Qundef;
-    }
-    return ivar_lookup_raw(klass, id, Qundef, true);
 }
 
 VALUE
@@ -1686,12 +1659,9 @@ rb_ivar_get_at(VALUE obj, attr_index_t index, ID id)
             VALUE fields_obj = RCLASS_WRITABLE_FIELDS_OBJ(obj);
             VALUE val = rb_imemo_fields_ptr(fields_obj)[index];
 
-            if (UNLIKELY(!rb_class_owned_p(obj))) {
-                val = rb_ractor_foreign_class_value(obj, id, val);
-                if (UNDEF_P(val)) {
-                    rb_raise(rb_eRactorIsolationError,
-                            "can not get unshareable values from instance variables of classes/modules created by another Ractor");
-                }
+            if (UNLIKELY(!rb_class_owned_p(obj)) && !rb_ractor_foreign_shareable_p(val)) {
+                rb_raise(rb_eRactorIsolationError,
+                        "can not get unshareable values from instance variables of classes/modules created by another Ractor");
             }
 
             return val;
@@ -3401,8 +3371,7 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     VALUE c = rb_const_search(klass, id, exclude, recurse, visibility, &found_in);
     if (!UNDEF_P(c)) {
         if (UNLIKELY(!rb_class_owned_p(found_in))) {
-            c = rb_ractor_foreign_class_value(found_in, id, c);
-            if (UNDEF_P(c)) {
+            if (!rb_ractor_foreign_shareable_p(c)) {
                 rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%"PRIsVALUE" of a class/module created by another Ractor.", rb_class_path(found_in), rb_id2str(id));
             }
         }
@@ -4354,7 +4323,8 @@ rb_cvar_find(VALUE klass, ID id, VALUE *front)
     if (RB_TYPE_P(target, T_ICLASS)) {
         target = RBASIC(target)->klass;
     }
-    return cvar_read_ractor_check(target, id, value);
+    cvar_read_ractor_check(target, id, value);
+    return (VALUE)value;
 }
 
 VALUE

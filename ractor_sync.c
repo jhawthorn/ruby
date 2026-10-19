@@ -16,6 +16,7 @@ static VALUE rb_cRactorPort;
 static VALUE ractor_receive(rb_execution_context_t *ec, const struct ractor_port *rp, const rb_hrtime_t *end);
 static VALUE ractor_send(rb_execution_context_t *ec, const struct ractor_port *rp, VALUE obj, VALUE move);
 static struct ractor_basket *ractor_basket_new_exit(VALUE sender, VALUE token);
+static VALUE ractor_send0(rb_execution_context_t *ec, const struct ractor_port *rp, VALUE obj, VALUE move, bool raise_on_error);
 static void ractor_send_basket(rb_execution_context_t *ec, const struct ractor_port *rp, struct ractor_basket *b, bool raise_on_error);
 static void ractor_add_port(rb_ractor_t *r, st_data_t id);
 
@@ -753,6 +754,40 @@ ractor_sync_terminate_atfork(rb_vm_t *vm, rb_ractor_t *r)
 }
 #endif
 
+// Shareability requests (rb_ractor_foreign_shareable_p in ractor.c)
+
+/* Another Ractor read obj out of one of this Ractor's classes and asks whether it is
+ * shareable.  Queued and popped under this Ractor's lock; the owner walks obj and
+ * replies through port. */
+struct ractor_shareable_request {
+    struct ccan_list_node node;
+    VALUE obj;                // in this Ractor's objspace, rooted by the queue
+    struct ractor_port port;  // the reader's, copied like a monitor's
+};
+
+static void
+ractor_mark_shareable_requests(const struct rb_gc_mark_ctx *ctx, rb_ractor_t *r)
+{
+    const struct ractor_shareable_request *req;
+
+    ccan_list_for_each(&r->sync.shareable_requests, req, node) {
+        /* Conservatively: the reader read obj out of a class and queued it a moment
+         * later, and in between the class may have dropped it, a global GC stripped its
+         * shref bit and a local GC freed it. */
+        rb_gc_mark_maybe_ctx(ctx, req->obj);
+    }
+}
+
+static void
+ractor_free_shareable_requests(rb_ractor_t *r)
+{
+    struct ractor_shareable_request *req;
+
+    while ((req = ccan_list_pop(&r->sync.shareable_requests, struct ractor_shareable_request, node)) != NULL) {
+        xfree(req);
+    }
+}
+
 // Ractor#monitor
 
 struct ractor_monitor {
@@ -854,15 +889,27 @@ ractor_notify_exit(rb_execution_context_t *ec, rb_ractor_t *cr, VALUE legacy, bo
     VM_ASSERT(!UNDEF_P(legacy));
     VM_ASSERT(cr->sync.legacy == Qundef);
 
+    /* Requests queued while legacy was unset (checked under the same lock) get their
+     * answer here; replying takes the reader's lock, so do it after dropping ours. */
+    struct ccan_list_head requests;
+    ccan_list_head_init(&requests);
+
     RACTOR_LOCK_SELF(cr);
     {
         ractor_free_all_ports(cr);
 
         cr->sync.legacy = legacy;
         cr->sync.legacy_exc = exc;
+
+        ccan_list_append_list(&requests, &cr->sync.shareable_requests);
     }
     RACTOR_UNLOCK_SELF(cr);
 
+    struct ractor_shareable_request *req;
+    while ((req = ccan_list_pop(&requests, struct ractor_shareable_request, node)) != NULL) {
+        ractor_send0(ec, &req->port, Qfalse, Qfalse, false); // the reader may be gone too
+        xfree(req);
+    }
 }
 
 /* Sent after the dying thread's post-mortem collection: waking a joiner any earlier makes
@@ -922,6 +969,7 @@ ractor_sync_mark(const struct rb_gc_mark_ctx *ctx, rb_ractor_t *r)
             ractor_queue_mark(ctx, r->sync.recv_queue);
             st_foreach(r->sync.ports, ractor_mark_ports_i, (st_data_t)ctx);
             ractor_mark_monitors(ctx, r);
+            ractor_mark_shareable_requests(ctx, r);
         }
         if (!world_stopped) RACTOR_UNLOCK_SELF(r);
 
@@ -961,6 +1009,11 @@ ractor_sync_free(rb_ractor_t *r)
         st_free_table(r->sync.ports);
         r->sync.ports = NULL;
     }
+
+    // not yet initialized for a Ractor that never ran (the list head is still zeroed)
+    if (r->sync.shareable_requests.n.next) {
+        ractor_free_shareable_requests(r);
+    }
 }
 
 static size_t
@@ -983,6 +1036,7 @@ ractor_sync_init(rb_ractor_t *r)
     // monitors
     ccan_list_head_init(&r->sync.off_queue_baskets);
     ccan_list_head_init(&r->sync.monitors);
+    ccan_list_head_init(&r->sync.shareable_requests);
 
     // waiters
     ccan_list_head_init(&r->sync.waiters);

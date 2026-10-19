@@ -73,7 +73,6 @@ void rb_fields_tbl_copy(VALUE dst, VALUE src);
 RUBY_SYMBOL_EXPORT_END
 
 VALUE rb_ivar_lookup(VALUE obj, ID id, VALUE undef);
-VALUE rb_class_value_lookup_raw(VALUE klass, ID id);
 VALUE rb_gvar_get(ID);
 VALUE rb_gvar_set(ID, VALUE);
 VALUE rb_gvar_defined(ID);

@@ -57,6 +57,11 @@ struct rb_ractor_sync {
     // monitors
     struct ccan_list_head monitors;
 
+    /* Objects of this Ractor's that other Ractors read out of its classes and want
+     * decided shareable: struct ractor_shareable_request.  The owner serves them at an
+     * interrupt check; until then the queue is their root. */
+    struct ccan_list_head shareable_requests;
+
     // value
     rb_ractor_t *successor;
     VALUE legacy;

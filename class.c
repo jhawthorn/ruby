@@ -1007,7 +1007,7 @@ static enum rb_id_table_iterator_result
 init_copy_check_const_i(ID id, VALUE v, void *data)
 {
     const rb_const_entry_t *ce = (const rb_const_entry_t *)v;
-    if (!UNDEF_P(ce->value) && UNDEF_P(rb_ractor_foreign_class_value(*(VALUE *)data, id, ce->value))) {
+    if (!UNDEF_P(ce->value) && !rb_ractor_foreign_shareable_p(ce->value)) {
         rb_raise(rb_eRactorIsolationError,
                  "can not copy a class/module created by another Ractor because "
                  "constant %"PRIsVALUE" refers to an unshareable object", rb_id2str(id));
@@ -1018,8 +1018,7 @@ init_copy_check_const_i(ID id, VALUE v, void *data)
 static int
 init_copy_check_field_i(ID id, VALUE val, st_data_t arg)
 {
-    if ((rb_is_instance_id(id) || rb_is_class_id(id)) &&
-        UNDEF_P(rb_ractor_foreign_class_value((VALUE)arg, id, val))) {
+    if ((rb_is_instance_id(id) || rb_is_class_id(id)) && !rb_ractor_foreign_shareable_p(val)) {
         rb_raise(rb_eRactorIsolationError,
                  "can not copy a class/module created by another Ractor because "
                  "variable %"PRIsVALUE" refers to an unshareable object", rb_id2str(id));
@@ -1033,7 +1032,7 @@ static enum rb_id_table_iterator_result
 move_check_const_i(ID id, VALUE v, void *data)
 {
     const rb_const_entry_t *ce = (const rb_const_entry_t *)v;
-    if (!UNDEF_P(ce->value) && !rb_ractor_shareable_p(ce->value)) {
+    if (!UNDEF_P(ce->value) && !rb_ractor_foreign_shareable_p(ce->value)) {
         rb_raise(rb_eRactorIsolationError,
                  "can not move an object whose singleton class has constant %"PRIsVALUE
                  " referring to an unshareable object", rb_id2str(id));
@@ -1044,7 +1043,7 @@ move_check_const_i(ID id, VALUE v, void *data)
 static int
 move_check_field_i(ID id, VALUE val, st_data_t arg)
 {
-    if ((rb_is_instance_id(id) || rb_is_class_id(id)) && !rb_ractor_shareable_p(val)) {
+    if ((rb_is_instance_id(id) || rb_is_class_id(id)) && !rb_ractor_foreign_shareable_p(val)) {
         rb_raise(rb_eRactorIsolationError,
                  "can not move an object whose singleton class has variable %"PRIsVALUE
                  " referring to an unshareable object", rb_id2str(id));
@@ -1069,9 +1068,9 @@ static void
 init_copy_check_tables(VALUE klass)
 {
     if (RCLASS_CONST_TBL(klass)) {
-        rb_id_table_foreach(RCLASS_CONST_TBL(klass), init_copy_check_const_i, &klass);
+        rb_id_table_foreach(RCLASS_CONST_TBL(klass), init_copy_check_const_i, NULL);
     }
-    rb_ivar_foreach_buffered(klass, init_copy_check_field_i, (st_data_t)klass);
+    rb_ivar_foreach_buffered(klass, init_copy_check_field_i, 0);
 }
 
 static void
