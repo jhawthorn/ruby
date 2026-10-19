@@ -65,7 +65,7 @@ static VALUE autoload_mutex;
 
 static void check_before_mod_set(VALUE, ID, VALUE, const char *);
 static void setup_const_entry(rb_const_entry_t *, VALUE, VALUE, rb_const_flag_t);
-static VALUE rb_const_search(VALUE klass, ID id, int exclude, int recurse, int visibility, VALUE *found_in);
+static VALUE rb_const_search(VALUE klass, ID id, int exclude, int recurse, int visibility, int peek, VALUE *found_in);
 static st_table *generic_fields_tbl_;
 
 /* Mutex guarding the single global generic_fields table (all hosts, every Ractor).  A
@@ -489,7 +489,7 @@ rb_path_to_class(VALUE pathname)
         if (!id) {
             goto undefined_class;
         }
-        c = rb_const_search(c, id, TRUE, FALSE, FALSE, NULL);
+        c = rb_const_search(c, id, TRUE, FALSE, FALSE, FALSE, NULL);
         if (UNDEF_P(c)) goto undefined_class;
         if (!rb_namespace_p(c)) {
             rb_raise(rb_eTypeError, "%"PRIsVALUE" does not refer to class/module",
@@ -3367,7 +3367,7 @@ static VALUE
 rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
 {
     VALUE found_in;
-    VALUE c = rb_const_search(klass, id, exclude, recurse, visibility, &found_in);
+    VALUE c = rb_const_search(klass, id, exclude, recurse, visibility, FALSE, &found_in);
     if (!UNDEF_P(c)) {
         if (UNLIKELY(!rb_class_owned_p(found_in))) {
             if (!rb_ractor_shareable_p(c)) {
@@ -3379,8 +3379,44 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
     return rb_const_missing(klass, ID2SYM(id));
 }
 
+/*
+ * Like rb_const_get() but without side effects and without blocking: never
+ * triggers an autoload, never consults the feature tables, never warns about
+ * a deprecated constant, never calls const_missing, never runs Ruby code and
+ * never raises.  Returns Qundef whenever a value cannot be produced that way:
+ * klass is not a class or module, the constant is not defined, it is an
+ * autoload which this thread has not itself loaded yet, or it is a
+ * non-shareable value owned by another Ractor.  Qundef is always a safe
+ * answer; callers fall back to the full lookup.
+ */
+VALUE
+rb_const_peek(VALUE klass, ID id, int exclude, int recurse)
+{
+    VALUE found_in = 0;
+    if (!RB_TYPE_P(klass, T_CLASS) && !RB_TYPE_P(klass, T_MODULE) && !RB_TYPE_P(klass, T_ICLASS)) {
+        return Qundef;
+    }
+    VALUE c = rb_const_search(klass, id, exclude, recurse, FALSE, TRUE, &found_in);
+    if (!UNDEF_P(c) && !rb_class_owned_p(found_in) && !rb_ractor_shareable_p(c)) {
+        return Qundef;
+    }
+    return c;
+}
+
+/*
+ * Searches klass and (if recurse) its ancestors for the constant id.
+ * Returns the value, or Qundef if it was not found.
+ *
+ * With peek, autoloads are not triggered, deprecated constants are not warned
+ * about, and an autoload ends the search unless this thread is in the middle of
+ * loading it and has already defined the constant: the value is unknown until
+ * it is loaded, so we must not fall through to an ancestor's constant of the
+ * same name. *found_in is set to the module holding the autoload (and the
+ * return value is Qundef) so callers can tell the two apart. Peek also leaves
+ * the execution context's private_const_reference alone.
+ */
 static VALUE
-rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibility, VALUE *found_in)
+rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibility, int peek, VALUE *found_in)
 {
     VALUE value, current;
     bool first_iteration = true;
@@ -3410,7 +3446,7 @@ rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibilit
                 GET_EC()->private_const_reference = tmp;
                 return Qundef;
             }
-            rb_const_warn_if_deprecated(ce, tmp, id);
+            if (!peek) rb_const_warn_if_deprecated(ce, tmp, id);
             value = ce->value;
             if (UNDEF_P(value)) {
                 struct autoload_const *ac;
@@ -3420,6 +3456,15 @@ rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibilit
                 if (ac) {
                     if (found_in) { *found_in = tmp; }
                     return ac->value;
+                }
+                if (peek) {
+                    /* Not loaded (by us) yet: stop, see above.  Telling a
+                     * pending autoload from a stale one (feature already
+                     * loaded, constant never defined) would need the feature
+                     * tables, which may expand $LOAD_PATH and run Ruby code,
+                     * so treat both as unknown. */
+                    if (found_in) { *found_in = tmp; }
+                    return Qundef;
                 }
                 rb_autoload_load(tmp, id);
                 continue;
@@ -3434,22 +3479,23 @@ rb_const_search_from(VALUE klass, ID id, int exclude, int recurse, int visibilit
     }
 
   not_found:
-    GET_EC()->private_const_reference = 0;
+    if (!peek) GET_EC()->private_const_reference = 0;
     return Qundef;
 }
 
 static VALUE
-rb_const_search(VALUE klass, ID id, int exclude, int recurse, int visibility, VALUE *found_in)
+rb_const_search(VALUE klass, ID id, int exclude, int recurse, int visibility, int peek, VALUE *found_in)
 {
     VALUE value;
 
     if (klass == rb_cObject) exclude = FALSE;
-    value = rb_const_search_from(klass, id, exclude, recurse, visibility, found_in);
+    value = rb_const_search_from(klass, id, exclude, recurse, visibility, peek, found_in);
     if (!UNDEF_P(value)) return value;
     if (exclude) return value;
     if (BUILTIN_TYPE(klass) != T_MODULE) return value;
+    if (peek && found_in && *found_in) return value; /* stopped at a pending autoload */
     /* search global const too, if klass is a module */
-    return rb_const_search_from(rb_cObject, id, FALSE, recurse, visibility, found_in);
+    return rb_const_search_from(rb_cObject, id, FALSE, recurse, visibility, peek, found_in);
 }
 
 VALUE

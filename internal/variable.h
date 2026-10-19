@@ -23,6 +23,7 @@ VALUE rb_attr_delete(VALUE, ID);
 void rb_autoload_str(VALUE mod, ID id, VALUE file);
 VALUE rb_autoload_at_p(VALUE, ID, int);
 NORETURN(VALUE rb_mod_const_missing(VALUE,VALUE));
+VALUE rb_const_peek(VALUE klass, ID id, int exclude, int recurse);
 rb_gvar_getter_t *rb_gvar_getter_function_of(ID);
 rb_gvar_setter_t *rb_gvar_setter_function_of(ID);
 void rb_gvar_readonly_setter(VALUE v, ID id, VALUE *_);
