@@ -289,6 +289,162 @@ class TestRactor < Test::Unit::TestCase
     RUBY
   end
 
+  def test_read_frozen_values_of_another_ractors_class
+    # [Bug #22419] [Bug #22497]
+    assert_ractor(<<~'RUBY')
+      class C
+        S = Set[1, "a".freeze].freeze
+        @s = Set[2].freeze
+        @@s = Set[3].freeze
+        @late = [+"x"]
+        @refused = Set[[+"x"].freeze].freeze
+        class << self
+          attr_reader :s, :late, :refused
+          def cvar = @@s
+        end
+      end
+      C.late.freeze
+      C.late[0].freeze
+
+      assert_equal [Set[1, "a"], Set[2], Set[3], ["x"]],
+                   Ractor.new { [C::S, C.s, C.cvar, C.late] }.value
+      assert_equal true, Ractor.shareable?(C::S)
+      assert_equal Ractor::IsolationError,
+                   Ractor.new { begin; C.refused; rescue => e; e.class; end }.value
+      assert_equal false, Ractor.shareable?(C.refused)
+    RUBY
+  end
+
+  def test_read_frozen_method_of_another_ractors_class
+    assert_ractor(<<~'RUBY')
+      class C
+        M = 1.method(:+).freeze
+        U = Object.new.method(:inspect).freeze
+      end
+      assert_equal 3, Ractor.new { C::M.call(2) }.value
+      assert_equal Ractor::IsolationError,
+                   Ractor.new { begin; C::U; rescue => e; e.class; end }.value
+      assert_equal true, Ractor.shareable?(C::M)
+      assert_equal false, Ractor.shareable?(C::U)
+    RUBY
+  end
+
+  def test_read_frozen_values_of_a_busy_ractors_class
+    assert_ractor(<<~'RUBY', timeout: 60)
+      %i[sleep receive busy].each do |mode|
+        port = Ractor::Port.new
+        owner = Ractor.new(port, mode) do |port, mode|
+          k = Class.new { class << self; attr_accessor :v; end }
+          k.v = Set[1, "a".freeze].freeze
+          k.const_set(:X, [Set[2].freeze].freeze)
+          port << k
+          case mode
+          when :sleep then sleep 0.5
+          when :receive then Ractor.receive
+          when :busy
+            t = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 0.5
+            nil while Process.clock_gettime(Process::CLOCK_MONOTONIC) < t
+          end
+        end
+        k = port.receive
+        assert_equal [Set[1, "a"], [Set[2]]], Ractor.new(k) { |k| [k.v, k::X] }.value, mode
+        owner << nil if mode == :receive
+        owner.join
+      end
+    RUBY
+  end
+
+  def test_read_interrupted_while_the_owner_is_busy
+    # A reader interrupted while the owner is busy.
+    assert_ractor(<<~'RUBY', timeout: 60)
+      port = Ractor::Port.new
+      owner = Ractor.new(port) do |port|
+        k = Class.new
+        20.times { |i| k.const_set(:"S#{i}", Set[i].freeze) }
+        port << k
+        busy = -> { t = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1; nil while Process.clock_gettime(Process::CLOCK_MONOTONIC) < t }
+        Thread.new(&busy) # holds the GVL from the main thread, which serves requests
+        sleep 0.01
+        busy.()
+      end
+      k = port.receive
+      20.times do |i|
+        Ractor.new(k, i) do |k, i|
+          th = Thread.current
+          Thread.new { sleep 0.005; th.raise "give up" }
+          begin; k.const_get(:"S#{i}"); rescue RuntimeError; end
+        end.join
+        GC.start
+      end
+      owner.join
+      GC.start
+    RUBY
+  end
+
+  def test_read_frozen_values_of_an_exited_ractors_class
+    assert_ractor(<<~'RUBY', timeout: 60)
+      def owner(port)
+        Ractor.new(port) do |port|
+          k = Class.new { class << self; attr_accessor :v; end }
+          k.v = Set[1, ("x" * 100)[1..].freeze].freeze
+          k.const_set(:H, {a: Set[2].freeze}.freeze)
+          k.const_set(:REFUSED, Set[[+"x"].freeze].freeze)
+          port << k
+        end
+      end
+      def read(k) = [k.v.size, k::H, (begin; k::REFUSED; rescue => e; e.class; end)]
+      expected = [2, {a: Set[2]}, Ractor::IsolationError]
+
+      # nobody took over its objects yet
+      port = Ractor::Port.new
+      o = owner(port); k = port.receive
+      o.join
+      assert_equal expected, Ractor.new(k) { |k| read(k) }.value
+      assert_equal expected, read(k)
+      o.value
+      GC.start
+      GC.verify_internal_consistency
+
+      # another Ractor took them over
+      port = Ractor::Port.new
+      o = owner(port); k = port.receive
+      o.join
+      taken = Ractor::Port.new
+      taker = Ractor.new(o, taken) { |o, taken| o.value; taken << true; Ractor.receive }
+      taken.receive
+      assert_equal expected, Ractor.new(k) { |k| read(k) }.value
+      taker << nil
+      taker.join
+
+      # we took them over
+      port = Ractor::Port.new
+      o = owner(port); k = port.receive
+      o.value
+      assert_equal expected, read(k)
+    RUBY
+  end
+
+  def test_read_frozen_values_of_an_exited_ractors_class_after_fork
+    omit "fork not supported" unless Process.respond_to?(:fork)
+    assert_ractor(<<~'RUBY', timeout: 60)
+      port = Ractor::Port.new
+      owner = Ractor.new(port) do |port|
+        k = Class.new { class << self; attr_accessor :v; end }
+        k.v = Set[1].freeze
+        port << k
+        Ractor.receive
+      end
+      k = port.receive
+      pid = fork do
+        exit!(Ractor.new(k) { |k| k.v }.value == Set[1] && k.v == Set[1] ? 0 : 1)
+      end
+      Process.wait(pid)
+      assert_predicate $?, :success?
+      owner << nil
+      owner.join
+    RUBY
+  end
+
   def test_struct_instance_variables
     assert_ractor(<<~'RUBY')
       StructIvar = Struct.new(:member) do

@@ -203,6 +203,22 @@ class TestBox < Test::Unit::TestCase
     assert_raise(NameError) { BOX_B }
   end
 
+  def test_ractor_reads_frozen_values_of_the_box
+    # [Bug #22419] a value read from a box is made shareable
+    assert_separately([ENV_ENABLE_BOX], __FILE__, __LINE__, "#{<<~"begin;"}\n#{<<~'end;'}", ignore_stderr: true)
+    begin;
+      class String; BOXED = Set["main"].freeze; end
+      box = Ruby::Box.new
+      box.eval(<<~'RUBY')
+        class String; BOXED = Set["box"].freeze; end
+        module BoxMod; @v = Set[:ivar].freeze; class << self; attr_reader :v; end; end
+        def read_in_ractor = Ractor.new { [String::BOXED, BoxMod.v] }.value
+      RUBY
+      assert_equal [Set["box"], Set[:ivar]], box.eval("read_in_ractor")
+      assert_equal Set["main"], Ractor.new { String::BOXED }.value
+    end;
+  end
+
   def test_autoload_dispatches_prepended_require
     # Autoload must go through the `Kernel#require` decorations (Zeitwerk, RubyGems, etc.)
     # of the box that registered the autoload, not `Ruby::Box#require` directly.

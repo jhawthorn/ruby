@@ -1636,6 +1636,10 @@ struct obj_traverse_data {
 
     st_table *rec;
     VALUE rec_hash;
+
+    /* Walking another Ractor's objects with the world stopped
+     * (ractor_shareable_p_foreign). */
+    bool world_stopped;
 };
 
 
@@ -1671,8 +1675,9 @@ obj_traverse_reachable_i(VALUE obj, void *ptr)
 
     // We need to assume foreign objects are properly shareable. If we check
     // their shareability, this could result in a crash because the page could
-    // be unmapped. The object could also be freed concurrently.
-    if (!rb_objspace_live_object_p(obj)) {
+    // be unmapped. The object could also be freed concurrently. Neither can
+    // happen with the world stopped, where obj is usually the owner's.
+    if (!d->data->world_stopped && !rb_objspace_live_object_p(obj)) {
         return;
     }
     // If the object is "garbage" (unmarked during lazy sweeping), it's okay
@@ -1691,7 +1696,12 @@ obj_traverse_reachable(VALUE obj, struct obj_traverse_data *data)
         .stop = false,
         .data = data,
     };
-    rb_objspace_reachable_objects_from_local(obj, obj_traverse_reachable_i, &d);
+    if (data->world_stopped) {
+        rb_objspace_reachable_objects_from_unlocked(obj, obj_traverse_reachable_i, &d);
+    }
+    else {
+        rb_objspace_reachable_objects_from_local(obj, obj_traverse_reachable_i, &d);
+    }
     return d.stop;
 }
 
@@ -1699,9 +1709,16 @@ static struct st_table *
 obj_traverse_rec(struct obj_traverse_data *data)
 {
     if (UNLIKELY(!data->rec)) {
-        data->rec_hash = rb_ident_hash_new();
-        rb_obj_hide(data->rec_hash);
-        data->rec = RHASH_ST_TABLE(data->rec_hash);
+        if (data->world_stopped) {
+            /* Not a hash of ours: that would reference another Ractor's
+             * unshareable objects. */
+            data->rec = st_init_numtable();
+        }
+        else {
+            data->rec_hash = rb_ident_hash_new();
+            rb_obj_hide(data->rec_hash);
+            data->rec = RHASH_ST_TABLE(data->rec_hash);
+        }
     }
     return data->rec;
 }
@@ -1734,7 +1751,7 @@ obj_traverse_i(VALUE obj, struct obj_traverse_data *data)
         // already traversed
         return 0;
     }
-    RB_OBJ_WRITTEN(data->rec_hash, Qundef, obj);
+    if (data->rec_hash) RB_OBJ_WRITTEN(data->rec_hash, Qundef, obj);
 
     if (rb_obj_shape_has_ivars(obj)) {
         struct obj_traverse_callback_data d = {
@@ -1866,24 +1883,36 @@ obj_traverse_final_i(st_data_t key, st_data_t val, st_data_t arg)
 // 0: traverse all
 // 1: stopped
 static int
-rb_obj_traverse(VALUE obj,
-                rb_obj_traverse_enter_func enter_func,
-                rb_obj_traverse_leave_func leave_func,
-                rb_obj_traverse_final_func final_func)
+obj_traverse_body(VALUE obj,
+                  rb_obj_traverse_enter_func enter_func,
+                  rb_obj_traverse_leave_func leave_func,
+                  rb_obj_traverse_final_func final_func,
+                  bool world_stopped)
 {
     struct obj_traverse_data data = {
         .enter_func = enter_func,
         .leave_func = leave_func,
         .rec = NULL,
+        .world_stopped = world_stopped,
     };
 
-    if (obj_traverse_i(obj, &data)) return 1;
-    if (final_func && data.rec) {
+    int stopped = obj_traverse_i(obj, &data);
+    if (!stopped && final_func && data.rec) {
         struct rb_obj_traverse_final_data f = {final_func, 0};
         st_foreach(data.rec, obj_traverse_final_i, (st_data_t)&f);
-        return f.stopped;
+        stopped = f.stopped;
     }
-    return 0;
+    if (world_stopped && data.rec) st_free_table(data.rec);
+    return stopped;
+}
+
+static int
+rb_obj_traverse(VALUE obj,
+                rb_obj_traverse_enter_func enter_func,
+                rb_obj_traverse_leave_func leave_func,
+                rb_obj_traverse_final_func final_func)
+{
+    return obj_traverse_body(obj, enter_func, leave_func, final_func, false);
 }
 
 static int
@@ -2083,9 +2112,35 @@ shareable_p_enter(VALUE obj)
     return traverse_stop; // fail
 }
 
+/* obj is another Ractor's, typically a frozen value read from a constant or a class's
+ * ivar or cvar. Marking it shareable writes its flags and its page's GC bits, which
+ * belong to the owner and would race the owner's own writes (allocation, sweeping, its
+ * own shareability checks). So do the walk under a VM barrier, with every other Ractor
+ * stopped. Only a frozen value can become shareable, and it is flagged after the first
+ * time, so this is rare: an unfrozen value fails without stopping anyone. */
+static bool
+ractor_shareable_p_foreign(VALUE obj)
+{
+    if (!RB_OBJ_FROZEN_RAW(obj)) {
+        return false;
+    }
+
+    bool shareable = false;
+    RB_VM_LOCKING() {
+        rb_vm_barrier();
+        shareable = RB_OBJ_SHAREABLE_P(obj) ||
+            !obj_traverse_body(obj, shareable_p_enter, null_leave, mark_shareable, true);
+    }
+    return shareable;
+}
+
 bool
 rb_ractor_shareable_p_continue(VALUE obj)
 {
+    if (UNLIKELY(rb_objspace_foreign_object_p(obj))) {
+        return ractor_shareable_p_foreign(obj);
+    }
+
     if (rb_obj_traverse(obj,
                         shareable_p_enter, null_leave,
                         mark_shareable)) {
@@ -2201,26 +2256,40 @@ obj_traverse_replace_rec(struct obj_traverse_replace_data *data)
     return data->rec;
 }
 
+struct obj_refer_only_shareables_data {
+    int cnt;
+    bool world_stopped;
+};
+
 static void
 obj_refer_only_shareables_p_i(VALUE obj, void *ptr)
 {
-    int *pcnt = (int *)ptr;
+    struct obj_refer_only_shareables_data *d = ptr;
 
-    if (!rb_objspace_live_object_p(obj)) {
+    if (!d->world_stopped && !rb_objspace_live_object_p(obj)) {
         return;
     }
 
     if (!rb_ractor_shareable_p(obj)) {
-        ++*pcnt;
+        d->cnt++;
     }
 }
 
 static int
 obj_refer_only_shareables_p(VALUE obj)
 {
-    int cnt = 0;
-    rb_objspace_reachable_objects_from_local(obj, obj_refer_only_shareables_p_i, &cnt);
-    return cnt == 0;
+    struct obj_refer_only_shareables_data d = {0};
+
+    /* Another Ractor's object is only walked under ractor_shareable_p_foreign's barrier. */
+    if (rb_objspace_foreign_object_p(obj)) {
+        ASSERT_vm_locking();
+        d.world_stopped = true;
+        rb_objspace_reachable_objects_from_unlocked(obj, obj_refer_only_shareables_p_i, &d);
+    }
+    else {
+        rb_objspace_reachable_objects_from_local(obj, obj_refer_only_shareables_p_i, &d);
+    }
+    return d.cnt == 0;
 }
 
 static int

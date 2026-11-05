@@ -8636,8 +8636,9 @@ rb_gc_impl_writebarrier(void *objspace_ptr, VALUE a, VALUE b)
 void
 rb_gc_impl_obj_became_shareable(void *objspace_ptr, VALUE obj)
 {
-    /* An object becomes shareable on its owner thread, so this page update is
-     * single-writer. */
+    /* An object becomes shareable on its owner thread, or on another Ractor's with
+     * the owner stopped under a VM barrier (ractor_shareable_p_foreign), so this page
+     * update is single-writer. */
     struct heap_page *page = GET_HEAP_PAGE(obj);
 
     if (_MARKED_IN_BITMAP(page->shareable_bits, page, obj)) return;
