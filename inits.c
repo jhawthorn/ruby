@@ -13,6 +13,7 @@
 #include "ruby.h"
 #include "builtin.h"
 static void Init_builtin_prelude(void);
+void rb_aot_init(void);
 #include "prelude.rbinc"
 
 #define CALL(n) {void Init_##n(void); Init_##n();}
@@ -114,5 +115,6 @@ rb_call_builtin_inits(void)
     BUILTIN(marshal);
     BUILTIN(jit_undef);
     Init_builtin_prelude();
+    rb_aot_init();
 }
 #undef CALL

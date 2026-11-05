@@ -599,6 +599,21 @@ rb_jit_call_threshold(void)
     return 0;
 }
 
+// Execute build-time compiled code for builtin ISEQs (builtin_aot.c),
+// used only when no JIT is enabled.
+static inline VALUE
+aot_exec(rb_execution_context_t *ec)
+{
+    if (rb_aot_enabled_p) {
+        // The frame was just pushed by the interpreter, so no ZJIT frame.
+        rb_aot_func_t func = ISEQ_BODY(ec->cfp->_iseq)->aot_func;
+        // Compiled code fires no events; once anything has enabled tracing
+        // (the flag is only ever added to), the interpreter runs everything.
+        if (func && LIKELY(!ruby_vm_event_enabled_global_flags)) return func(ec, ec->cfp, false);
+    }
+    return Qundef;
+}
+
 #if USE_YJIT || USE_ZJIT
 // Execute JIT code compiled by yjit_compile() or zjit_compile()
 static inline VALUE
@@ -622,9 +637,10 @@ jit_exec(rb_execution_context_t *ec)
             VALUE result = ((rb_zjit_func_t)zjit_entry)(ec, ec->cfp, func);
             return result;
         }
+        return Qundef;
     }
 #endif
-    return Qundef;
+    return aot_exec(ec);
 }
 
 // Generate JIT code that supports the following kind of ISEQ entry:
@@ -686,7 +702,7 @@ jit_exec_exception(rb_execution_context_t *ec)
 }
 #else
 # define jit_compile_exception(ec) ((rb_jit_func_t)0)
-# define jit_exec(ec) Qundef
+# define jit_exec(ec) aot_exec(ec)
 # define jit_exec_exception(ec) Qundef
 #endif
 
@@ -707,6 +723,8 @@ static void add_opt_method_entry(const rb_method_entry_t *me);
 static const rb_box_t * current_box_on_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
 
 #include "vm_insnhelper.c"
+
+#include "builtin_aot.c"
 
 #include "vm_exec.c"
 

@@ -87,10 +87,26 @@ each_builtin(VALUE self)
     return Qnil;
 }
 
+static void
+builtin_aot_iseqs_i(const rb_iseq_t *iseq, void *ary)
+{
+    rb_ary_push((VALUE)ary, rb_iseqw_new(iseq));
+}
+
+/* :nodoc: The ISEQs tool/mk_builtin_aot.rb compiles, in rb_aot_attach order */
+static VALUE
+builtin_aot_iseqs(VALUE self, VALUE iseqw)
+{
+    VALUE ary = rb_ary_new();
+    rb_iseq_each_descendant(rb_iseqw_to_iseq(iseqw), builtin_aot_iseqs_i, (void *)ary);
+    return ary;
+}
+
 void
 Init_builtin(void)
 {
     rb_define_singleton_method(rb_cRubyVM, "each_builtin", each_builtin, 0);
+    rb_define_singleton_method(rb_cRubyVM, "builtin_aot_iseqs", builtin_aot_iseqs, 1);
     loaded_builtin_table = st_init_strtable();
 }
 

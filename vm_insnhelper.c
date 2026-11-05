@@ -455,6 +455,18 @@ vm_pop_frame(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *e
     return flags & VM_FRAME_FLAG_FINISH;
 }
 
+// Like vm_pop_frame, but returns the flags that matter to the leave insn.
+static inline VALUE
+vm_pop_frame_flags(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *ep)
+{
+    VALUE flags = ep[VM_ENV_DATA_INDEX_FLAGS];
+
+    RUBY_VM_CHECK_INTS(ec);
+    ec->cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
+
+    return flags & (VM_FRAME_FLAG_FINISH | VM_FRAME_FLAG_AOT_RESUME);
+}
+
 void
 rb_vm_pop_frame(rb_execution_context_t *ec)
 {

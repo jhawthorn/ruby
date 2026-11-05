@@ -1209,7 +1209,8 @@ leave
         }
     }
 
-    if (vm_pop_frame(ec, GET_CFP(), GET_EP())) {
+    VALUE flags = vm_pop_frame_flags(ec, GET_CFP(), GET_EP());
+    if (flags & VM_FRAME_FLAG_FINISH) {
 #if OPT_CALL_THREADED_CODE
         rb_ec_thread_ptr(ec)->retval = val;
         return 0;
@@ -1219,6 +1220,15 @@ leave
     }
     else {
         RESTORE_REGS();
+        if (UNLIKELY(flags & VM_FRAME_FLAG_AOT_RESUME)) {
+            /* The caller is AOT code suspended at this call. Hand it the
+             * result the way the interpreter would, then let it continue.
+             * It returns with ec->cfp/pc/sp ready for the interpreter. */
+            PUSH(val);
+            vm_aot_resume(ec, GET_CFP());
+            RESTORE_REGS();
+            NEXT_INSN();
+        }
     }
 }
 

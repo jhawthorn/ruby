@@ -745,7 +745,7 @@ un-runnable:
 LIBRUBY_FOR_LEAKED_GLOBALS = $(enable_shared:no=)
 yes-test-basic: $(DOT_WAIT) test-leaked-globals
 leaked-globals: test-leaked-globals
-yes-test-leaked-globals-precheck: $(COMMONOBJS) prog $(tooldir)/leaked-globals
+yes-test-leaked-globals-precheck: $(VMOBJ) $(COMMONOBJS) prog $(tooldir)/leaked-globals
 test-leaked-globals: yes-test-leaked-globals
 yes-test-leaked-globals: yes-test-leaked-globals-precheck
 	$(ACTIONS_GROUP)
@@ -754,7 +754,7 @@ yes-test-leaked-globals: yes-test-leaked-globals-precheck
 	  SYMBOLS_IN_EMPTYLIB="@XSYMBOLS_IN_EMPTYLIB@" \
 	  EXTSTATIC="$(EXTSTATIC)" \
 	  PLATFORM=$(hdrdir)/ruby/$(PLATFORM_DIR).h $(srcdir)/configure.ac \
-	  $(COMMONOBJS) $(LIBRUBY_FOR_LEAKED_GLOBALS:yes=$(LIBRUBY_SO))
+	  $(VMOBJ) $(COMMONOBJS) $(LIBRUBY_FOR_LEAKED_GLOBALS:yes=$(LIBRUBY_SO))
 	$(ACTIONS_ENDGROUP)
 
 yesterday:

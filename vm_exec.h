@@ -183,6 +183,9 @@ default:                        \
                 val = zjit_entry(ec, ec->cfp, func); \
             } \
         } \
+        else { \
+            val = aot_exec(ec); \
+        } \
     } \
 } while (0)
 

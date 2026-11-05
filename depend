@@ -14,6 +14,7 @@
 # mkdepend: depends casefold.h => $(UNICODE_HDR_DIR)/casefold.h
 # mkdepend: depends extconf.h => $(RUBY_EXTCONF_H)
 # mkdepend: depends name2ctype.h => $(UNICODE_HDR_DIR)/name2ctype.h
+# mkdepend: define vm_mini.c => RUBY_VM_MINI
 # mkdepend: depends ruby-runner.h => {$(VPATH)}ruby-runner.h
 # mkdepend: depends verconf.h => {$(VPATH)}verconf.h
 # mkdepend: depends golf_prelude.c => {$(VPATH)}golf_prelude.c
@@ -176,6 +177,7 @@ version.$(OBJEXT): {$(VPATH)}version.c
 vm.$(OBJEXT): {$(VPATH)}vm.c
 vm_backtrace.$(OBJEXT): {$(VPATH)}vm_backtrace.c
 vm_dump.$(OBJEXT): {$(VPATH)}vm_dump.c
+vm_mini.$(OBJEXT): {$(VPATH)}vm_mini.c
 vm_sync.$(OBJEXT): {$(VPATH)}vm_sync.c
 vm_trace.$(OBJEXT): {$(VPATH)}vm_trace.c
 weakmap.$(OBJEXT): {$(VPATH)}weakmap.c

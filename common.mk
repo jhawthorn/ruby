@@ -89,7 +89,7 @@ NORMALMAINOBJ = main.$(OBJEXT)
 MAINOBJ       = $(NORMALMAINOBJ)
 DLDOBJS	      = $(INITOBJS)
 EXTSOLIBS     =
-MINIOBJS      = $(ARCHMINIOBJS) miniinit.$(OBJEXT)
+MINIOBJS      = $(ARCHMINIOBJS) miniinit.$(OBJEXT) vm_mini.$(OBJEXT)
 ENC_MK        = enc.mk
 MAKE_ENC      = -f $(ENC_MK) V="$(V)" UNICODE_HDR_DIR="$(UNICODE_HDR_DIR)" \
 		RUBY="$(BOOTSTRAPRUBY)" MINIRUBY="$(BOOTSTRAPRUBY)" $(mflags)
@@ -210,7 +210,6 @@ COMMONOBJS    = \
 		util.$(OBJEXT) \
 		variable.$(OBJEXT) \
 		version.$(OBJEXT) \
-		vm.$(OBJEXT) \
 		vm_backtrace.$(OBJEXT) \
 		vm_dump.$(OBJEXT) \
 		vm_sync.$(OBJEXT) \
@@ -233,9 +232,14 @@ $(PRISM_BUILD_DIR)/.time $(PRISM_BUILD_DIR)/util/.time:
 	$(Q) $(MAKEDIRS) $(@D)
 	@$(NULLCMD) > $@
 
+# The VM with builtin AOT code (see builtin_aot.c); miniruby, which generates
+# that code, links vm_mini.$(OBJEXT) instead.
+VMOBJ         = vm.$(OBJEXT)
+
 EXPORTOBJS    = $(DLNOBJS) \
 		localeinit.$(OBJEXT) \
 		loadpath.$(OBJEXT) \
+		$(VMOBJ) \
 		$(COMMONOBJS)
 
 OBJS          = $(EXPORTOBJS) builtin.$(OBJEXT)
@@ -431,9 +435,9 @@ $(STATIC_RUBY)$(EXEEXT): $(MAINOBJ) $(DLDOBJS) $(EXTOBJS) $(LIBRUBY_A)
 	$(Q)$(RM) $@
 	$(PURIFY) $(CC) $(MAINOBJ) $(DLDOBJS) $(LIBRUBY_A) $(MAINLIBS) $(EXTLIBS) $(OUTFLAG)$@ $(LDFLAGS) $(XLDFLAGS)
 
-ruby.imp: $(COMMONOBJS)
+ruby.imp: $(VMOBJ) $(COMMONOBJS)
 	$(Q){ \
-	$(NM) -Pgp $(COMMONOBJS) | \
+	$(NM) -Pgp $(VMOBJ) $(COMMONOBJS) | \
 	awk 'BEGIN{print "#!"}; $$2~/^[A-TV-Z]$$/&&$$1!~/^$(SYMBOL_PREFIX)(Init_|InitVM_|ruby_static_id_|.*_threadptr_|rb_ec_)|^\./{print $$1}'; \
 	} | \
 	sort -u -o $@
@@ -700,7 +704,7 @@ clean-local:: clean-runnable
 	$(Q)$(RM) $(PROGRAM) $(WPROGRAM) miniruby$(EXEEXT) dmyext.$(OBJEXT) dmyenc.$(OBJEXT) $(ARCHFILE) .*.time
 	$(Q)$(RM) y.tab.c y.output encdb.h transdb.h config.log rbconfig.rb $(ruby_pc) $(COROUTINE_H:/Context.h=/.time)
 	$(Q)$(RM) probes.h probes.$(OBJEXT) probes.stamp ruby-glommed.$(OBJEXT) ruby.imp ChangeLog $(STATIC_RUBY)$(EXEEXT)
-	$(Q)$(RM) GNUmakefile.old Makefile.old $(arch)-fake.rb bisect.sh $(ENC_TRANS_D) builtin_binary.rbbin
+	$(Q)$(RM) GNUmakefile.old Makefile.old $(arch)-fake.rb bisect.sh $(ENC_TRANS_D) builtin_binary.rbbin builtin_aot.inc
 	$(Q)$(RM) $(PRISM_BUILD_DIR)/.time $(PRISM_BUILD_DIR)/*/.time yjit_exit_locations.dump
 	$(Q)$(RM) $(noarch_config_h)
 	-$(Q)$(RMALL) dump_ast$(BUILD_EXEEXT)*
@@ -1341,6 +1345,13 @@ $(BUILTIN_BINARY:yes=built)in_binary.rbbin: $(PREP) $(BUILTIN_RB_SRCS) $(srcdir)
 
 $(BUILTIN_BINARY:no=builtin)_binary.rbbin:
 	$(Q) echo> $@ // empty $(@F)
+
+builtin_aot.inc: $(PREP) $(BUILTIN_RB_SRCS) $(tooldir)/mk_builtin_aot.rb $(srcdir)/insns.def \
+		$(srcdir)/defs/opt_operand.def $(srcdir)/defs/opt_insn_unif.def
+	$(ECHO) generating $@
+	$(Q) $(MINIRUBY) $(tooldir)/mk_builtin_aot.rb --builtin-binary=$(BUILTIN_BINARY) -o$@
+
+vm.$(OBJEXT): builtin_aot.inc
 
 $(BUILTIN_RB_INCS): $(tooldir)/mk_builtin_loader.rb $(DUMP_AST_TARGET)
 

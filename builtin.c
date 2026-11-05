@@ -8,6 +8,8 @@
 
 #include "builtin_binary.rbbin"
 
+void rb_aot_attach(const char *feature_name, const rb_iseq_t *iseq);
+
 #ifndef BUILTIN_BINARY_SIZE
 
 #define BUILTIN_LOADED(feature_name, iseq) ((void)0)
@@ -75,6 +77,7 @@ load_with_builtin_functions(const char *feature_name, const struct rb_builtin_fu
     const rb_iseq_t *iseq = rb_iseq_ibf_load_bytes((const char *)bin, size);
     ASSUME(iseq); // otherwise an exception should have raised
     vm->builtin_function_table = NULL;
+    rb_aot_attach(feature_name, iseq);
 
     // exec
     rb_iseq_eval(rb_iseq_check(iseq), target_box);

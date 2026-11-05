@@ -318,7 +318,9 @@ class TestInteger < Test::Unit::TestCase
   end
 
   def test_times_bignum_redefine_plus_lt
-    assert_separately([], "#{<<-"begin;"}\n#{<<~"end;"}")
+    # Compiled builtins don't see redefinitions of builtin methods (see
+    # test/ruby/test_builtin_aot.rb); this checks the interpreter.
+    assert_separately([{"RUBY_AOT" => "0"}], "#{<<-"begin;"}\n#{<<~"end;"}")
     begin;
       called = false
       Integer.class_eval do

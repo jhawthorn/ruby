@@ -3275,6 +3275,32 @@ iseq_iterate_children(const rb_iseq_t *iseq, void (*iter_func)(const rb_iseq_t *
     return (int)RHASH_SIZE(all_children);
 }
 
+struct iseq_each_descendant_arg {
+    void (*func)(const rb_iseq_t *iseq, void *data);
+    void *data;
+};
+
+static void
+iseq_each_descendant_i(const rb_iseq_t *iseq, void *data)
+{
+    struct iseq_each_descendant_arg *arg = data;
+    (*arg->func)(iseq, arg->data);
+    iseq_iterate_children(iseq, iseq_each_descendant_i, arg);
+    const rb_iseq_t *mandatory_only = ISEQ_BODY(iseq)->mandatory_only_iseq;
+    if (mandatory_only) iseq_each_descendant_i(mandatory_only, arg);
+}
+
+// Call func on iseq and every ISEQ below it (catch table entries, ISEQ
+// operands and mandatory_only_iseq), depth first. The order only depends on
+// the ISEQ's contents, so builtin AOT uses it to match compiled code
+// generated in miniruby with ISEQs loaded from builtin_binary.rbbin.
+void
+rb_iseq_each_descendant(const rb_iseq_t *iseq, void (*func)(const rb_iseq_t *iseq, void *data), void *data)
+{
+    struct iseq_each_descendant_arg arg = { func, data };
+    iseq_each_descendant_i(iseq, &arg);
+}
+
 static void
 yield_each_children(const rb_iseq_t *child_iseq, void *data)
 {

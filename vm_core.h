@@ -419,6 +419,7 @@ enum rb_builtin_attr {
 };
 
 typedef VALUE (*rb_jit_func_t)(struct rb_execution_context_struct *, struct rb_control_frame_struct *);
+typedef VALUE (*rb_aot_func_t)(struct rb_execution_context_struct *, struct rb_control_frame_struct *, bool resume);
 typedef VALUE (*rb_zjit_func_t)(struct rb_execution_context_struct *, struct rb_control_frame_struct *, rb_jit_func_t);
 
 enum lvar_state {
@@ -442,6 +443,12 @@ struct rb_iseq_constant_body {
 
     unsigned int iseq_size;
     VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+
+    // Build-time compiled code for builtin ISEQs (see builtin_aot.c).
+    // aot_func(ec, cfp, false) has the same contract as jit_entry;
+    // aot_func(ec, cfp, true) continues a suspended frame at cfp->pc.
+    // Next to iseq_encoded because every call checks it.
+    rb_aot_func_t aot_func;
 
     /**
      * parameter information
@@ -603,6 +610,7 @@ struct rb_iseq_constant_body {
     // unavailable. A computed hash of 0 is remapped to another value, so
     // 0 never denotes a real hash.
     uint64_t source_hash;
+
 };
 
 /* T_IMEMO/iseq */
@@ -1484,11 +1492,11 @@ typedef rb_control_frame_t *
 
 enum vm_frame_env_flags {
     /* Frame/Environment flag bits:
-     *   MMMM MMMM MMMM MMMM ___F FFFF FFFE EEEX (LSB)
+     *   MMMM MMMM MMMM MMMM __FF FFFF FFFE EEEX (LSB)
      *
      * X   : tag for GC marking (It seems as Fixnum)
      * EEE : 4 bits Env flags
-     * FF..: 8 bits Frame flags
+     * FF..: 9 bits Frame flags
      * MM..: 15 bits frame magic (to check frame corruption)
      */
 
@@ -1514,6 +1522,8 @@ enum vm_frame_env_flags {
     VM_FRAME_FLAG_CFRAME_KW  = 0x0400,
     VM_FRAME_FLAG_PASSED     = 0x0800,
     VM_FRAME_FLAG_BOX_REQUIRE = 0x1000,
+    // On leave, resume the caller's AOT-compiled code (see builtin_aot.c)
+    VM_FRAME_FLAG_AOT_RESUME = 0x2000,
 
     /* env flag */
     VM_ENV_FLAG_LOCAL       = 0x0002,
@@ -2157,6 +2167,7 @@ RUBY_EXTERN struct rb_ractor_struct *ruby_single_main_ractor; // ractor.c
 RUBY_EXTERN rb_vm_t *ruby_current_vm_ptr;
 RUBY_EXTERN rb_event_flag_t ruby_vm_event_flags;
 RUBY_EXTERN rb_event_flag_t ruby_vm_event_enabled_global_flags; // only ever added to
+extern bool rb_aot_enabled_p;
 RUBY_EXTERN unsigned int ruby_vm_iseq_events_enabled;
 RUBY_EXTERN unsigned int ruby_vm_c_events_enabled;
 
