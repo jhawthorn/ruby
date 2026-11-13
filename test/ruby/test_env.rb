@@ -529,6 +529,19 @@ class TestEnv < Test::Unit::TestCase
     assert_nil(ENV.shift)
   end
 
+  def test_shift_with_default_internal
+    omit "locale encoding is not UTF-8" unless ENCODING == Encoding::UTF_8
+    name = "TEST_SHIFT\u{3042}"
+    env = {name => "x"}
+    EnvUtil::LANG_ENVS.each {|e| env[e] = ENV[e]}
+    assert_separately([env, "-Eutf-8:euc-jp"], <<~"EOS")
+      name = #{name.dump}.encode("euc-jp")
+      ENV.keep_if {|k,| k == name }
+      assert_equal([name, "x"], ENV.shift)
+      assert_empty(ENV)
+    EOS
+  end
+
   def test_invert
     ENV.clear
     ENV["foo"] = "bar"

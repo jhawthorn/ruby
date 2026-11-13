@@ -7060,7 +7060,7 @@ env_freeze(VALUE self)
 static VALUE
 env_shift(VALUE _)
 {
-    VALUE key = Qnil;
+    VALUE key = Qnil, val = Qnil;
 
     ENV_LOCKING() {
         char **env = GET_ENVIRON(environ);
@@ -7069,6 +7069,7 @@ env_shift(VALUE _)
             const char *s = strchr(p, '=');
             if (s) {
                 key = rb_str_new(p, s-p);
+                val = rb_str_new_cstr(s+1);
             }
         }
         FREE_ENVIRON(environ);
@@ -7076,11 +7077,11 @@ env_shift(VALUE _)
 
     if (NIL_P(key)) return Qnil;
 
-    key = env_str_encode(key, env_encoding());
-    VALUE val = getenv_with_lock(RSTRING_PTR(key));
+    /* delete by the raw name, before it may be transcoded */
     env_delete(key);
 
-    return rb_assoc_new(key, val);
+    rb_encoding *enc = env_encoding();
+    return rb_assoc_new(env_str_encode(key, enc), env_str_encode(val, enc));
 }
 
 /*
