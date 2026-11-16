@@ -3707,72 +3707,29 @@ rb_ractor_courier_mark(const struct rb_gc_mark_ctx *ctx, struct rb_ractor_courie
     }
 }
 
-/* The message copy traversal never calls #clone or #initialize_clone.  Core container
- * types get a native shallow copy here (the traversal then rewrites the children inside
- * the copy); any other unshareable type falls back to a full Marshal round trip. */
 static VALUE
-ractor_native_shallow_copy(VALUE obj)
+ractor_call_clone_try(VALUE obj)
 {
-    VALUE copy;
+    return rb_funcall(obj, idClone, 0);
+}
 
-    /* An object with a singleton class cannot be copied natively; fall back to Marshal
-     * so it reports a proper error. */
-    VALUE klass = RBASIC_CLASS(obj);
-    if (klass == 0 || FL_TEST_RAW(klass, FL_SINGLETON)) {
-        return Qundef;
+static VALUE
+ractor_call_clone_rescue(VALUE obj, VALUE exc)
+{
+    rb_raise(rb_eRactorError, "can't clone unshareable instance of %"PRIsVALUE, rb_class_of(obj));
+    UNREACHABLE_RETURN(Qnil);
+}
+
+static VALUE
+ractor_obj_clone(VALUE obj)
+{
+    VALUE clone = rb_rescue(ractor_call_clone_try, obj, ractor_call_clone_rescue, obj);
+
+    if (obj == clone) {
+        rb_raise(rb_eRactorError, "#clone returned self");
     }
 
-    switch (BUILTIN_TYPE(obj)) {
-      case T_OBJECT:
-        copy = rb_obj_alloc(rb_obj_class(obj));
-        rb_obj_copy_ivar(copy, obj);
-        break;
-      case T_STRING:
-        copy = rb_enc_str_new(RSTRING_PTR(obj), RSTRING_LEN(obj), rb_enc_get(obj));
-        break;
-      case T_ARRAY:
-        copy = rb_ary_new_from_values(RARRAY_LEN(obj), RARRAY_CONST_PTR(obj));
-        break;
-      case T_HASH:
-        copy = rb_hash_dup(obj);
-        break;
-      case T_STRUCT:
-        copy = rb_obj_alloc(rb_obj_class(obj));
-        rb_struct_init_copy(copy, obj);
-        break;
-      case T_MATCH:
-        copy = rb_obj_alloc(rb_obj_class(obj));
-        rb_match_init_copy(copy, obj);
-        break;
-      case T_DATA:
-        /* Keep a copied exception from carrying a raw pointer to the sender's backtrace
-         * across objspaces */
-        if (rb_backtrace_p(obj)) {
-            copy = rb_backtrace_dup(obj);
-            break;
-        }
-        return Qundef;
-      default:
-        return Qundef;
-    }
-
-    /* A non-T_OBJECT host keeps its ivars in the generic fields table: copy them.
-     * T_HASH is excluded: rb_hash_dup already ran rb_copy_generic_ivar, and a second
-     * call asserts in rb_shape_rebuild (the first gave the copy an ivar shape). */
-    if (BUILTIN_TYPE(obj) != T_OBJECT && BUILTIN_TYPE(obj) != T_HASH &&
-        UNLIKELY(rb_obj_gen_fields_p(obj))) {
-        rb_copy_generic_ivar(copy, obj);
-    }
-
-    /* The traversal rewrites the children inside the copy with raw stores, so the frozen
-     * bit can be set now: by the time leave runs the original is out of sight. The shape
-     * has to be transitioned along with the flag, because field writes are refused based
-     * on the shape (see rb_check_ivar_modifiable). */
-    if (OBJ_FROZEN(obj)) {
-        RB_FL_SET_RAW(copy, RUBY_FL_FREEZE);
-        RBASIC_SET_SHAPE_ID(copy, rb_obj_shape_transition_frozen(copy));
-    }
-    return copy;
+    return clone;
 }
 
 static enum obj_traverse_iterator_result
@@ -3783,9 +3740,7 @@ copy_enter(VALUE obj, struct obj_traverse_replace_data *data)
         return traverse_skip;
     }
     else {
-        VALUE copy = ractor_native_shallow_copy(obj);
-        if (UNDEF_P(copy)) return traverse_stop; /* no native copy for this type */
-        data->replacement = copy;
+        data->replacement = ractor_obj_clone(obj);
         return traverse_cont;
     }
 }
@@ -3796,26 +3751,16 @@ copy_leave(VALUE obj, struct obj_traverse_replace_data *data)
     return traverse_cont;
 }
 
-/* Native deep copy of obj's graph.  Returns Qundef when it contains a type the native
- * copier does not support, and the caller falls back to Marshal. */
-static VALUE
-ractor_copy_native_try(VALUE obj)
-{
-    return rb_obj_traverse_replace(obj, copy_enter, copy_leave, false);
-}
-
-/* Deep copy within one objspace (Ractor.make_shareable(obj, copy: true)): native first,
- * then a whole-graph Marshal round trip. */
 static VALUE
 ractor_copy(VALUE obj)
 {
-    VALUE copy = ractor_copy_native_try(obj);
-    if (UNDEF_P(copy)) {
-        copy = rb_marshal_load(rb_rescue2(ractor_marshal_dump_body, obj,
-                                          ractor_marshal_dump_rescue, obj,
-                                          rb_eTypeError, (VALUE)0));
+    VALUE val = rb_obj_traverse_replace(obj, copy_enter, copy_leave, false);
+    if (!UNDEF_P(val)) {
+        return val;
     }
-    return copy;
+    else {
+        rb_raise(rb_eRactorError, "can not copy the object");
+    }
 }
 
 // Ractor local storage

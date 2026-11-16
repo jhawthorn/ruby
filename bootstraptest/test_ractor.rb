@@ -1958,6 +1958,31 @@ assert_equal '[false, false, true, true]', %q{
   r
 }
 
+# Ractor.make_shareable(obj, copy: true) copies T_DATA alongside shareable objects
+assert_equal '[true, false, false, true, true]', %q{
+  pr = Ractor.shareable_proc { 1 }
+  t = Time.at(0)
+  o = Ractor.make_shareable([t, Set[1, 2], pr, Ractor.current, ["3"]], copy: true)
+  [Ractor.shareable?(o), o[0].equal?(t), t.frozen?, o[2].equal?(pr), o[3].equal?(Ractor.current)]
+}
+
+# Ractor.make_shareable(obj, copy: true) calls initialize_copy
+assert_equal '["copied"]', %q{
+  class C
+    attr_reader :log
+    def initialize = @log = []
+    def initialize_copy(o) = (super; @log = ["copied"])
+  end
+  Ractor.make_shareable(C.new, copy: true).log
+}
+
+# Ractor.make_shareable(obj, copy: true) keeps singleton methods
+assert_equal 'hi', %q{
+  o = Object.new
+  def o.hi = :hi
+  Ractor.make_shareable([o], copy: true)[0].hi
+}
+
 # TracePoint with normal Proc should be Ractor local
 assert_equal '[6, 10]', %q{
   rs = []
