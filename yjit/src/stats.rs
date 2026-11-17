@@ -461,6 +461,7 @@ make_counters! {
     guard_send_cfunc_block_not_nil,
 
     guard_invokesuper_me_changed,
+    guard_invokesuper_recv_klass_changed,
 
     guard_invokeblock_tag_changed,
     guard_invokeblock_iseq_block_changed,

@@ -10124,9 +10124,9 @@ fn gen_invokesuper_specialized(
 
     // Ensure we haven't rebound this method onto an incompatible class.
     // In the interpreter we try to avoid making this check by performing some
-    // cheaper calculations first, but since we specialize on the method entry
-    // and so only have to do this once at compile time this is fine to always
-    // check and side exit.
+    // cheaper calculations first. In a method body, specializing on the method
+    // entry is enough for this to hold at runtime, but in a block self can be
+    // changed by instance_exec, so we also guard on the receiver's class below.
     let argc: i32 = unsafe { vm_ci_argc(ci) }.try_into().unwrap();
     let comptime_recv = jit.peek_at_stack(&asm.ctx, argc as isize);
     if unsafe { rb_obj_is_kind_of(comptime_recv, current_defined_class) } == VALUE(0) {
@@ -10164,6 +10164,19 @@ fn gen_invokesuper_specialized(
         SEND_MAX_DEPTH,
         Counter::guard_invokesuper_me_changed,
     );
+
+    if jit.iseq != unsafe { rb_get_iseq_body_local_iseq(jit.iseq) } {
+        let recv = asm.stack_opnd(argc);
+        jit_guard_known_klass(
+            jit,
+            asm,
+            recv,
+            recv.into(),
+            comptime_recv,
+            SEND_MAX_DEPTH,
+            Counter::guard_invokesuper_recv_klass_changed,
+        );
+    }
 
     // We need to assume that both our current method entry and the super
     // method entry we invoke remain stable

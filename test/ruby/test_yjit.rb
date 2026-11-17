@@ -1052,6 +1052,21 @@ class TestYJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_super_in_instance_exec_with_wrong_type
+    assert_compiles(<<~'RUBY', insns: %i[invokesuper], result: [2, 3, TypeError], exits: :any)
+      class SuperInstanceExec < Array
+        def first(o) = o.instance_exec { super() }
+      end
+
+      obj = SuperInstanceExec.new([1])
+      [
+        obj.first(SuperInstanceExec.new([2])),
+        obj.first(SuperInstanceExec.new([3])),
+        (obj.first(0xdead) rescue $!.class),
+      ]
+    RUBY
+  end
+
   def test_super_bmethod
     # Bmethod defined at class scope
     assert_compiles(<<~'RUBY', insns: %i[invokesuper], result: true, exits: {})
