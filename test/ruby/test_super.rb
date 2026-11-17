@@ -346,6 +346,19 @@ class TestSuper < Test::Unit::TestCase
     end
   end
 
+  def test_super_in_instance_eval_in_bound_module_method
+    mod = Module.new {
+      def first
+        0xdead.instance_eval do
+          super()
+        end
+      end
+    }
+    assert_raise_with_message(TypeError, /expected Array/) do
+      mod.instance_method(:first).bind_call([])
+    end
+  end
+
   def test_super_in_orphan_block
     super_class = EnvUtil.labeled_class("Super\u{30af 30e9 30b9}") {
       def foo

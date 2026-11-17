@@ -3561,7 +3561,11 @@ convert_umethod_to_method_components(const struct METHOD *data, VALUE recv, VALU
                 iclass = ic;
             }
             else {
-                klass = rb_include_class_new(methclass, klass);
+                VALUE includer = klass;
+                klass = rb_include_class_new(methclass, includer);
+                // super needs the includer to check that self is still an
+                // instance of the class we bound to
+                RCLASS_SET_INCLUDER(klass, includer);
             }
         }
         me = (const rb_method_entry_t *) rb_method_entry_complement_defined_class(me, me->called_id, klass);
