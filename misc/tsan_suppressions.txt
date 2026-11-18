@@ -58,13 +58,15 @@ deadlock:ractor_lock_self
 # we know the other threads have been stopped
 deadlock:rb_ractor_sched_barrier_start
 
-# BUG: A Ractor's GC ages its objects (RVALUE_AGE_SET sets or clears
-# FL_PROMOTED) with a plain read-modify-write of their flags, shareable ones
-# too, while other Ractors read and write the flags of those (coderange
-# caching on a shared String, FL_SHAREABLE, method entry flags...), so either
-# side can lose the other's update.  `race:` because the top frame is the
-# inlined RB_FL_SET_RAW/RB_FL_UNSET_RAW.
-race:RVALUE_AGE_SET
+# The flags of objects other Ractors can reach are updated with atomic
+# read-modify-writes (GC aging, code range caching, FL_SHAREABLE and method
+# entry flags), but read with plain loads all over (RB_FL_TEST_RAW...),
+# which TSan reports.  Those reads are fine.  But these would also hide a plain
+# write of such flags racing them, which could lose the atomic update: look at
+# the kinds of the two accesses before dismissing a report matching them.
+race:gc_obj_flags_update
+race:rb_obj_flags_update_atomic
+race:METHOD_ENTRY_FLAG_SET_ATOMIC
 
 # Inline caches and call cache updates
 # Multiple threads can race when updating shared call caches during method lookups
@@ -119,33 +121,6 @@ race_top:rb_gc_impl_gc_enable
 # suppressed so that new reports stand out, not because they are harmless.
 # Prefer race_top: a race: entry also matches every caller, allocation and
 # thread creation stack in a report.
-
-# BUG: Call caches, method entries and constant caches are created by one
-# Ractor and published into call data and tables shared with other Ractors
-# with plain stores (cd->cc = cc, vm_ccs_push...), which those read with plain
-# loads, so nothing orders the initialization of the cache before its
-# publication.  Likewise vm_cc_bf_set fills in a shared cache after it was
-# published.
-race_top:vm_cc_hit_p
-race_top:vm_cc_cme
-race_top:vm_cc_valid
-race_top:vm_ic_hit_p
-race_top:vm_call_single_noarg_leaf_builtin
-race_top:vm_method_cfunc_entry
-race_top:callable_method_entry_or_negative
-race_top:vm_cc_bf_set
-race_top:METHOD_ENTRY_CACHED_SET
-
-# BUG: A Ractor's GC marks call caches in iseqs and classes shared with other
-# Ractors, which write them at the same time.
-race_top:cc_is_active
-race_top:rb_iseq_mark_and_move
-
-# BUG: rb_gc_single_objspace_p reads the Ractor count and the zombie objspace
-# state without the VM lock, relying on the order they are written in (see
-# vm_remove_ractor), but they are written with plain stores, which neither
-# the compiler nor the CPU has to keep in order.
-race_top:rb_gc_single_objspace_p
 
 # BUG: Inheriting a dead Ractor's objspace (objspace_absorb) rewrites
 # page->objspace of its pages while other Ractors look up the owner of objects
